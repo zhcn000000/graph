@@ -7,6 +7,7 @@
 ## 主要功能模块
 
 ### 1. 数据爬取
+
 - 爬取至少3家指定海外博物馆的全部中国文物信息
 - 爬取内容：文物名称、文物图片（原图）、年代、类型、材质、介绍文本、文物详情页URL
 - 数据以UTF-8编码的CSV文件输出
@@ -15,14 +16,18 @@
 - 统计各博物馆文物数量并核验数据完整性
 
 ### 2. 数据清洗与质量控制
+
+- 基于大模型（pydantic-ai）实现自动化数据清洗与质量控制
 - 字段标准化：统一年代格式（如"公元前206年"）、文物类型分类等
 - 去重处理：识别并合并同一文物的重复记录
 - 图片有效性验证：检测图片链接可访问性，过滤无效图片
 
 ### 3. 数据建模
+
 将清洗后的数据转化为三元组形式（主体-谓词-客体），参考CIDOC-CRM文化遗产领域本体标准：
 
 **实体类型：**
+
 - 文物（Artifact）
 - 博物馆（Museum）
 - 朝代（Dynasty）
@@ -30,24 +35,32 @@
 - 地点（Location）
 
 **关系类型：**
+
 - 收藏于、创作于、属于朝代、材质为、类型为
 
 ### 4. 数据补充
+
 - 从百度百科、维基百科等外部来源爬取信息
 - 补充书画作家生平、朝代背景、文物介绍等
 - 补充数据与原始数据建立关联，标注来源与补充日期
 
 ### 5. 实体对齐与去重
+
 - 对艺术家、朝代、地点等共享实体进行识别与合并
 - 建立实体唯一标识符（URI）
 - 对齐结果可追溯，保留原始来源信息
 
 ### 6. 数据存储
+
+关系型数据库存储使用sqlalchemy,图数据库存储使用python binding
 双层存储架构：
-- **图数据库**（Neo4j / Virtuoso）：存储全部三元组，支持图查询、关系遍历与SPARQL检索，可选发布为链接开放数据（LOD）
-- **关系型数据库**（MySQL）：存储文物详细数据、用户数据及系统业务数据
+
+- **图数据库**（Apache Age）：存储全部三元组，支持图查询、关系遍历与SPARQL检索，可选发布为链接开放数据（LOD）
+- **关系型数据库**（PostgreSQL）：存储文物详细数据、用户数据及系统业务数据
+- **向量数据库** (VectorChord/VectorChordBM25): 对介绍文本密集嵌入存储向量数据，暴露接口用于搜索
 
 ### 7. 数据更新与增量爬取
+
 - 支持增量爬取，仅爬取新增或更新的文物记录
 - 记录每次爬取的时间、数量与变更详情
 - 对更新的实体数据自动触发三元组重建与图数据库同步
@@ -56,11 +69,11 @@
 
 | 类别 | 技术 |
 |------|------|
-| 前端 | React / Vue / Angular |
-| 图数据库 | Neo4j / Virtuoso |
-| 关系型数据库 | MySQL |
+| 前端 | React |
+| 图数据库 | Apache AGE  |
+| 关系型数据库 | PostgreSQL |
 | 爬虫 | Python (Scrapy / BeautifulSoup) |
-| 数据建模 | CIDOC-CRM |
+| 数据建模 | Python (pydantic-ai,使用ai提取结构化数据) |
 
 ## 数据格式
 
@@ -98,21 +111,21 @@ graph/
 
 | 序号 | 博物馆名 | 网址 |
 |------|----------|------|
-| 1 | 克利夫兰艺术博物馆 | https://www.clevelandart.org/art/collection/search |
-| 2 | 大都会艺术博物馆 | https://www.metmuseum.org/art/collection |
-| 3 | 史密森尼学会 | https://www.si.edu/openaccess |
-| 4 | 弗利尔美术馆 | https://www.freersackler.si.edu/collections/ |
-| 5 | 普林斯顿大学艺术博物馆 | https://artmuseum.princeton.edu/search/collections |
-| 6 | 纳尔逊-阿特金斯艺术博物馆 | https://art.nelson-atkins.org/collections |
-| 7 | 旧金山亚洲艺术博物馆 | http://searchcollection.asianart.org/ |
-| 8 | 波士顿美术馆 | https://www.mfa.org/collections/search |
-| 9 | 明尼阿波利斯艺术博物馆 | https://collections.artsmia.org/ |
-| 10 | 芝加哥艺术博物馆 | https://www.artic.edu/collection |
-| 11 | 宾夕法尼亚大学考古与人类学博物馆 | https://www.penn.museum/ |
-| 12 | 费城艺术博物馆 | https://www.philamuseum.org/collections/search.html |
-| 13 | 哈佛大学艺术博物馆 | https://harvardartmuseums.org/collections?q=chinese |
-| 14 | 美国自然历史博物馆 | https://anthro.amnh.org/collections |
-| 15 | 布鲁克林艺术博物馆 | https://www.brooklynmuseum.org/opencollection/collections |
+| 1 | 克利夫兰艺术博物馆 | <https://www.clevelandart.org/art/collection/search> |
+| 2 | 大都会艺术博物馆 | <https://www.metmuseum.org/art/collection> |
+| 3 | 史密森尼学会 | <https://www.si.edu/openaccess> |
+| 4 | 弗利尔美术馆 | <https://www.freersackler.si.edu/collections/> |
+| 5 | 普林斯顿大学艺术博物馆 | <https://artmuseum.princeton.edu/search/collections> |
+| 6 | 纳尔逊-阿特金斯艺术博物馆 | <https://art.nelson-atkins.org/collections> |
+| 7 | 旧金山亚洲艺术博物馆 | <http://searchcollection.asianart.org/> |
+| 8 | 波士顿美术馆 | <https://www.mfa.org/collections/search> |
+| 9 | 明尼阿波利斯艺术博物馆 | <https://collections.artsmia.org/> |
+| 10 | 芝加哥艺术博物馆 | <https://www.artic.edu/collection> |
+| 11 | 宾夕法尼亚大学考古与人类学博物馆 | <https://www.penn.museum/> |
+| 12 | 费城艺术博物馆 | <https://www.philamuseum.org/collections/search.html> |
+| 13 | 哈佛大学艺术博物馆 | <https://harvardartmuseums.org/collections?q=chinese> |
+| 14 | 美国自然历史博物馆 | <https://anthro.amnh.org/collections> |
+| 15 | 布鲁克林艺术博物馆 | <https://www.brooklynmuseum.org/opencollection/collections> |
 
 **注：** 国外博物馆一般可在网站文物搜索栏中使用"chinese"、"china"等关键字进行筛选，还可通过 location 等字段筛选中国文物。
 
