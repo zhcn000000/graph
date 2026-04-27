@@ -73,7 +73,7 @@
 | 图数据库 | Apache AGE  |
 | 关系型数据库 | PostgreSQL |
 | 爬虫 | Python (Scrapy / BeautifulSoup) |
-| 数据建模 | Python (pydantic-ai,使用ai提取结构化数据) |
+| 数据建模 |CIDOC-CRM / Python (pydantic-ai,使用ai提取结构化数据) |
 
 ## 数据格式
 
