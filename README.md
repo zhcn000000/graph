@@ -52,7 +52,7 @@
 
 ### 6. 数据存储
 
-关系型数据库存储使用sqlalchemy,图数据库存储使用apache age python binding
+关系型数据库存储使用sqlalchemy,图数据库存储使用apache age python binding,使用单一技术栈全功能数据库postgresql减少负担
 双层存储架构：
 
 - **图数据库**（Apache Age）：存储全部三元组，支持图查询、关系遍历与SPARQL检索，可选发布为链接开放数据（LOD）
