@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from pydantic_ai import Agent, RunContext
-from simplerag.utils.templete import FIRST_INPUT_TEMPLATE, RAG_TEMPLATE
+from knowgraph.utils.templete import FIRST_INPUT_TEMPLATE, RAG_TEMPLATE
 
 from .chat_model import get_model
 from .rag_tool import toolset as rag_toolset

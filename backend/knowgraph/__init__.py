@@ -1,12 +1,12 @@
-from simplerag.chat import ModelDeps, ToolEnum, agent, get_model, rag_toolset
-from simplerag.database import (
+from knowgraph.chat import ModelDeps, ToolEnum, agent, get_model, rag_toolset
+from knowgraph.database import (
     DatabaseManager,
     HistoryStore,
     RAGConfig,
     RAGMode,
     SourceStore,
 )
-from simplerag.documents import (
+from knowgraph.documents import (
     Document,
     aconvert_file,
     aload_documents,
@@ -14,7 +14,7 @@ from simplerag.documents import (
     asplit_documents,
     atokenize_content,
 )
-from simplerag.routers import api_router, chat_router, rag_router
+from knowgraph.routers import api_router, chat_router, rag_router
 
 __all__ = [
     "agent",

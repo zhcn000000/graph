@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Self
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
-from simplerag.utils.file import FileStream
+from knowgraph.utils.file import FileStream
 from sqlalchemy import (
     CheckConstraint,
     Column,

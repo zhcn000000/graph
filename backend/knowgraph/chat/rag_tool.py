@@ -3,9 +3,9 @@ from typing import Annotated
 import pandas as pd
 from pydantic import Field
 from pydantic_ai import FunctionToolset, ModelRetry, RunContext, ToolDefinition
-from simplerag.database.rag import RAGConfig
-from simplerag.database.ragmode import RAGMode
-from simplerag.database.source import SourceStore
+from knowgraph.database.rag import RAGConfig
+from knowgraph.database.ragmode import RAGMode
+from knowgraph.database.source import SourceStore
 
 from .struct import ModelDeps
 
@@ -105,7 +105,7 @@ async def search_rag(
     regex: Annotated[str | None, Field(description="可选的正则表达式过滤条件")] = None,
     files: Annotated[list[str] | None, Field(description="可选的文件名列表过滤条件")] = None,
 ) -> Annotated[str, Field(description="返回markdown格式的字符串，包含搜索结果的表格")]:
-    from simplerag.database.source import SourceStore
+    from knowgraph.database.source import SourceStore
 
     try:
         rag_id = (await config.aget_id_by_names([rag_name]))[0]

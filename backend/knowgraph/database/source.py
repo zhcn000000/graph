@@ -1,7 +1,7 @@
 from typing import NotRequired, TypedDict
 from uuid import UUID
 
-from simplerag.utils.file import FileStream
+from knowgraph.utils.file import FileStream
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col

@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager, contextmanager
 
 from psycopg import AsyncConnection, AsyncCursor, Connection, Cursor
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
-from simplerag.utils.environments import (
+from knowgraph.utils.environments import (
     POSTGRES_DB,
     POSTGRES_HOST,
     POSTGRES_PASSWORD,

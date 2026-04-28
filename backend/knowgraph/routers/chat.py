@@ -35,10 +35,10 @@ from pydantic_ai import (
     VideoUrl,
 )
 from pydantic_ai.direct import model_request
-from simplerag.chat.chat_model import get_model
-from simplerag.chat.model import agent
-from simplerag.chat.struct import ModelDeps, ToolEnum
-from simplerag.database.history import HistoryStore
+from knowgraph.chat.chat_model import get_model
+from knowgraph.chat.model import agent
+from knowgraph.chat.struct import ModelDeps, ToolEnum
+from knowgraph.database.history import HistoryStore
 from starlette.responses import StreamingResponse
 
 router = APIRouter()

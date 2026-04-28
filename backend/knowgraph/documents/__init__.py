@@ -1,7 +1,7 @@
-from simplerag.documents.converter import aconvert_file, aload_documents
-from simplerag.documents.models import Document
-from simplerag.documents.splitter import asplit_content, asplit_documents
-from simplerag.documents.tokenizer import atokenize_content
+from knowgraph.documents.converter import aconvert_file, aload_documents
+from knowgraph.documents.models import Document
+from knowgraph.documents.splitter import asplit_content, asplit_documents
+from knowgraph.documents.tokenizer import atokenize_content
 
 __all__ = [
     "Document",

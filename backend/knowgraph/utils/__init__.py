@@ -1,4 +1,4 @@
-from simplerag.utils.environments import (
+from knowgraph.utils.environments import (
     DATA_ROOT,
     FASTAPI_HOST,
     FASTAPI_PORT,
@@ -17,8 +17,8 @@ from simplerag.utils.environments import (
     VLLM_PROTOCOL,
     settings,
 )
-from simplerag.utils.file import FileStream, get_cache_file_path
-from simplerag.utils.templete import (
+from knowgraph.utils.file import FileStream, get_cache_file_path
+from knowgraph.utils.templete import (
     FIRST_INPUT_TEMPLATE,
     MULTI_QUERY_TEMPLATE,
     RAG_TEMPLATE,

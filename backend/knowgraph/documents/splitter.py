@@ -4,8 +4,8 @@ from collections.abc import AsyncIterator
 import httpx
 import orjson
 from asyncer import asyncify
-from simplerag.documents.models import Document
-from simplerag.utils.environments import DATA_ROOT, find_project_directory
+from knowgraph.documents.models import Document
+from knowgraph.utils.environments import DATA_ROOT, find_project_directory
 from stanza import Document as StanzaDocument
 from stanza import Pipeline
 

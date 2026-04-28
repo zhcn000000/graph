@@ -38,13 +38,13 @@ class EnvironmentSettings(BaseSettings):
     POSTGRES_HOST: str = "127.0.0.1"
     POSTGRES_PORT: int = 44002
     POSTGRES_USER: str = "postgres"
-    POSTGRES_DB: str = "simplerag"
+    POSTGRES_DB: str = "knowgraph"
     POSTGRES_DSN: PostgresDsn | None = None
     POSTGRES_PASSWORD: SecretStr = SecretStr("postgres")
     RAG_DATA_ROOT: Path = find_project_directory() / "data"
     RAG_UUID_SEED: UUID = UUID("11fa063e-b366-41a9-ac97-439b0a561846")
     RAG_RELEASE_MODE: bool = False
-    RAG_TMP_DIR: Path = Path(gettempdir()) / "simplerag_tmp"
+    RAG_TMP_DIR: Path = Path(gettempdir()) / "knowgraph_tmp"
     RAG_TOKEN_EXPIRES_IN: int = 3600 * 6
     model_config = SettingsConfigDict(env_ignore_empty=True, env_file=env_file, extra="ignore")
 

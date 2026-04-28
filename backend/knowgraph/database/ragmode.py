@@ -3,12 +3,12 @@ from collections import Counter
 from typing import NamedTuple
 from uuid import UUID
 
-from simplerag.documents.converter import aload_documents
-from simplerag.documents.models import Document
-from simplerag.documents.splitter import asplit_content, asplit_documents
-from simplerag.documents.tokenizer import atokenize_content
-from simplerag.embeddings.embedder import aembed_documents, arerank_documents
-from simplerag.utils.file import FileStream
+from knowgraph.documents.converter import aload_documents
+from knowgraph.documents.models import Document
+from knowgraph.documents.splitter import asplit_content, asplit_documents
+from knowgraph.documents.tokenizer import atokenize_content
+from knowgraph.embeddings.embedder import aembed_documents, arerank_documents
+from knowgraph.utils.file import FileStream
 from sqlalchemy import Float, cast, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col

@@ -2,7 +2,7 @@ from urllib.parse import quote_plus
 
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
 from pydantic import SecretStr
-from simplerag.utils.environments import (
+from knowgraph.utils.environments import (
     POSTGRES_DB,
     POSTGRES_HOST,
     POSTGRES_PASSWORD,

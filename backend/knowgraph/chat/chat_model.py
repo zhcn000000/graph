@@ -15,7 +15,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers import Provider
-from simplerag.utils.environments import VLLM_HOST, VLLM_PORT, VLLM_PROTOCOL
+from knowgraph.utils.environments import VLLM_HOST, VLLM_PORT, VLLM_PROTOCOL
 
 BASE_URL = f"{VLLM_PROTOCOL}://{VLLM_HOST}:{VLLM_PORT}/v1"
 API_KEY = "sk-"

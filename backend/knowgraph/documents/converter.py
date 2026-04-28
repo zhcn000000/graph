@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator
 
-from simplerag.documents.models import Document
-from simplerag.utils.file import FileStream
+from knowgraph.documents.models import Document
+from knowgraph.utils.file import FileStream
 
 
 async def aconvert_file(file_stream: FileStream) -> Document:

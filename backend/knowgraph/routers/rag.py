@@ -3,9 +3,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
-from simplerag.database.rag import RAGConfig
-from simplerag.database.ragmode import RAGMode
-from simplerag.utils.file import FileStream
+from knowgraph.database.rag import RAGConfig
+from knowgraph.database.ragmode import RAGMode
+from knowgraph.utils.file import FileStream
 
 router = APIRouter()
 
