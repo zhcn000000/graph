@@ -1,0 +1,144 @@
+[project]
+authors = [{ name = "bash000000", email = "m2588953@outlook.com" }]
+name = "knowgraph"
+requires-python = ">= 3.14, < 3.15"
+version = "0.1.0"
+dependencies = [
+  "numpy>=2.3",
+  "pandas",
+  "scipy>=1.17.1",
+  "fastapi[standard]>=0.119.1",
+  "uvicorn[standard]>=0.32.0",
+  "uvloop",
+  "pydantic>=2.12.3",
+  "pydantic-settings>=2.11.0",
+  "pydantic-ai>=1.86.0",
+  "requests>=2.32.0",
+  "orjson>=3.11.4",
+  "anyio>=4.11.0",
+  "asyncer>=0.0.10",
+  "rich",
+  "typer>=0.21.1",
+  "sqlalchemy>=2.0.44",
+  "sqlmodel>=0.0.32",
+  "sqlalchemy-utils>=0.42.0",
+  "psycopg[binary,pool]>=3.3",
+  "pgvector>=0.4.1",
+  "asyncpg>=0.30.0",
+  "transformers>=4.57.1",
+  "openai>=2.6.1",
+  "httpx",
+  "packaging",
+  "tomlkit>=0.13.3",
+  "magika",
+  "stanza>=1.11.0",
+  "pydantic-monty>=0.0.4",
+  "psutil>=7.2.2",
+]
+
+[project.scripts]
+knowgraph = "knowgraph.__main__:main"
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+  "ruff>=0.15.11",
+  "ty>=0.0.32",
+  "pytest>=8.4.2",
+  "pytest-asyncio>=1.2.0",
+  "ipython>=9.8.0",
+]
+
+[tool.uv]
+index-url = "https://mirrors.ustc.edu.cn/pypi/simple"
+
+[tool.uv.build-backend]
+module-name = "knowgraph"
+module-root = ""
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://mirrors.ustc.edu.cn/pypi/simple"
+default = true
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py314"
+exclude = ["tests",".venv"]
+fix = true
+
+[tool.ruff.analyze]
+preview = true
+
+[tool.ruff.lint]
+preview = true
+select = [
+  "F",
+  "E",
+  "W",
+  "I",
+  "N",
+  "FAST",
+  "PL",
+  "UP",
+  "NPY",
+  "PD",
+  "ASYNC",
+  "B",
+  "C4",
+  "FURB",
+  "PTH",
+]
+ignore = [
+  "PLR0911",
+  "PLR0912",
+  "PLR0913",
+  "PLR0914",
+  "PLR0915",
+  "PLR0916",
+  "PLR0917",
+  "PLC0415",
+  "PLW0603",
+  "PLW1641",
+  "N801",
+  "PLR2004",
+  "PLW2901",
+  "PLR1702",
+  "PLR6301",
+  "PLW3201",
+  "PLC1901",
+]
+fixable = ["ALL"]
+
+[tool.ruff.format]
+preview = true
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.ty.environment]
+root = ["./"]
+python-platform = "linux"
+python-version = "3.14"
+python = ".venv/bin/python"
+
+[tool.ty.src]
+include = ["knowgraph"]
+exclude = ["tests"]
+
+[tool.ty.rules]
+division-by-zero = "error"
+possibly-unresolved-reference = "warn"
+possibly-missing-import = "warn"
+unsupported-dynamic-base = "warn"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
