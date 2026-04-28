@@ -14,7 +14,7 @@ from knowgraph.documents import (
     asplit_documents,
     atokenize_content,
 )
-from knowgraph.routers import api_router, chat_router, rag_router
+from knowgraph.routers import chat_router, rag_router
 
 __all__ = [
     "DatabaseManager",
@@ -28,12 +28,8 @@ __all__ = [
     "aconvert_file",
     "agent",
     "aload_documents",
-    "api_router",
-    "asplit_content",
-    "asplit_documents",
-    "atokenize_content",
     "chat_router",
     "get_model",
     "rag_router",
-    "rag_toolset",
+    "rag_toolset", "asplit_content", "asplit_documents", "atokenize_content",
 ]

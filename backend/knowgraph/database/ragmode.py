@@ -46,7 +46,7 @@ class GraphRAGConfig:
     GRAPH_TOP_K: int = 50
 
 
-class RAGMode:
+class RAGMode:  # noqa: PLR0904
     def __init__(self, dbname: str = "data") -> None:
         self.__source = SourceStore(dbname)
         self.__db = DatabaseManager(dbname)

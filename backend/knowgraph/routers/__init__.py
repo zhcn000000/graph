@@ -1,10 +1,14 @@
-from fastapi import APIRouter
+from fastapi import FastAPI
+
+from knowgraph.mcp.tools import mcp
 
 from .chat import router as chat_router
 from .rag import router as rag_router
 
-api_router = APIRouter()
-api_router.include_router(chat_router, prefix="/chat", tags=["chat"])
-api_router.include_router(rag_router, prefix="/rag", tags=["rag"])
+mcp_app = mcp.http_app()
+app = FastAPI(lifespan=mcp_app.lifespan)
+app.mount(app=mcp_app, path="/mcp")
+app.include_router(chat_router, prefix="/chat", tags=["chat"])
+app.include_router(rag_router, prefix="/rag", tags=["rag"])
 
-__all__ = ["api_router", "chat_router", "rag_router"]
+__all__ = ["chat_router", "rag_router"]
