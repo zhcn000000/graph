@@ -1,0 +1,75 @@
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py314"
+exclude = ["backend/tests","backend/.venv"]
+fix = true
+
+[tool.ruff.analyze]
+preview = true
+
+[tool.ruff.lint]
+preview = true
+select = [
+  "F",
+  "E",
+  "W",
+  "I",
+  "N",
+  "FAST",
+  "PL",
+  "UP",
+  "NPY",
+  "PD",
+  "ASYNC",
+  "B",
+  "C4",
+  "FURB",
+  "PTH",
+]
+ignore = [
+  "PLR0911",
+  "PLR0912",
+  "PLR0913",
+  "PLR0914",
+  "PLR0915",
+  "PLR0916",
+  "PLR0917",
+  "PLC0415",
+  "PLW0603",
+  "PLW1641",
+  "N801",
+  "PLR2004",
+  "PLW2901",
+  "PLR1702",
+  "PLR6301",
+  "PLW3201",
+  "PLC1901",
+]
+fixable = ["ALL"]
+
+[tool.ruff.format]
+preview = true
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.ty.environment]
+root = ["./"]
+python-platform = "linux"
+python-version = "3.14"
+python = "backend/.venv/bin/python"
+
+[tool.ty.src]
+include = ["backend/knowgraph"]
+exclude = ["backend/tests"]
+
+[tool.ty.rules]
+division-by-zero = "error"
+possibly-unresolved-reference = "warn"
+possibly-missing-import = "warn"
+unsupported-dynamic-base = "warn"
+
