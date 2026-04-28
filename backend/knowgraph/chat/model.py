@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from pydantic_ai import Agent, RunContext
+
 from knowgraph.utils.templete import FIRST_INPUT_TEMPLATE, RAG_TEMPLATE
 
 from .chat_model import get_model

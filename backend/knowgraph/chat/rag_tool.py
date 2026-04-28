@@ -3,6 +3,7 @@ from typing import Annotated
 import pandas as pd
 from pydantic import Field
 from pydantic_ai import FunctionToolset, ModelRetry, RunContext, ToolDefinition
+
 from knowgraph.database.rag import RAGConfig
 from knowgraph.database.ragmode import RAGMode
 from knowgraph.database.source import SourceStore

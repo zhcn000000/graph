@@ -15,7 +15,7 @@ from psycopg.types.hstore import register_hstore
 from psycopg.types.json import set_json_dumps, set_json_loads
 from psycopg.types.shapely import register_shapely
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
-from sqlalchemy import URL, Engine, create_engine
+from sqlalchemy import URL, Engine, NullPool, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from knowgraph.utils.environments import (

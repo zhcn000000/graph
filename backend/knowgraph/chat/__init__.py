@@ -4,10 +4,10 @@ from knowgraph.chat.rag_tool import toolset as rag_toolset
 from knowgraph.chat.struct import ModelDeps, ModelState, ToolEnum
 
 __all__ = [
-    "agent",
-    "get_model",
-    "rag_toolset",
     "ModelDeps",
     "ModelState",
     "ToolEnum",
+    "agent",
+    "get_model",
+    "rag_toolset",
 ]

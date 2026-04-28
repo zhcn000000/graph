@@ -48,7 +48,7 @@ class AgeGraphManager:
     ) -> list[dict[str, Any]]:
         async with self.__db.aconnection() as conn:
             await conn.set_autocommit(not read_only)
-            result = await conn.execute(cypher, params or {})
+            result = await conn.execute(cypher, params or {})  # type: ignore
             if read_only:
                 rows = await result.fetchall()
                 if rows and result.description:
@@ -94,7 +94,7 @@ class AgeGraphManager:
         label: str,
         properties: dict[str, Any],
     ) -> Vertex | None:
-        props_map = ", ".join([f"{k} = ${k}" for k in properties.keys()])
+        props_map = ", ".join([f"{k} = ${k}" for k in properties])
 
         cypher = f"""
         CREATE (v:{label} {{{props_map}}})
@@ -150,7 +150,7 @@ class AgeGraphManager:
         label: str | None = None,
     ) -> Vertex | None:
         label_clause = f":{label}" if label else ""
-        props_set = ", ".join([f"v.{k} = ${k}" for k in properties.keys()])
+        props_set = ", ".join([f"v.{k} = ${k}" for k in properties])
 
         cypher = f"""
         MATCH (v{label_clause} {{uri: $uri}})
@@ -321,7 +321,7 @@ class AgeGraphManager:
                         name=row.get("name"),
                         entity_type=row.get("entity_type"),
                         properties=props,
-                    )
+                    ),
                 )
             return vertices
         except Exception:
@@ -357,7 +357,7 @@ class AgeGraphManager:
                         name=row.get("name"),
                         entity_type=row.get("entity_type"),
                         properties=props,
-                    )
+                    ),
                 )
             return vertices
         except Exception:
@@ -398,7 +398,7 @@ class AgeGraphManager:
                         name=row.get("name"),
                         entity_type=row.get("entity_type"),
                         properties=props,
-                    )
+                    ),
                 )
             return GraphPath(nodes=nodes, edges=[])
         except Exception:
@@ -421,7 +421,7 @@ class AgeGraphManager:
 
         try:
             results = await self._execute_cypher(
-                cypher, {"start_uri": start_uri, "end_uri": end_uri, "max_hops": max_hops}
+                cypher, {"start_uri": start_uri, "end_uri": end_uri, "max_hops": max_hops},
             )
             paths = []
             for row in results:
@@ -436,7 +436,7 @@ class AgeGraphManager:
                                 name=node.get("name"),
                                 entity_type=node.get("entity_type"),
                                 properties=props,
-                            )
+                            ),
                         )
 
                 edges = []
@@ -449,7 +449,7 @@ class AgeGraphManager:
                                 uri=rel.get("uri"),
                                 relationship_type=rel.get("type"),
                                 properties=props,
-                            )
+                            ),
                         )
 
                 paths.append(GraphPath(nodes=nodes, edges=edges))
@@ -492,21 +492,21 @@ class GraphStore:
         import asyncio
 
         return asyncio.get_event_loop().run_until_complete(
-            self.graph_manager.acreate_edge(start_uri, end_uri, relationship_type, properties)
+            self.graph_manager.acreate_edge(start_uri, end_uri, relationship_type, properties),
         )
 
     def get_edge(self, start_uri: str, end_uri: str, relationship_type: str | None = None) -> Edge | None:
         import asyncio
 
         return asyncio.get_event_loop().run_until_complete(
-            self.graph_manager.aget_edge(start_uri, end_uri, relationship_type)
+            self.graph_manager.aget_edge(start_uri, end_uri, relationship_type),
         )
 
     def delete_edge(self, start_uri: str, end_uri: str, relationship_type: str) -> bool:
         import asyncio
 
         return asyncio.get_event_loop().run_until_complete(
-            self.graph_manager.adelete_edge(start_uri, end_uri, relationship_type)
+            self.graph_manager.adelete_edge(start_uri, end_uri, relationship_type),
         )
 
     def get_neighbors(self, uri: str, direction: str = "both", max_hops: int = 1) -> list[Vertex]:

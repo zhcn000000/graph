@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
+
 from knowgraph.database.rag import RAGConfig
 from knowgraph.database.ragmode import RAGMode
 from knowgraph.utils.file import FileStream
@@ -80,7 +81,7 @@ async def api_get_rag(rag_id: UUID) -> RAGInfoResponse:
         rag = await config.aget(rag_id)
         if rag is None:
             return RAGInfoResponse(success=False, status="知识库不存在", rag=None)
-        rag_dict = cast(dict[str, Any], rag)
+        rag_dict = cast("dict[str, Any]", rag)
         return RAGInfoResponse(success=True, status="获取知识库信息成功", rag=rag_dict)
     except Exception as e:
         return RAGInfoResponse(success=False, status=f"获取知识库信息失败: {e!s}", rag=None)
@@ -92,7 +93,7 @@ async def api_update_rag(rag_id: UUID, request: RAGUpdateRequest) -> RAGInfoResp
         config = RAGConfig()
         await config.aupdate(rag_id=rag_id, name=request.name, description=request.description)
         rag = await config.aget(rag_id)
-        return RAGInfoResponse(success=True, status="更新知识库成功", rag=cast(dict[str, Any], rag) if rag else None)
+        return RAGInfoResponse(success=True, status="更新知识库成功", rag=cast("dict[str, Any]", rag) if rag else None)
     except Exception as e:
         return RAGInfoResponse(success=False, status=f"更新知识库失败: {e!s}", rag=None)
 

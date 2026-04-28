@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 import httpx
+
 from knowgraph.utils.environments import VLLM_HOST, VLLM_PORT, VLLM_PROTOCOL
 
 from ..documents.models import Document

@@ -237,10 +237,10 @@ class LLMExtractor:
         agent: Agent[ModelDeps, list[ExtractedTriple]] = Agent(
             model=self.model,
             deps_type=ModelDeps,
-            result_type=list[ExtractedTriple],
+            output_type=list[ExtractedTriple],
             instructions=self.SYSTEM_PROMPT,
             output_retries=3,
-        )
+        )  # type: ignore
 
         result = await agent.run(user_prompt)
         return result.output
@@ -300,7 +300,7 @@ class TripleStore:
 
         cypher = f"CREATE (v:{label} {{uri: $uri, name: $name, entity_type: $entity_type}})"
         if props:
-            props_str = ", ".join([f"{k}: ${k}" for k in props.keys()])
+            props_str = ", ".join([f"{k}: ${k}" for k in props])
             cypher += f" SET {props_str}"
 
         cypher += " RETURN id(v) as vertex_id"
@@ -410,7 +410,7 @@ class TripleStore:
         entity_uri: str,
         properties: dict[str, Any],
     ) -> tuple[str, dict[str, Any]]:
-        props_set = ", ".join([f"v.{k} = ${k}" for k in properties.keys()])
+        props_set = ", ".join([f"v.{k} = ${k}" for k in properties])
         cypher = f"MATCH (v {{uri: $uri}}) SET {props_set} RETURN v"
         params = {"uri": entity_uri}
         params.update(properties)
@@ -424,7 +424,7 @@ class TripleStore:
         properties: dict[str, Any],
     ) -> tuple[str, dict[str, Any]]:
         predicate_name = predicate_uri.rsplit("/", maxsplit=1)[-1]
-        props_set = ", ".join([f"r.{k} = ${k}" for k in properties.keys()])
+        props_set = ", ".join([f"r.{k} = ${k}" for k in properties])
         cypher = f"""
         MATCH (s {{uri: $subject_uri}})-[r:{predicate_name}]->(o {{uri: $object_uri}})
         SET {props_set}
@@ -448,7 +448,7 @@ class TripleStore:
             props["description"] = entity.description
         props.update(entity.properties)
 
-        props_str = ", ".join([f"{k}: ${k}" for k in props.keys()])
+        props_str = ", ".join([f"{k}: ${k}" for k in props])
 
         cypher = f"""
         MERGE (v:{label} {{uri: $uri}})

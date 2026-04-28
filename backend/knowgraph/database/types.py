@@ -61,8 +61,7 @@ class AGType(UserDefinedType):
                 return None
             if isinstance(value, str):
                 return value
-            else:
-                return orjson.dumps(value).decode("utf-8")
+            return orjson.dumps(value).decode("utf-8")
 
         return process
 

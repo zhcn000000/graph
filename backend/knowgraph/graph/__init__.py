@@ -20,20 +20,20 @@ from .triples import (
 )
 
 __all__ = [
-    "Artifact",
-    "Artist",
     "CIDOC_GRAPH",
+    "Artifact",
+    "ArtifactTriple",
+    "Artist",
+    "CSVRowInput",
     "Dynasty",
     "Entity",
+    "LLMExtractor",
     "Location",
     "Museum",
     "RelationshipType",
     "Schema",
-    "get_entity_uri",
-    "get_relationship_uri",
-    "ArtifactTriple",
-    "CSVRowInput",
-    "LLMExtractor",
     "Triple",
     "TripleStore",
+    "get_entity_uri",
+    "get_relationship_uri",
 ]

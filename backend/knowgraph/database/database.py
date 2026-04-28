@@ -9,14 +9,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateSchema, DropSchema
 from sqlmodel import SQLModel
 
-from knowgraph.utils.environments import (
-    POSTGRES_DB,
-    POSTGRES_HOST,
-    POSTGRES_PASSWORD,
-    POSTGRES_PORT,
-    POSTGRES_USER,
-)
-
 from .pool import pool_manager
 
 

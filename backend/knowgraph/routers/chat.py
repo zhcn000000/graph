@@ -35,11 +35,12 @@ from pydantic_ai import (
     VideoUrl,
 )
 from pydantic_ai.direct import model_request
+from starlette.responses import StreamingResponse
+
 from knowgraph.chat.chat_model import get_model
 from knowgraph.chat.model import agent
 from knowgraph.chat.struct import ModelDeps, ToolEnum
 from knowgraph.database.history import HistoryStore
-from starlette.responses import StreamingResponse
 
 router = APIRouter()
 
