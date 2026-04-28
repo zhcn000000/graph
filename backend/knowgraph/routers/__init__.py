@@ -5,9 +5,9 @@ from knowgraph.mcp.tools import mcp
 from .chat import router as chat_router
 from .rag import router as rag_router
 
-mcp_app = mcp.http_app()
+mcp_app = mcp.http_app(path="/mcp")
 app = FastAPI(lifespan=mcp_app.lifespan)
-app.mount(app=mcp_app, path="/mcp")
+app.include_router(mcp_app.router, prefix="/mcp")  # type: ignore
 app.include_router(chat_router, prefix="/chat", tags=["chat"])
 app.include_router(rag_router, prefix="/rag", tags=["rag"])
 

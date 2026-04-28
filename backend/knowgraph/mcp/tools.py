@@ -81,12 +81,14 @@ async def get_triples(
         elif subject_uri and object_uri:
             edge = await rag_mode.aget_edge(subject_uri, object_uri, relationship_type)
             if edge:
-                return [{
-                    "subject_uri": edge.start_node_uri,
-                    "predicate_uri": edge.predicate_uri,
-                    "object_uri": edge.end_node_uri,
-                    "relationship_type": edge.relationship_type,
-                }]
+                return [
+                    {
+                        "subject_uri": edge.start_node_uri,
+                        "predicate_uri": edge.predicate_uri,
+                        "object_uri": edge.end_node_uri,
+                        "relationship_type": edge.relationship_type,
+                    }
+                ]
         return []
     except Exception as e:
         return [{"error": str(e)}]

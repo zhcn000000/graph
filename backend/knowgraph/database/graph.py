@@ -421,7 +421,8 @@ class AgeGraphManager:
 
         try:
             results = await self._execute_cypher(
-                cypher, {"start_uri": start_uri, "end_uri": end_uri, "max_hops": max_hops},
+                cypher,
+                {"start_uri": start_uri, "end_uri": end_uri, "max_hops": max_hops},
             )
             paths = []
             for row in results:

@@ -225,9 +225,7 @@ async def api_get_vertex(uri: str, label: str | None = None) -> GraphOperationRe
 
 
 @router.put("/graph/vertex/{uri}", response_model=GraphOperationResponse)
-async def api_update_vertex(
-    uri: str, request: GraphEntityRequest, label: str | None = None
-) -> GraphOperationResponse:
+async def api_update_vertex(uri: str, request: GraphEntityRequest, label: str | None = None) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
         vertex = await rag_mode.aupdate_vertex(uri, request.properties, label)
@@ -293,9 +291,7 @@ async def api_traverse(start_uri: str, max_hops: int = 3, direction: str = "both
     try:
         rag_mode = RAGMode()
         path = await rag_mode.atraverse(start_uri, max_hops, direction)
-        return GraphOperationResponse(
-            success=True, status="遍历成功", data={"nodes": path.nodes, "edges": path.edges}
-        )
+        return GraphOperationResponse(success=True, status="遍历成功", data={"nodes": path.nodes, "edges": path.edges})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"遍历失败: {e!s}")
 
