@@ -1,10 +1,11 @@
 from typing import NotRequired, TypedDict
 from uuid import UUID
 
-from knowgraph.utils.file import FileStream
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
+
+from knowgraph.utils.file import FileStream
 
 from .database import DatabaseManager
 from .tables import RAGRelation, Source

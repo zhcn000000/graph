@@ -2,6 +2,8 @@ from urllib.parse import quote_plus
 
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
 from pydantic import SecretStr
+from sqlalchemy import URL
+
 from knowgraph.utils.environments import (
     POSTGRES_DB,
     POSTGRES_HOST,
@@ -9,7 +11,6 @@ from knowgraph.utils.environments import (
     POSTGRES_PORT,
     POSTGRES_USER,
 )
-from sqlalchemy import URL
 
 
 class ConnectionPoolManager:

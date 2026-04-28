@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Annotated, Any, Self
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
-from knowgraph.utils.file import FileStream
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -22,6 +21,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import declared_attr
 from sqlmodel import Field, SQLModel, col
+
+from knowgraph.utils.file import FileStream
 
 from .types import BM25Vector
 

@@ -33,6 +33,9 @@ dependencies = [
   "stanza>=1.11.0",
   "pydantic-monty>=0.0.4",
   "psutil>=7.2.2",
+  "apache-age-python",
+  "fastmcp>=3.2.4",
+  "shapely>=2.1.2",
 ]
 
 [project.scripts]
@@ -62,6 +65,9 @@ module-root = ""
 name = "pypi"
 url = "https://mirrors.ustc.edu.cn/pypi/simple"
 default = true
+
+[tool.uv.sources]
+apache-age-python = { path = "wheel/apache_age_python-0.0.8-py3-none-any.whl" }
 
 [tool.ruff]
 line-length = 120

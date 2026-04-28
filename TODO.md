@@ -10,7 +10,7 @@
 
 ### 1.1 Apache AGE 图数据库集成
 - [ ] 安装 apache-age-python 依赖
-- [ ] 实现在knowgraph/database/graph.py 实现三元组存储接口（增删改查）
+- [ ] 实现在knowgraph/database/graph.py 利用apache-age-python实现三元组存储接口（增删改查）
 - [ ] 实现 SPARQL/Cypher 查询接口
 
 ### 1.2 CIDOC-CRM 本体建模

@@ -4,10 +4,11 @@ from collections.abc import AsyncIterator
 import httpx
 import orjson
 from asyncer import asyncify
-from knowgraph.documents.models import Document
-from knowgraph.utils.environments import DATA_ROOT, find_project_directory
 from stanza import Document as StanzaDocument
 from stanza import Pipeline
+
+from knowgraph.documents.models import Document
+from knowgraph.utils.environments import DATA_ROOT, find_project_directory
 
 from .tokenizer import get_tokenizer
 
