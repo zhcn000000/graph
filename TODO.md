@@ -10,27 +10,28 @@
 
 ### 1.1 Apache AGE 图数据库集成
 - [ ] 安装 apache-age-python 依赖
-- [ ] 创建 knowgraph/knowledge_graph/age.py - AGE 连接管理
-- [ ] 实现三元组存储接口（增删改查）
+- [ ] 实现在knowgraph/database/graph.py 实现三元组存储接口（增删改查）
 - [ ] 实现 SPARQL/Cypher 查询接口
 
 ### 1.2 CIDOC-CRM 本体建模
-- [ ] 创建 knowgraph/knowledge_graph/schema.py
+- [ ] 创建 knowgraph/graph/schema.py
 - [ ] 定义实体类型：Artifact、Museum、Dynasty、Artist、Location
 - [ ] 定义关系类型：收藏于、创作于、属于朝代、材质为、类型为
 - [ ] 实现实体 URI 生成策略
 
 ### 1.3 三元组管理
-- [ ] 创建 knowgraph/knowledge_graph/triples.py
+- [ ] 创建 knowgraph/graph/triples.py
 - [ ] 实现三元组数据模型
 - [ ] 实现与清洗后数据的映射逻辑
 - [ ] 实现增量更新机制
-- [ ] 实现使用llm结构化输出提取三元组和描述
+- [ ] 实现使用llm结构化输出从爬虫爬取的页面内容提取三元组和描述（暂时假定为csv按行输入作为不同博物馆，通过llm提取三元组）
+
 ---
 
 ## 二、RAG 升级为 GraphRAG
 
 ### 2.1 图增强索引
+- [ ] 添加图apacheage数据库管理类，其内有关图插入，删除，检索等
 - [ ] 修改 knowgraph/database/ragmode.py
 - [ ] 新增实体节点索引通道
 - [ ] 新增关系边索引通道
@@ -52,9 +53,8 @@
 ## 三、MCP 服务
 
 ### 3.1 MCP Server 基础设施
-- [ ] 安装 mcp 依赖 (mcp>=0.1.0 或 python-mcp)
-- [ ] 创建 knowgraph/mcp/__init__.py
-- [ ] 创建 knowgraph/mcp/server.py - MCP Server 主入口,借助pydantic-ai实现mcp功能
+- [ ] 安装 fastmcp 依赖 
+- [ ] 创建 knowgraph/api/mcp-server.py - MCP Server 主入口，挂载在fastapi主程序中
 - [ ] 实现工具注册与路由机制
 
 ### 3.2 MCP 工具定义
@@ -63,12 +63,6 @@
 - [ ] 实现知识图谱查询工具 (query_graph)
 - [ ] 实现三元组检索工具 (get_triples)
 - [ ] 实现实体信息查询工具 (get_entity)
-
-### 3.3 MCP 协议处理
-- [ ] 创建 knowgraph/mcp/protocol.py
-- [ ] 实现 MCP 协议编解码
-- [ ] 实现工具调用流程
-- [ ] 实现结果返回格式化
 
 ---
 
@@ -81,7 +75,7 @@
 - [ ] 添加关系推理 prompt
 
 ### 4.2 配置管理
-- [ ] 更新 pyproject.toml 添加依赖（apache-age, mcp）
+- [ ] 更新 pyproject.toml 添加依赖（apache-age, fastmcp）
 - [ ] 更新 .gitignore
 - [ ] 添加环境变量配置示例
 
@@ -99,23 +93,10 @@
 - [ ] 更新 README.md - 添加 GraphRAG 说明
 - [ ] 添加 API 文档
 
----
-
-## 六、技术栈依赖
-
-```toml
-# pyproject.toml 需添加
-dependencies = [
-    # 图数据库
-    "apache-age",
-    # MCP 协议
-    "mcp>=0.1.0",
-    "python-mcp>=0.1.0",
-    # 已有依赖...
-]
-```
+## 六，清理无用代码
 
 ---
+
 
 ## 备注
 
