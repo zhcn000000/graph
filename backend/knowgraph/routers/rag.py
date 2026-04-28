@@ -4,8 +4,8 @@ from uuid import UUID
 from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
 
+from knowgraph.database import GraphRAGConfig, RAGMode
 from knowgraph.database.rag import RAGConfig
-from knowgraph.database.ragmode import RAGMode
 from knowgraph.utils.file import FileStream
 
 router = APIRouter()
@@ -145,11 +145,226 @@ async def api_search_rag(rag_id: UUID, request: RAGSearchRequest) -> RAGSearchRe
         return RAGSearchResponse(success=False, status=f"搜索失败: {e!s}", results=[])
 
 
-@router.post("/reindex")
-async def api_reindex() -> dict[str, Any]:
+class GraphEntityRequest(BaseModel):
+    label: str
+    properties: dict[str, Any]
+
+
+class GraphEdgeRequest(BaseModel):
+    start_uri: str
+    end_uri: str
+    relationship_type: str
+    properties: dict[str, Any] | None = None
+
+
+class GraphSearchRequest(BaseModel):
+    queries: list[str]
+    k: int = 4
+    use_graph: bool = False
+    max_hops: int = 3
+
+
+class GraphContextRequest(BaseModel):
+    entity_uri: str
+    max_hops: int = 2
+    direction: str = "both"
+
+
+class PathQueryRequest(BaseModel):
+    start_uri: str
+    end_uri: str
+    max_hops: int = 5
+
+
+class GraphOperationResponse(BaseModel):
+    success: bool
+    status: str
+    data: dict[str, Any] | None = None
+
+
+@router.post("/graph/create")
+async def api_create_graph() -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        await rag_mode.areindex()
-        return {"success": True, "status": "重建索引成功"}
+        result = await rag_mode.acreate_graph()
+        status = "图创建成功" if result else "图已存在"
+        return GraphOperationResponse(success=True, status=status, data={"created": result})
     except Exception as e:
-        return {"success": False, "status": f"重建索引失败: {e!s}"}
+        return GraphOperationResponse(success=False, status=f"创建图失败: {e!s}")
+
+
+@router.post("/graph/drop")
+async def api_drop_graph() -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        result = await rag_mode.adrop_graph()
+        status = "图删除成功" if result else "图不存在"
+        return GraphOperationResponse(success=True, status=status, data={"dropped": result})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"删除图失败: {e!s}")
+
+
+@router.post("/graph/vertex", response_model=GraphOperationResponse)
+async def api_create_vertex(request: GraphEntityRequest) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        vertex = await rag_mode.acreate_vertex(request.label, request.properties)
+        return GraphOperationResponse(success=True, status="节点创建成功", data={"vertex": vertex})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"创建节点失败: {e!s}")
+
+
+@router.get("/graph/vertex/{uri}", response_model=GraphOperationResponse)
+async def api_get_vertex(uri: str, label: str | None = None) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        vertex = await rag_mode.aget_vertex(uri, label)
+        return GraphOperationResponse(success=True, status="获取节点成功", data={"vertex": vertex})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"获取节点失败: {e!s}")
+
+
+@router.put("/graph/vertex/{uri}", response_model=GraphOperationResponse)
+async def api_update_vertex(
+    uri: str, request: GraphEntityRequest, label: str | None = None
+) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        vertex = await rag_mode.aupdate_vertex(uri, request.properties, label)
+        return GraphOperationResponse(success=True, status="节点更新成功", data={"vertex": vertex})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"更新节点失败: {e!s}")
+
+
+@router.delete("/graph/vertex/{uri}", response_model=GraphOperationResponse)
+async def api_delete_vertex(uri: str, label: str | None = None) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        result = await rag_mode.adelete_vertex(uri, label)
+        return GraphOperationResponse(success=True, status="节点删除成功", data={"deleted": result})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"删除节点失败: {e!s}")
+
+
+@router.post("/graph/edge", response_model=GraphOperationResponse)
+async def api_create_edge(request: GraphEdgeRequest) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        edge = await rag_mode.acreate_edge(
+            request.start_uri, request.end_uri, request.relationship_type, request.properties
+        )
+        return GraphOperationResponse(success=True, status="边创建成功", data={"edge": edge})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"创建边失败: {e!s}")
+
+
+@router.get("/graph/edge/{start_uri}/{end_uri}", response_model=GraphOperationResponse)
+async def api_get_edge(start_uri: str, end_uri: str, relationship_type: str | None = None) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        edge = await rag_mode.aget_edge(start_uri, end_uri, relationship_type)
+        return GraphOperationResponse(success=True, status="获取边成功", data={"edge": edge})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"获取边失败: {e!s}")
+
+
+@router.delete("/graph/edge/{start_uri}/{end_uri}/{relationship_type}", response_model=GraphOperationResponse)
+async def api_delete_edge(start_uri: str, end_uri: str, relationship_type: str) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        result = await rag_mode.adelete_edge(start_uri, end_uri, relationship_type)
+        return GraphOperationResponse(success=True, status="边删除成功", data={"deleted": result})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"删除边失败: {e!s}")
+
+
+@router.get("/graph/neighbors/{uri}", response_model=GraphOperationResponse)
+async def api_get_neighbors(uri: str, direction: str = "both", max_hops: int = 1) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        neighbors = await rag_mode.aget_neighbors(uri, direction, max_hops)
+        return GraphOperationResponse(success=True, status="获取邻居成功", data={"neighbors": neighbors})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"获取邻居失败: {e!s}")
+
+
+@router.get("/graph/traverse/{start_uri}", response_model=GraphOperationResponse)
+async def api_traverse(start_uri: str, max_hops: int = 3, direction: str = "both") -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        path = await rag_mode.atraverse(start_uri, max_hops, direction)
+        return GraphOperationResponse(
+            success=True, status="遍历成功", data={"nodes": path.nodes, "edges": path.edges}
+        )
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"遍历失败: {e!s}")
+
+
+@router.get("/graph/paths/{start_uri}/{end_uri}", response_model=GraphOperationResponse)
+async def api_find_paths(start_uri: str, end_uri: str, max_hops: int = 5) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        paths = await rag_mode.afind_paths(start_uri, end_uri, max_hops)
+        paths_data = [{"nodes": p.nodes, "edges": p.edges} for p in paths]
+        return GraphOperationResponse(success=True, status="路径查询成功", data={"paths": paths_data})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"查询路径失败: {e!s}")
+
+
+@router.post("/graph/search", response_model=GraphOperationResponse)
+async def api_graph_search(request: GraphSearchRequest) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        config = GraphRAGConfig()
+        config.MAX_HOPS = request.max_hops
+        docs, graph_entities = await rag_mode.ahyprid_search_with_graph(
+            queries=request.queries,
+            k=request.k,
+            graph_config=config,
+        )
+        result_dicts = [
+            {
+                "content": d.content,
+                "source_name": d.source_name,
+                "score": d.query_score if d.query_score is not None else float("nan"),
+            }
+            for d in docs
+        ]
+        graph_data = [
+            {
+                "uri": g.entity_uri,
+                "name": g.entity_name,
+                "type": g.entity_type,
+                "score": g.score,
+            }
+            for g in graph_entities
+        ]
+        return GraphOperationResponse(
+            success=True,
+            status="图搜索成功",
+            data={"results": result_dicts, "graph_entities": graph_data},
+        )
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"图搜索失败: {e!s}")
+
+
+@router.post("/graph/context", response_model=GraphOperationResponse)
+async def api_graph_context(request: GraphContextRequest) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        context = await rag_mode.aexpand_context_by_graph(
+            entity_uri=request.entity_uri, max_hops=request.max_hops, direction=request.direction
+        )
+        return GraphOperationResponse(success=True, status="图上下文扩展成功", data=context)
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"图上下文扩展失败: {e!s}")
+
+
+@router.post("/graph/entity-paths", response_model=GraphOperationResponse)
+async def api_entity_paths(request: PathQueryRequest) -> GraphOperationResponse:
+    try:
+        rag_mode = RAGMode()
+        paths = await rag_mode.aget_entity_paths(request.start_uri, request.end_uri, request.max_hops)
+        return GraphOperationResponse(success=True, status="实体路径查询成功", data={"paths": paths})
+    except Exception as e:
+        return GraphOperationResponse(success=False, status=f"查询实体路径失败: {e!s}")
