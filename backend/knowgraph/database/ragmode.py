@@ -13,6 +13,7 @@ from knowgraph.documents.splitter import asplit_content, asplit_documents
 from knowgraph.documents.tokenizer import atokenize_content
 from knowgraph.embeddings.embedder import aembed_documents, arerank_documents
 from knowgraph.graph import EntityType
+from knowgraph.graph.triples import LLMExtractor
 from knowgraph.utils.file import FileStream
 
 from .database import DatabaseManager
@@ -168,11 +169,13 @@ class RAGMode:  # noqa: PLR0904
         if not documents:
             return []
 
+        extractor = LLMExtractor()
+        all_doc_ids = []
+
         async with self.__db.asession() as session:
-            insert_values = []
             for doc in documents:
-                docs = [doc]
-                docs.extend([
+                chunks = [doc]
+                chunks.extend([
                     Document(
                         content=chunk,
                         metadata=doc.metadata,
@@ -181,25 +184,49 @@ class RAGMode:  # noqa: PLR0904
                     )
                     async for chunk in asplit_content(doc.content, chunk_size=512, chunk_overlap=64)
                 ])
-                filter_docs = []
                 seen_contents = set()
-                for doc in docs:
-                    if doc.content not in seen_contents:
-                        filter_docs.append(doc)
-                        seen_contents.add(doc.content)
-                docs = filter_docs
-                vectors = await aembed_documents(docs)
+                unique_chunks = [c for c in chunks if c.content not in seen_contents and not seen_contents.add(c.content)]
+
+                vectors = await aembed_documents(unique_chunks)
                 token_counts = await atokenize_content(doc.content)
-                insert_values.append({
-                    "file_id": select(col(Source.id)).where(col(Source.hash) == doc.source_hash).scalar_subquery(),
-                    "content": doc.content,
-                    "vector": vectors,
-                    "bmvector": token_counts,
-                })
-            stmt = insert(DocumentTable).values(insert_values).returning(col(DocumentTable.id))
-            result = await session.execute(stmt)
+
+                triples = await extractor.aextract_from_document(doc)
+                entity_uris: set[str] = set()
+                for triple in triples:
+                    await self.acreate_vertex(
+                        triple.subject.entity_type.value,
+                        {"uri": triple.subject.uri, "name": triple.subject.name},
+                    )
+                    await self.acreate_vertex(
+                        triple.object.entity_type.value,
+                        {"uri": triple.object.uri, "name": triple.object.name},
+                    )
+                    await self.acreate_edge(
+                        triple.subject.uri,
+                        triple.object.uri,
+                        triple.predicate.value,
+                    )
+                    entity_uris.add(triple.subject.uri)
+                    entity_uris.add(triple.object.uri)
+
+                insert_values = []
+                for chunk, vector in zip(unique_chunks, vectors, strict=False):
+                    chunk.entities = list(entity_uris)
+                    insert_values.append({
+                        "file_id": select(col(Source.id)).where(col(Source.hash) == doc.source_hash).scalar_subquery(),
+                        "content": chunk.content,
+                        "vector": vector,
+                        "bmvector": token_counts,
+                        "entities": chunk.entities,
+                    })
+
+                stmt = insert(DocumentTable).values(insert_values).returning(col(DocumentTable.id))
+                result = await session.execute(stmt)
+                all_doc_ids.extend([row[0] for row in result.fetchall()])
+
             await session.commit()
-            return [row[0] for row in result.fetchall()]
+
+        return all_doc_ids
 
     async def adelete_documents(self, ids: list[UUID] | None = None) -> bool | None:
         if not ids:
@@ -310,20 +337,11 @@ class RAGMode:  # noqa: PLR0904
         entity_uri: str,
         session,
     ) -> list[UUID]:
-
-        cypher = """
-        MATCH (e {uri: $uri})<-[:COLLECTED_BY]-(a)
-        MATCH (a)-[:COLLECTED_BY]->(s:Artifact)
-        WHERE s.uri IS NOT NULL
-        RETURN DISTINCT s.uri as artifact_uri
-        """
-        try:
-            async with self.__db.aconnection() as conn:
-                result = await conn.execute(cypher, {"uri": entity_uri})
-                rows = await result.fetchall()
-                return [row[0] for row in rows if row[0]]
-        except Exception:
-            return []
+        stmt = select(col(DocumentTable.id)).where(
+            col(DocumentTable.entities).contains(entity_uri)
+        )
+        result = await session.execute(stmt)
+        return [row[0] for row in result.fetchall()]
 
     @staticmethod
     def _rrf_fusion(

@@ -7,3 +7,4 @@ class Document(BaseModel):
     source_hash: str | None = None
     query_score: float | None = None
     metadata: dict = Field(default_factory=dict)
+    entities: list[str] = Field(default_factory=list)

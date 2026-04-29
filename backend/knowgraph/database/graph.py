@@ -97,7 +97,7 @@ class AgeGraphManager:
         props_map = ", ".join([f"{k} = ${k}" for k in properties])
 
         cypher = f"""
-        CREATE (v:{label} {{{props_map}}})
+        MERGE (v:{label} {{{props_map}}})
         RETURN id(v) as id, v.uri as uri, v.name as name, v.entity_type as entity_type
         """
 
@@ -209,11 +209,12 @@ class AgeGraphManager:
         cypher = f"""
         MATCH (s {{uri: $start_uri}})
         MATCH (e {{uri: $end_uri}})
-        CREATE (s)-[r:{relationship_type} {{{props_map}}}]->(e)
+        MERGE (s)-[r:{relationship_type} {{uri: $predicate_uri}}]->(e)
+        SET r += ${{props_map}}
         RETURN id(r) as id, r.uri as uri, type(r) as relationship_type
         """
 
-        params = {"start_uri": start_uri, "end_uri": end_uri}
+        params = {"start_uri": start_uri, "end_uri": end_uri, "predicate_uri": props["predicate_uri"]}
         params.update(props)
 
         try:
