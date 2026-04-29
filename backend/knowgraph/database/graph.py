@@ -290,6 +290,46 @@ class AgeGraphManager:
             pass
         return False
 
+    async def aupdate_edge(
+        self,
+        start_uri: str,
+        end_uri: str,
+        relationship_type: str,
+        properties: dict[str, Any],
+    ) -> Edge | None:
+        props_set = ", ".join([f"r.{k} = ${k}" for k in properties])
+        cypher = f"""
+        MATCH (s {{uri: $start_uri}})-[r:{relationship_type}]->(e {{uri: $end_uri}})
+        SET {props_set}
+        RETURN id(r) as id, r.uri as uri, type(r) as relationship_type,
+               startNode(r).uri as start_node_uri, endNode(r).uri as end_node_uri
+        """
+
+        params = {"start_uri": start_uri, "end_uri": end_uri}
+        params.update(properties)
+
+        try:
+            results = await self._execute_cypher(cypher, params, read_only=False)
+            if results:
+                row = results[0]
+                props = {
+                    k: v
+                    for k, v in row.items()
+                    if k not in {"id", "uri", "relationship_type", "start_node_uri", "end_node_uri"}
+                }
+                return Edge(
+                    id=row.get("id"),
+                    uri=row.get("uri"),
+                    start_node_uri=row.get("start_node_uri"),
+                    end_node_uri=row.get("end_node_uri"),
+                    predicate_uri=row.get("uri"),
+                    relationship_type=row.get("relationship_type"),
+                    properties=props,
+                )
+        except Exception:
+            pass
+        return None
+
     async def aget_neighbors(
         self,
         uri: str,

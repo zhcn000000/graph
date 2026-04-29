@@ -249,7 +249,10 @@ async def api_create_edge(request: GraphEdgeRequest) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
         edge = await rag_mode.acreate_edge(
-            request.start_uri, request.end_uri, request.relationship_type, request.properties,
+            request.start_uri,
+            request.end_uri,
+            request.relationship_type,
+            request.properties,
         )
         return GraphOperationResponse(success=True, status="边创建成功", data={"edge": edge})
     except Exception as e:
@@ -349,7 +352,9 @@ async def api_graph_context(request: GraphContextRequest) -> GraphOperationRespo
     try:
         rag_mode = RAGMode()
         context = await rag_mode.aexpand_context_by_graph(
-            entity_uri=request.entity_uri, max_hops=request.max_hops, direction=request.direction,
+            entity_uri=request.entity_uri,
+            max_hops=request.max_hops,
+            direction=request.direction,
         )
         return GraphOperationResponse(success=True, status="图上下文扩展成功", data=context)
     except Exception as e:

@@ -1,3 +1,8 @@
+from .edge_strength import (
+    EdgeConnectionInfo,
+    EdgeStrengthCalculator,
+    TripleBasedEdgeQuerier,
+)
 from .schema import (
     CIDOC_GRAPH,
     Artifact,
@@ -27,6 +32,8 @@ __all__ = [
     "Artist",
     "CSVRowInput",
     "Dynasty",
+    "EdgeConnectionInfo",
+    "EdgeStrengthCalculator",
     "Entity",
     "EntityType",
     "LLMExtractor",
@@ -35,6 +42,7 @@ __all__ = [
     "RelationshipType",
     "Schema",
     "Triple",
+    "TripleBasedEdgeQuerier",
     "TripleStore",
     "get_entity_uri",
     "get_relationship_uri",

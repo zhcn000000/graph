@@ -13,12 +13,13 @@ from knowgraph.documents.models import Document
 from knowgraph.documents.splitter import asplit_content, asplit_documents
 from knowgraph.documents.tokenizer import atokenize_content
 from knowgraph.graph import EntityType
+from knowgraph.graph.edge_strength import EdgeStrengthCalculator, TripleBasedEdgeQuerier
 from knowgraph.graph.triples import LLMExtractor
 from knowgraph.utils.file import FileStream
 
 from .database import DatabaseManager
 from .document import DocumentStore
-from .graph import AgeGraphManager, GraphPath
+from .graph import AgeGraphManager, GraphPath, Vertex
 from .rag import RAGConfig
 from .source import SourceStore
 from .tables import DocumentTable, RAGRelation, Source
@@ -45,6 +46,8 @@ class GraphRAGConfig:
     BM25_WEIGHT: float = 0.3
     MAX_HOPS: int = 3
     GRAPH_TOP_K: int = 50
+    EDGE_STRENGTH_BOOST: float = 0.2
+    EDGE_STRENGTH_WEIGHT: float = 0.15
 
 
 class RAGMode:  # noqa: PLR0904
@@ -52,12 +55,26 @@ class RAGMode:  # noqa: PLR0904
         self.__source = SourceStore(dbname)
         self.__db = DatabaseManager(dbname)
         self._graph_manager: AgeGraphManager | None = None
+        self._edge_querier: TripleBasedEdgeQuerier | None = None
+        self._edge_calculator: EdgeStrengthCalculator | None = None
 
     @property
     def graph_manager(self) -> AgeGraphManager:
         if self._graph_manager is None:
             self._graph_manager = AgeGraphManager(dbname=self.__db.dbname)
         return self._graph_manager
+
+    @property
+    def edge_querier(self) -> TripleBasedEdgeQuerier:
+        if self._edge_querier is None:
+            self._edge_querier = TripleBasedEdgeQuerier(graph_manager=self.graph_manager)
+        return self._edge_querier
+
+    @property
+    def edge_calculator(self) -> EdgeStrengthCalculator:
+        if self._edge_calculator is None:
+            self._edge_calculator = EdgeStrengthCalculator(graph_manager=self.graph_manager)
+        return self._edge_calculator
 
     async def acreate_graph(self) -> bool:
         return await self.graph_manager.acreate_graph()
@@ -307,29 +324,63 @@ class RAGMode:  # noqa: PLR0904
         queries: list[str],
         topn: int,
         max_hops: int = 2,
+        graph_config: GraphRAGConfig | None = None,
     ) -> list[GraphSearchResult]:
+        if graph_config is None:
+            graph_config = GraphRAGConfig()
+
         graph_results: list[GraphSearchResult] = []
         query_str = " ".join(queries).lower()
 
         entity_types = [et.value for et in EntityType]
+        candidate_entities: list[tuple[float, Vertex, str]] = []
+
         for entity_type in entity_types:
-            vertices = await self.aquery_by_type(entity_type, limit=topn)
+            vertices = await self.aquery_by_type(entity_type, limit=topn * 2)
             for vertex in vertices:
                 if not vertex.name:
                     continue
                 name_lower = vertex.name.lower()
                 if name_lower in query_str or query_str in name_lower:
-                    score = 1.0 / (1.0 + abs(len(query_str) - len(name_lower)))
-                    path = await self.atraverse(vertex.uri, max_hops=max_hops)
-                    graph_results.append(
-                        GraphSearchResult(
-                            entity_uri=vertex.uri,
-                            entity_name=vertex.name,
-                            entity_type=entity_type,
-                            score=score,
-                            path=path,
-                        ),
-                    )
+                    base_score = 1.0 / (1.0 + abs(len(query_str) - len(name_lower)))
+                    candidate_entities.append((base_score, vertex, entity_type))
+
+        candidate_entities.sort(key=operator.itemgetter(0), reverse=True)
+        top_candidates = candidate_entities[: topn * 3] if candidate_entities else []
+
+        seen_uris: set[str] = set()
+        for base_score, vertex, entity_type in top_candidates:
+            if not vertex.uri or vertex.uri in seen_uris:
+                continue
+            if not vertex.name:
+                continue
+            seen_uris.add(vertex.uri)
+
+            connected_strength = 0.0
+            connected_edges = await self.edge_querier.query_edges_by_triple(
+                subject_name=vertex.name,
+                limit=20,
+            )
+
+            for edge in connected_edges:
+                if edge.connection_strength is not None:
+                    connected_strength = max(connected_strength, edge.connection_strength)
+
+            if connected_strength > 0:
+                final_score = base_score * (1 + graph_config.EDGE_STRENGTH_BOOST * connected_strength)
+            else:
+                final_score = base_score
+
+            path = await self.atraverse(vertex.uri, max_hops=max_hops)
+            graph_results.append(
+                GraphSearchResult(
+                    entity_uri=vertex.uri,
+                    entity_name=vertex.name,
+                    entity_type=entity_type,
+                    score=final_score,
+                    path=path,
+                ),
+            )
 
         graph_results.sort(key=lambda x: x.score, reverse=True)
         return graph_results[:topn]
@@ -417,6 +468,7 @@ class RAGMode:  # noqa: PLR0904
                     queries=queries,
                     topn=graph_config.GRAPH_TOP_K,
                     max_hops=graph_config.MAX_HOPS,
+                    graph_config=graph_config,
                 )
                 if graph_entities:
                     graph_doc_ids: list[tuple[UUID, float]] = []
@@ -509,6 +561,7 @@ class RAGMode:  # noqa: PLR0904
                 queries=queries,
                 topn=graph_config.GRAPH_TOP_K,
                 max_hops=graph_config.MAX_HOPS,
+                graph_config=graph_config,
             )
 
             graph_search_results: list[tuple[UUID, float]] | None = None
@@ -606,7 +659,12 @@ class RAGMode:  # noqa: PLR0904
         assert conf is not None, "知识库不存在"
 
         results = await self.ahyprid_search(
-            queries, k=5, rag_id=rag_id, regex=regex, file_ids=file_ids, use_graph=use_graph,
+            queries,
+            k=5,
+            rag_id=rag_id,
+            regex=regex,
+            file_ids=file_ids,
+            use_graph=use_graph,
         )
 
         return [
@@ -627,6 +685,7 @@ class RAGMode:  # noqa: PLR0904
             queries=queries,
             topn=10,
             max_hops=max_hops,
+            graph_config=GraphRAGConfig(),
         )
 
         context = {
