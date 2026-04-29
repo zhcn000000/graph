@@ -7,8 +7,8 @@ from knowgraph.documents.tokenizer import atokenize_content
 __all__ = [
     "Document",
     "aconvert_file",
-    "aload_documents",
     "aembed_documents",
+    "aload_documents",
     "arerank_documents",
     "asplit_content",
     "asplit_documents",

@@ -28,7 +28,7 @@ class DatabaseManager:
                     session.execute(text("SET search_path TO public,bm25_catalog,tokenizer_catalog,ag_catalog;"))
                 else:
                     session.execute(
-                        text(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;")
+                        text(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;"),
                     )
                 yield session
                 session.commit()
@@ -42,7 +42,7 @@ class DatabaseManager:
         async with AsyncSession(engine) as session:
             try:
                 await session.execute(
-                    text(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;")
+                    text(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;"),
                 )
                 yield session
                 await session.commit()
@@ -70,7 +70,7 @@ class DatabaseManager:
             try:
                 async with conn.cursor() as cursor:
                     await cursor.execute(
-                        f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;"
+                        f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
                     )  # type: ignore
                 yield conn
                 await conn.commit()

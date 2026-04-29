@@ -4,12 +4,13 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import pandas as pd
 from pydantic import BaseModel
 
 from ..chat.chat_model import get_model
+from ..documents.models import Document
 from .schema import (
     Entity,
     EntityType,
@@ -18,8 +19,6 @@ from .schema import (
     get_entity_uri,
     get_relationship_uri,
 )
-
-from ..documents.models import Document
 
 
 class TripleStoreOperation(StrEnum):
@@ -236,30 +235,36 @@ class LLMExtractor:
 
         from ..chat.struct import ModelDeps
 
-        agent: Agent[ModelDeps, list[ExtractedTriple]] = Agent(
-            model=self.model,
-            deps_type=ModelDeps,
-            output_type=list[ExtractedTriple],
-            instructions=self.SYSTEM_PROMPT,
-            output_retries=3,
-        )  # type: ignore
-
+        agent = cast(
+            "Agent[ModelDeps, list[ExtractedTriple]]",
+            Agent(
+                model=self.model,
+                deps_type=ModelDeps,
+                output_type=list[ExtractedTriple],
+                instructions=self.SYSTEM_PROMPT,
+                output_retries=3,
+            ),
+        )
         result = await agent.run(user_prompt)
         return result.output
 
-    async def aextract_from_document(self, doc: "Document") -> list[ExtractedTriple]:
+    async def aextract_from_document(self, doc: Document) -> list[ExtractedTriple]:
+        user_prompt = self.USER_PROMPT_TEMPLATE.format(record=doc.content)
+
         from pydantic_ai import Agent
 
         from ..chat.struct import ModelDeps
 
-        agent: Agent[ModelDeps, list[ExtractedTriple]] = Agent(
-            model=self.model,
-            deps_type=ModelDeps,
-            output_type=list[ExtractedTriple],
-            instructions=self.SYSTEM_PROMPT,
-            output_retries=3,
+        agent = cast(
+            "Agent[ModelDeps, list[ExtractedTriple]]",
+            Agent(
+                model=self.model,
+                deps_type=ModelDeps,
+                output_type=list[ExtractedTriple],
+                instructions=self.SYSTEM_PROMPT,
+                output_retries=3,
+            ),
         )
-        user_prompt = self.USER_PROMPT_TEMPLATE.format(record=doc.content)
         result = await agent.run(user_prompt)
         return result.output
 

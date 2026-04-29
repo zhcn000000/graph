@@ -204,7 +204,7 @@ class AgeGraphManager:
         props["end_uri"] = end_uri
         props["predicate_uri"] = f"cidoc:relationship/{relationship_type}"
 
-        props_map = ", ".join([f"r.{k} = ${k}" for k in props.keys()])
+        ", ".join([f"r.{k} = ${k}" for k in props.keys()])
 
         cypher = f"""
         MATCH (s {{uri: $start_uri}})

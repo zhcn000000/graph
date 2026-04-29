@@ -8,10 +8,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
 
 from knowgraph.documents.converter import aload_documents
+from knowgraph.documents.embedder import aembed_documents, arerank_documents
 from knowgraph.documents.models import Document
 from knowgraph.documents.splitter import asplit_content, asplit_documents
 from knowgraph.documents.tokenizer import atokenize_content
-from knowgraph.documents.embedder import aembed_documents, arerank_documents
 from knowgraph.graph import EntityType
 from knowgraph.graph.triples import LLMExtractor
 from knowgraph.utils.file import FileStream
@@ -185,7 +185,9 @@ class RAGMode:  # noqa: PLR0904
                     async for chunk in asplit_content(doc.content, chunk_size=512, chunk_overlap=64)
                 ])
                 seen_contents = set()
-                unique_chunks = [c for c in chunks if c.content not in seen_contents and not seen_contents.add(c.content)]
+                unique_chunks = [
+                    c for c in chunks if c.content not in seen_contents and not seen_contents.add(c.content)
+                ]
 
                 vectors = await aembed_documents(unique_chunks)
                 token_counts = await atokenize_content(doc.content)
@@ -337,9 +339,7 @@ class RAGMode:  # noqa: PLR0904
         entity_uri: str,
         session,
     ) -> list[UUID]:
-        stmt = select(col(DocumentTable.id)).where(
-            col(DocumentTable.entities).contains(entity_uri)
-        )
+        stmt = select(col(DocumentTable.id)).where(col(DocumentTable.entities).contains(entity_uri))
         result = await session.execute(stmt)
         return [row[0] for row in result.fetchall()]
 
@@ -606,7 +606,7 @@ class RAGMode:  # noqa: PLR0904
         assert conf is not None, "知识库不存在"
 
         results = await self.ahyprid_search(
-            queries, k=5, rag_id=rag_id, regex=regex, file_ids=file_ids, use_graph=use_graph
+            queries, k=5, rag_id=rag_id, regex=regex, file_ids=file_ids, use_graph=use_graph,
         )
 
         return [

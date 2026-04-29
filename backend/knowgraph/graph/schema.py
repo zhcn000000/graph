@@ -214,6 +214,10 @@ class ExtractedEntity(BaseModel):
     properties: dict[str, str] = Field(default_factory=dict)
     description: str | None = None
 
+    @property
+    def uri(self) -> str:
+        return get_entity_uri(self.entity_type, self.name)
+
 
 class ExtractedTriple(BaseModel):
     subject: ExtractedEntity
