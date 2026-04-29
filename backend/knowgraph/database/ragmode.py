@@ -11,7 +11,7 @@ from knowgraph.documents.converter import aload_documents
 from knowgraph.documents.models import Document
 from knowgraph.documents.splitter import asplit_content, asplit_documents
 from knowgraph.documents.tokenizer import atokenize_content
-from knowgraph.embeddings.embedder import aembed_documents, arerank_documents
+from knowgraph.documents.embedder import aembed_documents, arerank_documents
 from knowgraph.graph import EntityType
 from knowgraph.graph.triples import LLMExtractor
 from knowgraph.utils.file import FileStream

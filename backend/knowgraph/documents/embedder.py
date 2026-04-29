@@ -4,7 +4,7 @@ import httpx
 
 from knowgraph.utils.environments import VLLM_HOST, VLLM_PORT, VLLM_PROTOCOL
 
-from ..documents.models import Document
+from .models import Document
 
 MODEL_URL = f"{VLLM_PROTOCOL}://{VLLM_HOST}:{VLLM_PORT}"
 EMBEDDING_UID = "qwen3-embedding"
