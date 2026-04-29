@@ -94,15 +94,26 @@ class AgeGraphManager:
         label: str,
         properties: dict[str, Any],
     ) -> Vertex | None:
-        props_map = ", ".join([f"{k} = ${k}" for k in properties])
+        if "uri" not in properties:
+            return None
+
+        set_parts = []
+        params: dict[str, Any] = {"uri": properties["uri"]}
+        for k, v in properties.items():
+            if k != "uri":
+                set_parts.append(f"v.{k} = ${k}")
+                params[k] = v
+
+        set_clause = ", ".join(set_parts) if set_parts else "v.uri = $uri"
 
         cypher = f"""
-        MERGE (v:{label} {{{props_map}}})
+        MERGE (v:{label} {{uri: $uri}})
+        SET {set_clause}
         RETURN id(v) as id, v.uri as uri, v.name as name, v.entity_type as entity_type
         """
 
         try:
-            results = await self._execute_cypher(cypher, properties, read_only=False)
+            results = await self._execute_cypher(cypher, params, read_only=False)
             if results:
                 row = results[0]
                 return Vertex(
@@ -124,7 +135,7 @@ class AgeGraphManager:
         label_clause = f":{label}" if label else ""
         cypher = f"""
         MATCH (v{label_clause} {{uri: $uri}})
-        RETURN id(v) as id, v.uri as uri, v.name as name, v.entity_type as entity_type
+        RETURN id(v) as id, v.uri as uri, v.name as name, v.entity_type as entity_type, v.description as description
         """
 
         try:
@@ -204,13 +215,13 @@ class AgeGraphManager:
         props["end_uri"] = end_uri
         props["predicate_uri"] = f"cidoc:relationship/{relationship_type}"
 
-        ", ".join([f"r.{k} = ${k}" for k in props.keys()])
+        props_set = ", ".join([f"r.{k} = ${k}" for k in props])
 
         cypher = f"""
         MATCH (s {{uri: $start_uri}})
         MATCH (e {{uri: $end_uri}})
         MERGE (s)-[r:{relationship_type} {{uri: $predicate_uri}}]->(e)
-        SET r += ${{props_map}}
+        SET {props_set}
         RETURN id(r) as id, r.uri as uri, type(r) as relationship_type
         """
 
@@ -337,21 +348,23 @@ class AgeGraphManager:
         max_hops: int = 1,
     ) -> list[Vertex]:
         if direction == "outbound":
-            rel_pattern = "-[r]->"
+            rel_pattern = f"-[*1..{max_hops}]->"
         elif direction == "inbound":
-            rel_pattern = "<-[r]-"
+            rel_pattern = f"<-[*1..{max_hops}]-"
         else:
-            rel_pattern = "-[r]-"
+            rel_pattern = f"-[*1..{max_hops}]-"
 
         cypher = f"""
-        MATCH (v {{uri: $uri}}){rel_pattern}*(1..{max_hops})(neighbor)
-        WHERE v.uri = $uri
-        WITH DISTINCT neighbor as n
-        RETURN id(n) as id, n.uri as uri, n.name as name, n.entity_type as entity_type
+        MATCH (v {{uri: $uri}}){rel_pattern}(neighbor)
+        RETURN DISTINCT
+            id(neighbor) as id,
+            neighbor.uri as uri,
+            neighbor.name as name,
+            neighbor.entity_type as entity_type
         """
 
         try:
-            results = await self._execute_cypher(cypher, {"uri": uri, "max_hops": max_hops})
+            results = await self._execute_cypher(cypher, {"uri": uri})
             vertices = []
             for row in results:
                 props = {k: v for k, v in row.items() if k not in {"id", "uri", "name", "entity_type"}}
@@ -411,37 +424,50 @@ class AgeGraphManager:
         direction: str = "both",
     ) -> GraphPath:
         if direction == "outbound":
-            rel_pattern = "-[r]->"
+            rel_pattern = f"-[*1..{max_hops}]->"
         elif direction == "inbound":
-            rel_pattern = "<-[r]-"
+            rel_pattern = f"<-[*1..{max_hops}]-"
         else:
-            rel_pattern = "-[r]-"
+            rel_pattern = f"-[*1..{max_hops}]-"
 
         cypher = f"""
-        MATCH path = (start {{uri: $uri}}){rel_pattern}*(1..{max_hops})(end)
+        MATCH path = (start {{uri: $uri}}){rel_pattern}(end)
         WITH path
         UNWIND range(0, size(nodes(path)) - 1) as idx
-        WITH nodes(path)[idx] as node, idx
-        WITH collect(DISTINCT node) as unique_nodes
-        UNWIND unique_nodes as n
-        RETURN id(n) as id, n.uri as uri, n.name as name, n.entity_type as entity_type
+        WITH nodes(path)[idx] as node, rels(path)[idx] as rel, idx
+        ORDER BY idx
+        RETURN collect(DISTINCT node) as nodes, collect(DISTINCT rel) as edges
         """
 
         try:
-            results = await self._execute_cypher(cypher, {"uri": start_uri, "max_hops": max_hops})
-            nodes = []
+            results = await self._execute_cypher(cypher, {"uri": start_uri})
+            nodes_set: dict[int, Vertex] = {}
+            edges_set: dict[int, Edge] = {}
             for row in results:
-                props = {k: v for k, v in row.items() if k not in {"id", "uri", "name", "entity_type"}}
-                nodes.append(
-                    Vertex(
-                        id=row.get("id"),
-                        uri=row.get("uri"),
-                        name=row.get("name"),
-                        entity_type=row.get("entity_type"),
-                        properties=props,
-                    ),
-                )
-            return GraphPath(nodes=nodes, edges=[])
+                for node in row.get("nodes", []):
+                    if node:
+                        nid = node.get("id")
+                        if nid and nid not in nodes_set:
+                            props = {k: v for k, v in node.items() if k not in {"id", "uri", "name", "entity_type"}}
+                            nodes_set[nid] = Vertex(
+                                id=nid,
+                                uri=node.get("uri"),
+                                name=node.get("name"),
+                                entity_type=node.get("entity_type"),
+                                properties=props,
+                            )
+                for rel in row.get("edges", []):
+                    if rel:
+                        rid = rel.get("id")
+                        if rid and rid not in edges_set:
+                            props = {k: v for k, v in rel.items() if k not in {"id", "uri", "type"}}
+                            edges_set[rid] = Edge(
+                                id=rid,
+                                uri=rel.get("uri"),
+                                relationship_type=rel.get("type"),
+                                properties=props,
+                            )
+            return GraphPath(nodes=list(nodes_set.values()), edges=list(edges_set.values()))
         except Exception:
             return GraphPath(nodes=[], edges=[])
 
@@ -451,19 +477,15 @@ class AgeGraphManager:
         end_uri: str,
         max_hops: int = 5,
     ) -> list[GraphPath]:
-        cypher = """
-        MATCH path = shortestPath((start {uri: $start_uri})-[*]->(end {uri: $end_uri}))
-        WITH path
-        UNWIND range(0, size(nodes(path)) - 1) as idx
-        WITH nodes(path)[idx] as node, rels(path)[idx] as rel, idx
-        ORDER BY idx
-        RETURN collect(DISTINCT node) as nodes, collect(DISTINCT rel) as edges
+        cypher = f"""
+        MATCH path = shortestPath((start {{uri: $start_uri}})-[*1..{max_hops}]->(end {{uri: $end_uri}}))
+        RETURN nodes(path) as nodes, rels(path) as edges
         """
 
         try:
             results = await self._execute_cypher(
                 cypher,
-                {"start_uri": start_uri, "end_uri": end_uri, "max_hops": max_hops},
+                {"start_uri": start_uri, "end_uri": end_uri},
             )
             paths = []
             for row in results:

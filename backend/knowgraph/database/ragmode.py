@@ -213,11 +213,11 @@ class RAGMode:  # noqa: PLR0904
                 entity_uris: set[str] = set()
                 for triple in triples:
                     await self.acreate_vertex(
-                        triple.subject.entity_type.value,
+                        triple.subject.entity_type.value.capitalize(),
                         {"uri": triple.subject.uri, "name": triple.subject.name},
                     )
                     await self.acreate_vertex(
-                        triple.object.entity_type.value,
+                        triple.object.entity_type.value.capitalize(),
                         {"uri": triple.object.uri, "name": triple.object.name},
                     )
                     await self.acreate_edge(
