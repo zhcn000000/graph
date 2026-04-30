@@ -3,9 +3,35 @@ from collections import OrderedDict
 
 import orjson
 from age.age import parseAgeValue
+from psycopg.adapt import Dumper, Loader
 from sqlalchemy import Float, String, cast
 from sqlalchemy.dialects.postgresql.base import ischema_names
 from sqlalchemy.sql.type_api import UserDefinedType
+
+
+class BM25Loader(Loader):
+    def load(self, data: bytes | bytearray | memoryview[int] | str) -> dict:
+        if isinstance(data, memoryview):
+            value = data.tobytes().decode("utf-8")
+        elif isinstance(data, bytearray):
+            value = bytes(data).decode("utf-8")
+        elif isinstance(data, bytes):
+            value = data.decode("utf-8")
+        elif isinstance(data, str):
+            value = data
+        else:
+            raise TypeError("Unsupported data type for BM25Loader: " + str(type(data)))
+        return ast.literal_eval(value)
+
+
+class BM25Dumper(Dumper):
+
+
+    def dump(self, obj: dict | str) -> bytes:
+        if isinstance(obj, str):
+            return obj.encode("utf-8")
+        sorted_dict = OrderedDict(sorted(obj.items()))
+        return str(dict(sorted_dict)).encode("utf-8")
 
 
 class BM25Vector(UserDefinedType):
@@ -23,7 +49,7 @@ class BM25Vector(UserDefinedType):
                 return value
             if isinstance(value, dict):
                 sorted_dict = OrderedDict(sorted(value.items()))
-                return str(sorted_dict)
+                return str(dict(sorted_dict))
             return value
 
         return process

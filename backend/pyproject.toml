@@ -35,6 +35,7 @@ dependencies = [
   "psutil>=7.2.2",
   "apache-age-python",
   "fastmcp>=3.2.4",
+  "networkx>=3.6.1",
 ]
 
 [project.scripts]

@@ -25,6 +25,8 @@ from knowgraph.utils.environments import (
     POSTGRES_USER,
 )
 
+from .types import BM25Dumper, BM25Loader
+
 
 def register_type(context: Connection) -> None:
     info = TypeInfo.fetch(context, "vector")
@@ -49,6 +51,11 @@ def register_type(context: Connection) -> None:
     if info is not None:
         context.adapters.register_loader(info.oid, AgeLoader)
         context.adapters.register_loader(info.array_oid, AgeLoader)
+    info = TypeInfo.fetch(context, "bm25vector")
+    if info is not None:
+        context.adapters.register_loader(info.oid, BM25Loader)
+        context.adapters.register_loader(info.array_oid, BM25Loader)
+        context.adapters.register_dumper(dict, BM25Dumper)
     set_json_loads(loads, context)
     set_json_dumps(dumps, context)
 
@@ -76,6 +83,10 @@ async def register_type_async(context: AsyncConnection) -> None:
     if info is not None:
         context.adapters.register_loader(info.oid, AgeLoader)
         context.adapters.register_loader(info.array_oid, AgeLoader)
+    info = await TypeInfo.fetch(context, "bm25vector")
+    if info is not None:
+        context.adapters.register_loader(info.oid, BM25Loader)
+        context.adapters.register_dumper(dict, BM25Dumper)
     set_json_loads(loads, context)
     set_json_dumps(dumps, context)
 
