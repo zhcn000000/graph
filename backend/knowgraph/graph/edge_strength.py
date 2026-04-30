@@ -92,7 +92,7 @@ class EdgeStrengthCalculator:
         edge_docs = [self._construct_edge_document(e) for e in edges]
         documents = [Document(content=doc) for doc in edge_docs]
 
-        reranked = await arerank_documents(query, documents, topn=None)
+        reranked = await arerank_documents(query, documents, topn=None, skip_sorting=True)
 
         for edge, reranked_doc in zip(edges, reranked, strict=False):
             edge.connection_strength = reranked_doc.query_score
@@ -283,15 +283,12 @@ class TripleBasedEdgeQuerier:
         edge_docs = [self._construct_edge_document(e) for e in edges]
         documents = [Document(content=doc) for doc in edge_docs]
 
-        reranked = await arerank_documents(query, documents, topn=topn)
+        reranked = await arerank_documents(query, documents, topn=topn, skip_sorting=True)
 
         reranked_edges = []
-        for reranked_doc in reranked:
-            idx = reranked_doc.metadata.get("index", 0)
-            if idx < len(edges):
-                edge = edges[idx]
-                edge.connection_strength = reranked_doc.query_score
-                reranked_edges.append(edge)
+        for edge, reranked_doc in zip(edges, reranked, strict=False):
+            edge.connection_strength = reranked_doc.query_score
+            reranked_edges.append(edge)
 
         return reranked_edges
 

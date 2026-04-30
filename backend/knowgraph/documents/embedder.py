@@ -37,7 +37,12 @@ async def aembed_documents(documents: Sequence[Document | str]) -> list[list[flo
     return [obj["embedding"] for obj in results["data"]]
 
 
-async def arerank_documents(query: str, documents: Sequence[Document | str], topn: int | None = None) -> list[Document]:
+async def arerank_documents(
+    query: str,
+    documents: Sequence[Document | str],
+    topn: int | None = None,
+    skip_sorting: bool = False,
+) -> list[Document]:
     if not documents:
         return []
 
@@ -63,11 +68,18 @@ async def arerank_documents(query: str, documents: Sequence[Document | str], top
         response.raise_for_status()
         results = response.json()
 
-    results = results["results"]
-    reranked_docs = [documents[item["index"]] for item in results]
-    scores = [item["relevance_score"] for item in results]
-    for doc, score in zip(reranked_docs, scores, strict=False):
-        doc.query_score = score
-    if topn is not None:
-        reranked_docs = reranked_docs[:topn]
+    results_list = results["results"]
+    if skip_sorting:
+        doc_score_pairs = [(documents[item["index"]], item["relevance_score"]) for item in results_list]
+        doc_score_pairs.sort(key=lambda x: x[0].metadata.get("original_index", 0))
+        for doc, score in doc_score_pairs:
+            doc.query_score = score
+        reranked_docs = [doc for doc, _ in doc_score_pairs]
+    else:
+        reranked_docs = [documents[item["index"]] for item in results_list]
+        scores = [item["relevance_score"] for item in results_list]
+        for doc, score in zip(reranked_docs, scores, strict=False):
+            doc.query_score = score
+        if topn is not None:
+            reranked_docs = reranked_docs[:topn]
     return reranked_docs
