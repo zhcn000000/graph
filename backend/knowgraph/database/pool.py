@@ -55,7 +55,7 @@ def register_type(context: Connection) -> None:
     if info is not None:
         context.adapters.register_loader(info.oid, BM25Loader)
         context.adapters.register_loader(info.array_oid, BM25Loader)
-        context.adapters.register_dumper(dict, BM25Dumper)
+        context.adapters.register_dumper(dict, BM25Dumper.build(info.oid))
     set_json_loads(loads, context)
     set_json_dumps(dumps, context)
 
@@ -86,7 +86,8 @@ async def register_type_async(context: AsyncConnection) -> None:
     info = await TypeInfo.fetch(context, "bm25vector")
     if info is not None:
         context.adapters.register_loader(info.oid, BM25Loader)
-        context.adapters.register_dumper(dict, BM25Dumper)
+        context.adapters.register_loader(info.array_oid, BM25Loader)
+        context.adapters.register_dumper(dict, BM25Dumper.build(info.oid))
     set_json_loads(loads, context)
     set_json_dumps(dumps, context)
 

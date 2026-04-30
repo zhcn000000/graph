@@ -1,5 +1,6 @@
 import ast
 from collections import OrderedDict
+from typing import Self
 
 import orjson
 from age.age import parseAgeValue
@@ -25,7 +26,11 @@ class BM25Loader(Loader):
 
 
 class BM25Dumper(Dumper):
-
+    @classmethod
+    def build(cls, oid: int) -> type[Self]:
+        cls_copy: type[Self] = type(cls.__name__, (cls,), {})  # type: ignore
+        cls_copy.oid = oid
+        return cls_copy
 
     def dump(self, obj: dict | str) -> bytes:
         if isinstance(obj, str):
