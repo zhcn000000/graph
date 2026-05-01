@@ -2,7 +2,7 @@ from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 
 from asyncer import asyncify
-from psycopg import AsyncConnection, AsyncCursor, Connection, Cursor
+from psycopg import AsyncConnection, AsyncCursor, Connection, Cursor, IsolationLevel
 from sqlalchemy import Engine, MetaData, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import Session
@@ -31,9 +31,11 @@ class DatabaseManager:
                         text(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;"),
                     )
                 yield session
-                session.commit()
+                if session.in_transaction():
+                    session.commit()
             except Exception:
-                session.rollback()
+                if session.in_transaction():
+                    session.rollback()
                 raise
 
     @asynccontextmanager
@@ -45,9 +47,11 @@ class DatabaseManager:
                     text(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;"),
                 )
                 yield session
-                await session.commit()
+                if session.in_transaction():
+                    await session.commit()
             except Exception:
-                await session.rollback()
+                if session.in_transaction():
+                    await session.rollback()
                 raise
 
     @contextmanager
@@ -57,59 +61,80 @@ class DatabaseManager:
         read_only: bool = False,
         autocommit: bool = True,
         deferrable: bool = False,
+        isolation: IsolationLevel = IsolationLevel.READ_COMMITTED,
     ) -> Generator[Connection]:
         pool = pool_manager.pool(self.dbname)
         with pool.connection() as conn:
             conn.set_read_only(read_only)
-            if not read_only:
-                conn.set_autocommit(autocommit)
-            else:
-                conn.set_deferrable(deferrable)
+            conn.set_isolation_level(isolation)
+            conn.set_autocommit(autocommit if not read_only else False)
+            conn.set_deferrable(deferrable if read_only and isolation == IsolationLevel.SERIALIZABLE else False)
             try:
                 with conn.cursor() as cursor:
                     cursor.execute(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;")  # type: ignore
                 yield conn
-                if not autocommit or not read_only:
+                if not autocommit:
                     conn.commit()
             except Exception:
-                conn.rollback()
+                if not autocommit:
+                    conn.rollback()
                 raise
 
     @asynccontextmanager
     async def aconnection(
-        self, schema: str = "public", read_only: bool = False, autocommit: bool = True, deferrable: bool = False
+        self,
+        schema: str = "public",
+        read_only: bool = False,
+        autocommit: bool = True,
+        deferrable: bool = False,
+        isolation: IsolationLevel = IsolationLevel.READ_COMMITTED,
     ) -> AsyncGenerator[AsyncConnection]:
         pool = await pool_manager.apool(self.dbname)
         async with pool.connection() as conn:
             try:
                 await conn.set_read_only(read_only)
-                if not read_only:
-                    await conn.set_autocommit(autocommit)
-                else:
-                    await conn.set_deferrable(deferrable)
+                await conn.set_isolation_level(isolation)
+                await conn.set_autocommit(autocommit if not read_only else False)
+                await conn.set_deferrable(
+                    deferrable if read_only and isolation == IsolationLevel.SERIALIZABLE else False
+                )
                 async with conn.cursor() as cursor:
                     await cursor.execute(
                         f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
                     )  # type: ignore
                 yield conn
-                if not autocommit or not read_only:
+                if not autocommit:
                     await conn.commit()
             except Exception:
-                await conn.rollback()
+                if not autocommit:
+                    await conn.rollback()
                 raise
 
     @contextmanager
     def cursor(
-        self, schema: str = "public", read_only: bool = False, autocommit: bool = True, deferrable: bool = False
+        self,
+        schema: str = "public",
+        read_only: bool = False,
+        autocommit: bool = True,
+        deferrable: bool = False,
+        isolation: IsolationLevel = IsolationLevel.READ_COMMITTED,
     ) -> Generator[Cursor]:
-        with self.connection(schema, read_only, autocommit, deferrable) as conn, conn.cursor() as cursor:
+        with self.connection(schema, read_only, autocommit, deferrable, isolation) as conn, conn.cursor() as cursor:
             yield cursor
 
     @asynccontextmanager
     async def acursor(
-        self, schema: str = "public", read_only: bool = False, autocommit: bool = True, deferrable: bool = False
+        self,
+        schema: str = "public",
+        read_only: bool = False,
+        autocommit: bool = True,
+        deferrable: bool = False,
+        isolation: IsolationLevel = IsolationLevel.READ_COMMITTED,
     ) -> AsyncGenerator[AsyncCursor]:
-        async with self.aconnection(schema, read_only, autocommit, deferrable) as conn, conn.cursor() as cursor:
+        async with (
+            self.aconnection(schema, read_only, autocommit, deferrable, isolation) as conn,
+            conn.cursor() as cursor,
+        ):
             yield cursor
 
     async def acreate_table(self, table: type[SQLModel], schema: str = "public") -> None:
