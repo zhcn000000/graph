@@ -510,11 +510,9 @@ class AgeGraphManager:
             for x in path:
                 if isinstance(x, Path):
                     add_path(x)
-            for x in path:
-                if isinstance(x, Vertex):
+                elif isinstance(x, Vertex):
                     add_node_to_networkx(x)
-            for x in path:
-                if isinstance(x, Edge):
+                elif isinstance(x, Edge):
                     add_edge_to_networkx(x)
 
         rows = await self.aexecute_cypher(cypher, params, columns=["nodes agtype", "edges agtype"], read_only=True)
