@@ -288,10 +288,7 @@ class RAGMode:  # noqa: PLR0904
         unified_graph = DiGraph()
         traverse_uris = [uri for uri, _ in entity_uris_with_scores[: max(topn * 2, 20)] if uri in vertex_map]
         if traverse_uris:
-            try:
-                unified_graph = await self.graph_manager.atraverse_multi(traverse_uris, max_hops=max_hops)
-            except Exception:
-                pass
+            unified_graph = await self.graph_manager.atraverse_multi(traverse_uris, max_hops=max_hops)
 
         if unified_graph.number_of_nodes() == 0:
             return []
@@ -370,10 +367,7 @@ class RAGMode:  # noqa: PLR0904
             path_graph: DiGraph | None = None
             entity_node_key = uri_to_node_key.get(entity_uri)
             if entity_node_key is not None:
-                try:
-                    path_graph = ego_graph(unified_graph, entity_node_key, radius=max_hops, undirected=True)
-                except Exception:
-                    pass
+                path_graph = ego_graph(unified_graph, entity_node_key, radius=max_hops, undirected=True)
 
             graph_results.append(
                 GraphSearchResult(

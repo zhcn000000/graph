@@ -152,29 +152,22 @@ class AgeGraphManager:
         if "uri" not in properties:
             return None
 
-        set_parts: list[str] = []
         params: dict[str, Any] = {"uri": properties["uri"]}
-        for k, v in properties.items():
-            if k != "uri":
-                set_parts.append(f"v.{k} = ${k}")
-                params[k] = v
-
-        set_clause = ", ".join(set_parts) if set_parts else "v.uri = $uri"
-
         cypher = f"""
         MERGE (v:{label} {{uri: $uri}})
-        SET {set_clause}
+        SET v += $props
         RETURN id(v) as id, labels(v) as labels, v.uri as uri, v.name as name, v.entity_type as entity_type
         """
+        params["props"] = {k: v for k, v in properties.items() if k != "uri"}
         results = await self.aexecute_cypher(cypher, params, read_only=False)
         if results:
             row = results[0]
             return {
                 "id": row.get("id"),
                 "label": (row.get("labels") or [label])[0] if row.get("labels") else label,
-                "uri": properties.get("uri"),
-                "name": properties.get("name"),
-                "entity_type": properties.get("entity_type"),
+                "uri": row.get("uri"),
+                "name": row.get("name"),
+                "entity_type": row.get("entity_type"),
                 **{k: v for k, v in properties.items() if k not in {"id", "uri", "name", "entity_type"}},
             }
         return None

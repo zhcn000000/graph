@@ -100,7 +100,7 @@ class EdgeStrengthCalculator:
 
         reranked = await arerank_documents(query, documents, topn=None, skip_sorting=True)
 
-        for edge, reranked_doc in zip(edges, reranked, strict=False):
+        for edge, reranked_doc in zip(edges, reranked, strict=True):
             edge.connection_strength = reranked_doc.query_score
 
         return edges
@@ -169,7 +169,7 @@ class EdgeStrengthCalculator:
 
         if reranked:
             return reranked[0].query_score
-        return None
+        return 0.0
 
     async def update_edge_strength_property(
         self,
@@ -292,7 +292,7 @@ class TripleBasedEdgeQuerier:
         reranked = await arerank_documents(query, documents, topn=topn, skip_sorting=True)
 
         reranked_edges = []
-        for edge, reranked_doc in zip(edges, reranked, strict=False):
+        for edge, reranked_doc in zip(edges, reranked, strict=True):
             edge.connection_strength = reranked_doc.query_score
             reranked_edges.append(edge)
 
