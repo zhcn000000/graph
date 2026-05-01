@@ -1,5 +1,5 @@
 from .database import DatabaseManager
-from .graph import AgeGraphManager, Edge, GraphPath, Vertex
+from .graph import AgeGraphManager
 from .history import HistoryStore
 from .pool import ConnectionPoolManager, pool_manager
 from .rag import RAGConfig
@@ -19,8 +19,6 @@ __all__ = [
     "ConnectionPoolManager",
     "DatabaseManager",
     "DocumentTable",
-    "Edge",
-    "GraphPath",
     "GraphRAGConfig",
     "GraphSearchResult",
     "HistoryStore",
@@ -32,6 +30,5 @@ __all__ = [
     "SessionTable",
     "Source",
     "SourceStore",
-    "Vertex",
     "pool_manager",
 ]

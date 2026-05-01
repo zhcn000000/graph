@@ -5,6 +5,7 @@ from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
 
 from knowgraph.database import GraphRAGConfig, RAGMode
+from knowgraph.database.graph import AgeGraphManager
 from knowgraph.database.rag import RAGConfig
 from knowgraph.utils.file import FileStream
 
@@ -283,8 +284,8 @@ async def api_delete_edge(start_uri: str, end_uri: str, relationship_type: str) 
 async def api_get_neighbors(uri: str, direction: str = "both", max_hops: int = 1) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        neighbors = await rag_mode.graph_manager.aget_neighbors(uri, direction, max_hops)
-        return GraphOperationResponse(success=True, status="获取邻居成功", data={"neighbors": neighbors})
+        g = await rag_mode.graph_manager.aget_neighbors(uri, direction, max_hops)
+        return GraphOperationResponse(success=True, status="获取邻居成功", data=AgeGraphManager.digraph_to_json(g))
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"获取邻居失败: {e!s}")
 
@@ -293,8 +294,12 @@ async def api_get_neighbors(uri: str, direction: str = "both", max_hops: int = 1
 async def api_traverse(start_uri: str, max_hops: int = 3, direction: str = "both") -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        path = await rag_mode.graph_manager.atraverse(start_uri, max_hops, direction)
-        return GraphOperationResponse(success=True, status="遍历成功", data={"nodes": path.nodes, "edges": path.edges})
+        g = await rag_mode.graph_manager.atraverse(start_uri, max_hops, direction)
+        return GraphOperationResponse(
+            success=True,
+            status="遍历成功",
+            data=AgeGraphManager.digraph_to_json(g),
+        )
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"遍历失败: {e!s}")
 
@@ -304,7 +309,7 @@ async def api_find_paths(start_uri: str, end_uri: str, max_hops: int = 5) -> Gra
     try:
         rag_mode = RAGMode()
         paths = await rag_mode.graph_manager.afind_paths(start_uri, end_uri, max_hops)
-        paths_data = [{"nodes": p.nodes, "edges": p.edges} for p in paths]
+        paths_data = [AgeGraphManager.digraph_to_json(g) for g in paths]
         return GraphOperationResponse(success=True, status="路径查询成功", data={"paths": paths_data})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"查询路径失败: {e!s}")

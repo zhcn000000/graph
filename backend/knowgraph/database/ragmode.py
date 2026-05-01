@@ -3,6 +3,7 @@ from collections import Counter
 from typing import NamedTuple
 from uuid import UUID
 
+from networkx import DiGraph
 from sqlalchemy import Float, cast, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
@@ -18,7 +19,7 @@ from knowgraph.utils.file import FileStream
 
 from .database import DatabaseManager
 from .document import DocumentStore
-from .graph import AgeGraphManager, GraphPath
+from .graph import AgeGraphManager
 from .rag import RAGConfig
 from .source import SourceStore
 from .tables import DocumentTable, RAGRelation, Source
@@ -36,7 +37,7 @@ class GraphSearchResult(NamedTuple):
     entity_name: str
     entity_type: str
     score: float
-    path: GraphPath | None = None
+    path: DiGraph | None = None
 
 
 class GraphRAGConfig:
@@ -638,12 +639,12 @@ class RAGMode:  # noqa: PLR0904
                 },
             )
             if gsr.path:
-                for node in gsr.path.nodes:
+                for node_uri, data in gsr.path.nodes(data=True):
                     context["paths"].append(
                         {
-                            "uri": node.uri,
-                            "name": node.name,
-                            "type": node.entity_type,
+                            "uri": node_uri,
+                            "name": data.get("name"),
+                            "type": data.get("entity_type"),
                         },
                     )
 
@@ -655,7 +656,7 @@ class RAGMode:  # noqa: PLR0904
         max_hops: int = 2,
         direction: str = "both",
     ) -> dict:
-        path = await self.graph_manager.atraverse(entity_uri, max_hops=max_hops, direction=direction)
+        graph = await self.graph_manager.atraverse(entity_uri, max_hops=max_hops, direction=direction)
 
         context = {
             "center_entity": entity_uri,
@@ -663,22 +664,22 @@ class RAGMode:  # noqa: PLR0904
             "paths": [],
         }
 
-        for node in path.nodes:
-            if node.uri != entity_uri:
+        for node_uri, data in graph.nodes(data=True):
+            if node_uri != entity_uri:
                 context["connected_entities"].append(
                     {
-                        "uri": node.uri,
-                        "name": node.name,
-                        "type": node.entity_type,
+                        "uri": node_uri,
+                        "name": data.get("name"),
+                        "type": data.get("entity_type"),
                     },
                 )
 
-        for edge in path.edges:
+        for u, v, data in graph.edges(data=True):
             context["paths"].append(
                 {
-                    "start_uri": edge.start_node_uri,
-                    "end_uri": edge.end_node_uri,
-                    "relationship": edge.relationship_type,
+                    "start_uri": u,
+                    "end_uri": v,
+                    "relationship": data.get("relationship_type") or data.get("label"),
                 },
             )
 
@@ -693,22 +694,22 @@ class RAGMode:  # noqa: PLR0904
         paths = await self.graph_manager.afind_paths(start_uri, end_uri, max_hops)
 
         result = []
-        for path in paths:
-            path_dict = {"nodes": [], "edges": []}
-            for node in path.nodes:
+        for graph in paths:
+            path_dict: dict[str, list[dict[str, str | None]]] = {"nodes": [], "edges": []}
+            for node_uri, data in graph.nodes(data=True):
                 path_dict["nodes"].append(
                     {
-                        "uri": node.uri,
-                        "name": node.name,
-                        "type": node.entity_type,
+                        "uri": node_uri,
+                        "name": data.get("name"),
+                        "type": data.get("entity_type"),
                     },
                 )
-            for edge in path.edges:
+            for u, v, data in graph.edges(data=True):
                 path_dict["edges"].append(
                     {
-                        "start_uri": edge.start_node_uri,
-                        "end_uri": edge.end_node_uri,
-                        "relationship": edge.relationship_type,
+                        "start_uri": u,
+                        "end_uri": v,
+                        "relationship": data.get("relationship_type") or data.get("label"),
                     },
                 )
             result.append(path_dict)

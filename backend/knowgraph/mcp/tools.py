@@ -62,22 +62,22 @@ async def get_triples(
     rag_mode = RAGMode()
     try:
         if entity_uri:
-            neighbors = await rag_mode.graph_manager.aget_neighbors(entity_uri, direction="both", max_hops=1)
+            g = await rag_mode.graph_manager.aget_neighbors(entity_uri, direction="both", max_hops=1)
             triples = []
-            for neighbor in neighbors:
-                if not neighbor.uri:
+            for node_uri, _data in g.nodes(data=True):
+                if not node_uri:
                     continue
                 edge = await rag_mode.graph_manager.aget_edge(
                     start_uri=entity_uri,
-                    end_uri=neighbor.uri,
+                    end_uri=node_uri,
                     relationship_type=relationship_type,
                 )
                 if edge:
                     triples.append({
-                        "subject_uri": edge.start_node_uri,
-                        "predicate_uri": edge.predicate_uri,
-                        "object_uri": edge.end_node_uri,
-                        "relationship_type": edge.relationship_type,
+                        "subject_uri": edge.get("start_uri"),
+                        "predicate_uri": edge.get("uri"),
+                        "object_uri": edge.get("end_uri"),
+                        "relationship_type": edge.get("relationship_type"),
                     })
             return triples
         if subject_uri and object_uri:
@@ -85,10 +85,10 @@ async def get_triples(
             if edge:
                 return [
                     {
-                        "subject_uri": edge.start_node_uri,
-                        "predicate_uri": edge.predicate_uri,
-                        "object_uri": edge.end_node_uri,
-                        "relationship_type": edge.relationship_type,
+                        "subject_uri": edge.get("start_uri"),
+                        "predicate_uri": edge.get("uri"),
+                        "object_uri": edge.get("end_uri"),
+                        "relationship_type": edge.get("relationship_type"),
                     },
                 ]
         return []
@@ -106,10 +106,12 @@ async def get_entity(
         vertex = await rag_mode.graph_manager.aget_vertex(uri, label)
         if vertex:
             return {
-                "uri": vertex.uri,
-                "name": vertex.name,
-                "entity_type": vertex.entity_type,
-                "properties": vertex.properties,
+                "uri": vertex.get("uri"),
+                "name": vertex.get("name"),
+                "entity_type": vertex.get("entity_type"),
+                "properties": {
+                    k: v for k, v in vertex.items() if k not in {"id", "uri", "name", "entity_type", "label"}
+                },
             }
         return {"error": "Entity not found"}
     except Exception as e:
@@ -197,10 +199,12 @@ async def create_graph_entity(
         vertex = await rag_mode.graph_manager.acreate_vertex(label, properties)
         if vertex:
             return {
-                "uri": vertex.uri,
-                "name": vertex.name,
-                "entity_type": vertex.entity_type,
-                "properties": vertex.properties,
+                "uri": vertex.get("uri"),
+                "name": vertex.get("name"),
+                "entity_type": vertex.get("entity_type"),
+                "properties": {
+                    k: v for k, v in vertex.items() if k not in {"id", "uri", "name", "entity_type", "label"}
+                },
             }
         return {"error": "Failed to create vertex"}
     except Exception as e:
@@ -219,11 +223,11 @@ async def create_graph_relation(
         edge = await rag_mode.graph_manager.acreate_edge(start_uri, end_uri, relationship_type, properties)
         if edge:
             return {
-                "id": edge.id,
-                "uri": edge.uri,
-                "start_node_uri": edge.start_node_uri,
-                "end_node_uri": edge.end_node_uri,
-                "relationship_type": edge.relationship_type,
+                "id": edge.get("id"),
+                "uri": edge.get("uri"),
+                "start_node_uri": edge.get("start_uri"),
+                "end_node_uri": edge.get("end_uri"),
+                "relationship_type": edge.get("relationship_type"),
             }
         return {"error": "Failed to create edge"}
     except Exception as e:
