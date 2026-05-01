@@ -12,14 +12,13 @@ from knowgraph.documents.embedder import aembed_documents, arerank_documents
 from knowgraph.documents.models import Document
 from knowgraph.documents.splitter import asplit_content, asplit_documents
 from knowgraph.documents.tokenizer import atokenize_content
-from knowgraph.graph import EntityType
 from knowgraph.graph.edge_strength import EdgeStrengthCalculator, TripleBasedEdgeQuerier
 from knowgraph.graph.triples import LLMExtractor
 from knowgraph.utils.file import FileStream
 
 from .database import DatabaseManager
 from .document import DocumentStore
-from .graph import AgeGraphManager, GraphPath, Vertex
+from .graph import AgeGraphManager, GraphPath
 from .rag import RAGConfig
 from .source import SourceStore
 from .tables import DocumentTable, RAGRelation, Source
@@ -75,84 +74,6 @@ class RAGMode:  # noqa: PLR0904
         if self._edge_calculator is None:
             self._edge_calculator = EdgeStrengthCalculator(graph_manager=self.graph_manager)
         return self._edge_calculator
-
-    async def acreate_graph(self) -> bool:
-        return await self.graph_manager.acreate_graph()
-
-    async def adrop_graph(self) -> bool:
-        return await self.graph_manager.adrop_graph()
-
-    async def acreate_vertex(
-        self,
-        label: str,
-        properties: dict,
-    ):
-        return await self.graph_manager.acreate_vertex(label, properties)
-
-    async def aget_vertex(self, uri: str, label: str | None = None):
-        return await self.graph_manager.aget_vertex(uri, label)
-
-    async def aupdate_vertex(self, uri: str, properties: dict, label: str | None = None):
-        return await self.graph_manager.aupdate_vertex(uri, properties, label)
-
-    async def adelete_vertex(self, uri: str, label: str | None = None) -> bool:
-        return await self.graph_manager.adelete_vertex(uri, label)
-
-    async def acreate_edge(
-        self,
-        start_uri: str,
-        end_uri: str,
-        relationship_type: str,
-        properties: dict | None = None,
-    ):
-        return await self.graph_manager.acreate_edge(start_uri, end_uri, relationship_type, properties)
-
-    async def aget_edge(
-        self,
-        start_uri: str,
-        end_uri: str,
-        relationship_type: str | None = None,
-    ):
-        return await self.graph_manager.aget_edge(start_uri, end_uri, relationship_type)
-
-    async def adelete_edge(
-        self,
-        start_uri: str,
-        end_uri: str,
-        relationship_type: str,
-    ) -> bool:
-        return await self.graph_manager.adelete_edge(start_uri, end_uri, relationship_type)
-
-    async def aget_neighbors(
-        self,
-        uri: str,
-        direction: str = "both",
-        max_hops: int = 1,
-    ) -> list:
-        return await self.graph_manager.aget_neighbors(uri, direction, max_hops)
-
-    async def aquery_by_type(
-        self,
-        entity_type: str,
-        limit: int = 100,
-    ) -> list:
-        return await self.graph_manager.aquery_by_type(entity_type, limit)
-
-    async def atraverse(
-        self,
-        start_uri: str,
-        max_hops: int = 3,
-        direction: str = "both",
-    ) -> GraphPath:
-        return await self.graph_manager.atraverse(start_uri, max_hops, direction)
-
-    async def afind_paths(
-        self,
-        start_uri: str,
-        end_uri: str,
-        max_hops: int = 5,
-    ) -> list[GraphPath]:
-        return await self.graph_manager.afind_paths(start_uri, end_uri, max_hops)
 
     async def aadd_rag_relation(self, rag_id: UUID, file_ids: UUID | list[UUID]) -> list[UUID]:
         if not file_ids:
@@ -212,18 +133,30 @@ class RAGMode:  # noqa: PLR0904
                 triples = await extractor.aextract_from_document(doc)
                 entity_uris: set[str] = set()
                 for triple in triples:
-                    await self.acreate_vertex(
-                        triple.subject.entity_type.value.capitalize(),
-                        {"uri": triple.subject.uri, "name": triple.subject.name},
+                    subject_label = triple.subject.entity_type.value.capitalize()
+                    object_label = triple.object.entity_type.value.capitalize()
+                    await self.graph_manager.acreate_vertex(
+                        subject_label,
+                        {
+                            "uri": triple.subject.uri,
+                            "name": triple.subject.name,
+                            "entity_type": triple.subject.entity_type.value,
+                        },
                     )
-                    await self.acreate_vertex(
-                        triple.object.entity_type.value.capitalize(),
-                        {"uri": triple.object.uri, "name": triple.object.name},
+                    await self.graph_manager.acreate_vertex(
+                        object_label,
+                        {
+                            "uri": triple.object.uri,
+                            "name": triple.object.name,
+                            "entity_type": triple.object.entity_type.value,
+                        },
                     )
-                    await self.acreate_edge(
+                    await self.graph_manager.acreate_edge(
                         triple.subject.uri,
                         triple.object.uri,
                         triple.predicate.value,
+                        start_label=subject_label,
+                        end_label=object_label,
                     )
                     entity_uris.add(triple.subject.uri)
                     entity_uris.add(triple.object.uri)
@@ -319,64 +252,96 @@ class RAGMode:  # noqa: PLR0904
         bm25_result = await session.execute(bm25_stmt)
         return [row[0] for row in bm25_result.fetchall()]
 
+    async def _collect_entity_uris(
+        self,
+        doc_ids: list[UUID],
+        session,
+    ) -> list[tuple[str, float]]:
+        if not doc_ids:
+            return []
+        stmt = select(col(DocumentTable.entities)).where(col(DocumentTable.id).in_(doc_ids))
+        result = await session.execute(stmt)
+        counter: dict[str, int] = {}
+        for row in result.fetchall():
+            entities = row[0] or []
+            for uri in entities:
+                counter[uri] = counter.get(uri, 0) + 1
+
+        total = sum(counter.values()) or 1
+        ranked = sorted(counter.items(), key=operator.itemgetter(1), reverse=True)
+        return [(uri, count / total) for uri, count in ranked]
+
     async def _graph_search(
         self,
         queries: list[str],
         topn: int,
         max_hops: int = 2,
         graph_config: GraphRAGConfig | None = None,
+        session=None,
     ) -> list[GraphSearchResult]:
         if graph_config is None:
             graph_config = GraphRAGConfig()
 
+        # Step 1: Find relevant entities via vector search on documents
+        if session is not None:
+            doc_ids = await self._vector_search(
+                queries=queries,
+                topn=max(topn * 3, 20),
+                session=session,
+            )
+            entity_stats = await self._collect_entity_uris(doc_ids, session)
+        else:
+            async with self.__db.asession() as sess:
+                doc_ids = await self._vector_search(
+                    queries=queries,
+                    topn=max(topn * 3, 20),
+                    session=sess,
+                )
+                entity_stats = await self._collect_entity_uris(doc_ids, sess)
+
+        if not entity_stats:
+            return []
+
+        # Step 2: Look up top entities in graph and score them
         graph_results: list[GraphSearchResult] = []
-        query_str = " ".join(queries).lower()
-
-        entity_types = [et.value for et in EntityType]
-        candidate_entities: list[tuple[float, Vertex, str]] = []
-
-        for entity_type in entity_types:
-            vertices = await self.aquery_by_type(entity_type, limit=topn * 2)
-            for vertex in vertices:
-                if not vertex.name:
-                    continue
-                name_lower = vertex.name.lower()
-                if name_lower in query_str or query_str in name_lower:
-                    base_score = 1.0 / (1.0 + abs(len(query_str) - len(name_lower)))
-                    candidate_entities.append((base_score, vertex, entity_type))
-
-        candidate_entities.sort(key=operator.itemgetter(0), reverse=True)
-        top_candidates = candidate_entities[: topn * 3] if candidate_entities else []
-
         seen_uris: set[str] = set()
-        for base_score, vertex, entity_type in top_candidates:
-            if not vertex.uri or vertex.uri in seen_uris:
-                continue
-            if not vertex.name:
-                continue
-            seen_uris.add(vertex.uri)
+        top_entities = entity_stats[: max(topn * 3, 30)]
 
-            connected_strength = 0.0
+        for entity_uri, relevance in top_entities:
+            if entity_uri in seen_uris:
+                continue
+            seen_uris.add(entity_uri)
+
+            vertex = await self.graph_manager.aget_vertex(entity_uri)
+            if vertex is None or not vertex.name:
+                continue
+
+            # Query edges in both subject and object directions
             connected_edges = await self.edge_querier.query_edges_by_triple(
                 subject_name=vertex.name,
-                limit=20,
+                limit=10,
+            )
+            connected_edges += await self.edge_querier.query_edges_by_triple(
+                object_name=vertex.name,
+                limit=10,
             )
 
+            connected_strength = 0.0
             for edge in connected_edges:
                 if edge.connection_strength is not None:
                     connected_strength = max(connected_strength, edge.connection_strength)
 
             if connected_strength > 0:
-                final_score = base_score * (1 + graph_config.EDGE_STRENGTH_BOOST * connected_strength)
+                final_score = relevance * (1 + graph_config.EDGE_STRENGTH_BOOST * connected_strength)
             else:
-                final_score = base_score
+                final_score = relevance
 
-            path = await self.atraverse(vertex.uri, max_hops=max_hops)
+            path = await self.graph_manager.atraverse(entity_uri, max_hops=max_hops)
             graph_results.append(
                 GraphSearchResult(
-                    entity_uri=vertex.uri,
+                    entity_uri=entity_uri,
                     entity_name=vertex.name,
-                    entity_type=entity_type,
+                    entity_type=vertex.entity_type or "",
                     score=final_score,
                     path=path,
                 ),
@@ -390,7 +355,7 @@ class RAGMode:  # noqa: PLR0904
         entity_uri: str,
         session,
     ) -> list[UUID]:
-        stmt = select(col(DocumentTable.id)).where(col(DocumentTable.entities).contains(entity_uri))
+        stmt = select(col(DocumentTable.id)).where(col(DocumentTable.entities).contains([entity_uri]))
         result = await session.execute(stmt)
         return [row[0] for row in result.fetchall()]
 
@@ -418,10 +383,14 @@ class RAGMode:  # noqa: PLR0904
             rrf_scores[doc_id] += (1.0 / (rrf_k + rank)) * bm25_weight
 
         if graph_results:
-            for doc_id, graph_score in graph_results:
+            doc_ranks: dict[UUID, int] = {}
+            for rank, (doc_id, _) in enumerate(graph_results, start=1):
+                if doc_id not in doc_ranks:
+                    doc_ranks[doc_id] = rank
+            for doc_id, rank in doc_ranks.items():
                 if doc_id not in rrf_scores:
                     rrf_scores[doc_id] = 0.0
-                rrf_scores[doc_id] += graph_score * graph_weight
+                rrf_scores[doc_id] += (1.0 / (rrf_k + rank)) * graph_weight
 
         sorted_rrf_results = sorted(rrf_scores.items(), key=operator.itemgetter(1), reverse=True)[:topk]
         return [doc_id for doc_id, _ in sorted_rrf_results]
@@ -469,6 +438,7 @@ class RAGMode:  # noqa: PLR0904
                     topn=graph_config.GRAPH_TOP_K,
                     max_hops=graph_config.MAX_HOPS,
                     graph_config=graph_config,
+                    session=session,
                 )
                 if graph_entities:
                     graph_doc_ids: list[tuple[UUID, float]] = []
@@ -562,6 +532,7 @@ class RAGMode:  # noqa: PLR0904
                 topn=graph_config.GRAPH_TOP_K,
                 max_hops=graph_config.MAX_HOPS,
                 graph_config=graph_config,
+                session=session,
             )
 
             graph_search_results: list[tuple[UUID, float]] | None = None
@@ -721,7 +692,7 @@ class RAGMode:  # noqa: PLR0904
         max_hops: int = 2,
         direction: str = "both",
     ) -> dict:
-        path = await self.atraverse(entity_uri, max_hops=max_hops, direction=direction)
+        path = await self.graph_manager.atraverse(entity_uri, max_hops=max_hops, direction=direction)
 
         context = {
             "center_entity": entity_uri,

@@ -209,6 +209,8 @@ class AgeGraphManager:
         end_uri: str,
         relationship_type: str,
         properties: dict[str, Any] | None = None,
+        start_label: str | None = None,
+        end_label: str | None = None,
     ) -> Edge | None:
         props = properties or {}
         props["start_uri"] = start_uri
@@ -217,9 +219,12 @@ class AgeGraphManager:
 
         props_set = ", ".join([f"r.{k} = ${k}" for k in props])
 
+        start_match = f":{start_label}" if start_label else ""
+        end_match = f":{end_label}" if end_label else ""
+
         cypher = f"""
-        MATCH (s {{uri: $start_uri}})
-        MATCH (e {{uri: $end_uri}})
+        MATCH (s{start_match} {{uri: $start_uri}})
+        MATCH (e{end_match} {{uri: $end_uri}})
         MERGE (s)-[r:{relationship_type} {{uri: $predicate_uri}}]->(e)
         SET {props_set}
         RETURN id(r) as id, r.uri as uri, type(r) as relationship_type
@@ -432,11 +437,7 @@ class AgeGraphManager:
 
         cypher = f"""
         MATCH path = (start {{uri: $uri}}){rel_pattern}(end)
-        WITH path
-        UNWIND range(0, size(nodes(path)) - 1) as idx
-        WITH nodes(path)[idx] as node, rels(path)[idx] as rel, idx
-        ORDER BY idx
-        RETURN collect(DISTINCT node) as nodes, collect(DISTINCT rel) as edges
+        RETURN nodes(path) as nodes, rels(path) as edges
         """
 
         try:
@@ -444,7 +445,9 @@ class AgeGraphManager:
             nodes_set: dict[int, Vertex] = {}
             edges_set: dict[int, Edge] = {}
             for row in results:
-                for node in row.get("nodes", []):
+                nodes = row.get("nodes", [])
+                edges = row.get("edges", [])
+                for node in nodes:
                     if node:
                         nid = node.get("id")
                         if nid and nid not in nodes_set:
@@ -456,7 +459,7 @@ class AgeGraphManager:
                                 entity_type=node.get("entity_type"),
                                 properties=props,
                             )
-                for rel in row.get("edges", []):
+                for rel in edges:
                     if rel:
                         rid = rel.get("id")
                         if rid and rid not in edges_set:
@@ -478,7 +481,8 @@ class AgeGraphManager:
         max_hops: int = 5,
     ) -> list[GraphPath]:
         cypher = f"""
-        MATCH path = shortestPath((start {{uri: $start_uri}})-[*1..{max_hops}]->(end {{uri: $end_uri}}))
+        MATCH path = shortestPath((start {{uri: $start_uri}})-[*]->(end {{uri: $end_uri}}))
+        WHERE size(rels(path)) <= {max_hops}
         RETURN nodes(path) as nodes, rels(path) as edges
         """
 
