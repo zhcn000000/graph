@@ -201,7 +201,7 @@ class RAGMode:  # noqa: PLR0904
             vector_stmt = vector_stmt.where(col(Source.id).in_(file_ids))
         if regex:
             vector_stmt = vector_stmt.where(col(DocumentTable.content).op("~")(regex))
-
+        # @# operator computes maxsim between two vector[] types
         vector_stmt = vector_stmt.order_by(col(DocumentTable.vector).op("@#", return_type=Float)(query_vector)).limit(
             topn,
         )
@@ -301,8 +301,9 @@ class RAGMode:  # noqa: PLR0904
 
         # Step 3: PageRank with personalization from entity scores
         personalization: dict[str, float] = {}
-        for node in unified_graph.nodes():
-            personalization[node] = entity_score_map.get(node, 0.0)
+        for node_key in unified_graph.nodes():
+            node_uri = unified_graph.nodes[node_key].get("uri", "")
+            personalization[node_key] = entity_score_map.get(node_uri, 0.0)
 
         total_pers = sum(personalization.values())
         if total_pers > 0:
@@ -333,15 +334,16 @@ class RAGMode:  # noqa: PLR0904
 
         sorted_by_pr = sorted(pr_scores.items(), key=operator.itemgetter(1), reverse=True)
 
-        for entity_uri, pr_score in sorted_by_pr:
-            if entity_uri in seen_uris:
+        for node_key, pr_score in sorted_by_pr:
+            node_data = unified_graph.nodes.get(node_key, {})
+            entity_uri = str(node_data.get("uri", ""))
+            if not entity_uri or entity_uri in seen_uris:
                 continue
             seen_uris.add(entity_uri)
 
             vertex = vertex_map.get(entity_uri)
             if vertex is None:
-                node_data = unified_graph.nodes.get(entity_uri, {})
-                entity_name = str(node_data.get("name", entity_uri))
+                entity_name = str(node_data.get("name", str(node_key)))
                 entity_type = str(node_data.get("entity_type", ""))
             else:
                 entity_name = str(vertex.get("name", entity_uri))

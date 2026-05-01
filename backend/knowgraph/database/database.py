@@ -1,12 +1,13 @@
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
+from warnings import warn
 
 from asyncer import asyncify
 from psycopg import AsyncConnection, AsyncCursor, Connection, Cursor, IsolationLevel
 from sqlalchemy import Engine, MetaData, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import Session
-from sqlalchemy.schema import CreateSchema, DropSchema
+from sqlalchemy.schema import CreateSchema, CreateTable, DropSchema, DropTable
 from sqlmodel import SQLModel
 
 from .pool import pool_manager
@@ -28,7 +29,8 @@ class DatabaseManager:
                     session.execute(text("SET search_path TO public,bm25_catalog,tokenizer_catalog,ag_catalog;"))
                 else:
                     session.execute(
-                        text(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;"),
+                        text("SET search_path TO :schema,public,bm25_catalog,tokenizer_catalog,ag_catalog;"),
+                        {"schema": schema},
                     )
                 yield session
                 if session.in_transaction():
@@ -43,9 +45,13 @@ class DatabaseManager:
         engine = await pool_manager.aengine(self.dbname)
         async with AsyncSession(engine) as session:
             try:
-                await session.execute(
-                    text(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;"),
-                )
+                if schema == "public":
+                    await session.execute(text("SET search_path TO public,bm25_catalog,tokenizer_catalog,ag_catalog;"))
+                else:
+                    await session.execute(
+                        text("SET search_path TO :schema,public,bm25_catalog,tokenizer_catalog,ag_catalog;"),
+                        {"schema": schema},
+                    )
                 yield session
                 if session.in_transaction():
                     await session.commit()
@@ -71,13 +77,18 @@ class DatabaseManager:
             conn.set_deferrable(deferrable if read_only and isolation == IsolationLevel.SERIALIZABLE else False)
             try:
                 with conn.cursor() as cursor:
-                    cursor.execute(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;")  # type: ignore
+                    if schema == "public":
+                        cursor.execute(
+                            "SET search_path TO public,bm25_catalog,tokenizer_catalog,ag_catalog;",
+                        )
+                    else:
+                        cursor.execute(
+                            t"SET search_path TO '{schema!s}',public,bm25_catalog,tokenizer_catalog,ag_catalog;"
+                        )
                 yield conn
-                if not autocommit:
-                    conn.commit()
+                conn.commit()
             except Exception:
-                if not autocommit:
-                    conn.rollback()
+                conn.rollback()
                 raise
 
     @asynccontextmanager
@@ -99,15 +110,18 @@ class DatabaseManager:
                     deferrable if read_only and isolation == IsolationLevel.SERIALIZABLE else False
                 )
                 async with conn.cursor() as cursor:
-                    await cursor.execute(
-                        f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
-                    )  # type: ignore
+                    if schema == "public":
+                        await cursor.execute(
+                            "SET search_path TO public,bm25_catalog,tokenizer_catalog,ag_catalog;",
+                        )
+                    else:
+                        await cursor.execute(
+                            t"SET search_path TO '{schema!s}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
+                        )
                 yield conn
-                if not autocommit:
-                    await conn.commit()
+                await conn.commit()
             except Exception:
-                if not autocommit:
-                    await conn.rollback()
+                await conn.rollback()
                 raise
 
     @contextmanager
@@ -137,12 +151,6 @@ class DatabaseManager:
         ):
             yield cursor
 
-    async def acreate_table(self, table: type[SQLModel], schema: str = "public") -> None:
-        await self.acreate_all()
-
-    async def adrop_table(self, table: type[SQLModel], schema: str = "public") -> None:
-        await self.adrop_all()
-
     async def acreate_all(self, metadata: MetaData | None = None) -> None:
         if metadata is None:
             metadata = SQLModel.metadata
@@ -165,3 +173,42 @@ class DatabaseManager:
             stmt = DropSchema(schema, cascade=True, if_exists=True)
             await session.execute(stmt)
             await session.commit()
+
+    async def acreate_table(self, table: type[SQLModel], schema: str = "public") -> None:
+        table_name: str = table.__tablename__  # type: ignore
+        old_table = table.metadata.tables[table_name]
+        new_metadata = MetaData()
+
+        new_table = old_table.to_metadata(new_metadata, schema=schema)
+        async with self.asession() as session:
+            stmt = CreateTable(new_table, if_not_exists=True)
+            try:
+                await session.execute(stmt)
+                await session.commit()
+                return
+            except Exception as e:
+                warn(
+                    f"Failed to create table {new_table.name} in schema {schema}: {e} fallback to sync create_all.",
+                    stacklevel=2,
+                )
+        await asyncify(new_metadata.create_all)(pool_manager.engine(self.dbname), tables=[new_table])
+
+    async def adrop_table(self, table: type[SQLModel], schema: str = "public") -> None:
+        table_name: str = table.__tablename__  # type: ignore
+        old_table = table.metadata.tables[table_name]
+        new_metadata = MetaData()
+
+        new_table = old_table.to_metadata(new_metadata, schema=schema)
+        async with self.asession() as session:
+            stmt = DropTable(new_table, if_exists=True)
+            try:
+                await session.execute(stmt)
+                await session.commit()
+                return
+            except Exception as e:
+                warn(
+                    f"Failed to drop table {new_table.name} in schema {schema}: {e} fallback to sync drop_all.",
+                    stacklevel=2,
+                )
+
+        await asyncify(new_metadata.drop_all)(pool_manager.engine(self.dbname), tables=[new_table])

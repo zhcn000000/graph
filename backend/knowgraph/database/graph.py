@@ -68,7 +68,7 @@ def _build_cypher_stmt(graph_name: str, cypher: str, columns: list[str]) -> pgsq
                 continue
             if " " in c:
                 name, type_name = c.split(" ", 1)
-                col_parts.append(pgsql.SQL("{} {}").format(pgsql.Identifier(name), pgsql.Identifier(type_name)))
+                col_parts.append(pgsql.SQL("{} {}").format(pgsql.Identifier(name), pgsql.SQL(type_name)))
             else:
                 col_parts.append(pgsql.SQL("{} agtype").format(pgsql.Identifier(c)))
         cols: pgsql.Composable = pgsql.SQL(", ").join(col_parts)
@@ -128,19 +128,19 @@ class AgeGraphManager:
 
     async def acreate_graph(self) -> bool:
         async with self.__db.acursor() as cur:
-            result = await cur.execute(f"SELECT * FROM ag_graph WHERE graph_name = '{self.graph_name}';")  # type: ignore
+            result = await cur.execute("SELECT * FROM ag_graph WHERE graph_name = %s", (self.graph_name,))
             exists = await result.fetchone()
             if not exists:
-                await cur.execute(f"SELECT create_graph('{self.graph_name}');")  # type: ignore
+                await cur.execute("SELECT create_graph(%s);", (self.graph_name,))
                 return True
             return False
 
     async def adrop_graph(self) -> bool:
         async with self.__db.acursor() as cur:
-            result = await cur.execute(f"SELECT * FROM ag_graph WHERE graph_name = '{self.graph_name}';")  # type: ignore
+            result = await cur.execute("SELECT * FROM ag_graph WHERE graph_name = %s", (self.graph_name,))
             exists = await result.fetchone()
             if exists:
-                await cur.execute(f"SELECT drop_graph('{self.graph_name}', true);")  # type: ignore
+                await cur.execute("SELECT drop_graph(%s, true);", (self.graph_name,))
                 return True
             return False
 
@@ -357,7 +357,8 @@ class AgeGraphManager:
             "paths": [],
         }
 
-        for node_uri, data in graph.nodes(data=True):
+        for node_key, data in graph.nodes(data=True):
+            node_uri = data.get("uri", node_key)
             if node_uri != entity_uri:
                 context["connected_entities"].append(
                     {
@@ -370,9 +371,9 @@ class AgeGraphManager:
         for u, v, data in graph.edges(data=True):
             context["paths"].append(
                 {
-                    "start_uri": u,
-                    "end_uri": v,
-                    "relationship": data.get("relationship_type") or data.get("label"),
+                    "start_uri": graph.nodes[u].get("uri", u),
+                    "end_uri": graph.nodes[v].get("uri", v),
+                    "relationship": data.get("label"),
                 },
             )
 
@@ -387,10 +388,10 @@ class AgeGraphManager:
         graph = await self.afind_paths(start_uri, end_uri, max_hops)
 
         path_dict: dict[str, list[dict[str, str | None]]] = {"nodes": [], "edges": []}
-        for node_uri, data in graph.nodes(data=True):
+        for node_key, data in graph.nodes(data=True):
             path_dict["nodes"].append(
                 {
-                    "uri": node_uri,
+                    "uri": data.get("uri", node_key),
                     "name": data.get("name"),
                     "type": data.get("entity_type"),
                 },
@@ -398,9 +399,9 @@ class AgeGraphManager:
         for u, v, data in graph.edges(data=True):
             path_dict["edges"].append(
                 {
-                    "start_uri": u,
-                    "end_uri": v,
-                    "relationship": data.get("relationship_type") or data.get("label"),
+                    "start_uri": graph.nodes[u].get("uri", u),
+                    "end_uri": graph.nodes[v].get("uri", v),
+                    "relationship": data.get("label"),
                 },
             )
         return path_dict
@@ -475,7 +476,10 @@ class AgeGraphManager:
         graph = DiGraph()
 
         def add_node_to_networkx(node):
-            graph.add_node(node.id, label=node.label, properties=node.properties)
+            attrs = {"label": node.label}
+            if node.properties:
+                attrs.update(node.properties)
+            graph.add_node(node.id, **attrs)
 
         def add_edge_to_networkx(edge):
             graph.add_edge(edge.start_id, edge.end_id, label=edge.label, properties=edge.properties)
@@ -491,13 +495,13 @@ class AgeGraphManager:
                 if isinstance(x, Edge):
                     add_edge_to_networkx(x)
 
-        rows = await self.aexecute_cypher(cypher, params, read_only=True)
+        rows = await self.aexecute_cypher(cypher, params, columns=["nodes agtype", "edges agtype"], read_only=True)
         for row in rows:
-            for x in row:
-                if isinstance(x, Path):
-                    add_path(x)
-                elif isinstance(x, Edge):
-                    add_edge_to_networkx(x)
-                elif isinstance(x, Vertex):
-                    add_node_to_networkx(x)
+            for value in row.values():
+                if isinstance(value, Path):
+                    add_path(value)
+                elif isinstance(value, Edge):
+                    add_edge_to_networkx(value)
+                elif isinstance(value, Vertex):
+                    add_node_to_networkx(value)
         return graph
