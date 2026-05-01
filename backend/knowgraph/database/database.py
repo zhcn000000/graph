@@ -83,7 +83,7 @@ class DatabaseManager:
                         )
                     else:
                         cursor.execute(
-                            t"SET search_path TO '{schema!s}',public,bm25_catalog,tokenizer_catalog,ag_catalog;"
+                            t"SET search_path TO '{schema!s}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
                         )
                 yield conn
                 conn.commit()
@@ -107,7 +107,7 @@ class DatabaseManager:
                 await conn.set_isolation_level(isolation)
                 await conn.set_autocommit(autocommit if not read_only else False)
                 await conn.set_deferrable(
-                    deferrable if read_only and isolation == IsolationLevel.SERIALIZABLE else False
+                    deferrable if read_only and isolation == IsolationLevel.SERIALIZABLE else False,
                 )
                 async with conn.cursor() as cursor:
                     if schema == "public":

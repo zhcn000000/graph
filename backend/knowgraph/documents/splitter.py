@@ -7,7 +7,6 @@ from asyncer import asyncify
 from stanza import Document as StanzaDocument
 from stanza import Pipeline
 
-from knowgraph.documents.models import Document
 from knowgraph.utils.environments import DATA_ROOT, find_project_directory
 
 from .tokenizer import get_tokenizer
@@ -98,18 +97,3 @@ async def asplit_content(content: str, chunk_size: int = 512, chunk_overlap: int
 
     if current_text:
         yield current_text
-
-
-async def asplit_documents(
-    documents: AsyncIterator[Document],
-    chunk_size: int = 2048,
-    chunk_overlap: int = 128,
-) -> AsyncIterator[Document]:
-    async for chunk in documents:
-        async for split_content in asplit_content(chunk.content, chunk_size, chunk_overlap):
-            yield Document(
-                content=split_content,
-                source_name=chunk.source_name,
-                source_hash=chunk.source_hash,
-                metadata=chunk.metadata,
-            )

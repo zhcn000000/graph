@@ -93,41 +93,102 @@ class CSVRowInput(BaseModel):
     accession_number: str | None = None
     crawl_date: str | None = None
 
-    def to_artifact_triples(self) -> list[ArtifactTriple]:
-        triples = []
-        props: dict[str, Any] = {}
-        if self.object_id:
-            props["object_id"] = self.object_id
-        if self.period:
-            props["period"] = self.period
-        if self.type:
-            props["artifact_type"] = self.type
-        if self.material:
-            props["material"] = self.material
-        if self.dimensions:
-            props["dimensions"] = self.dimensions
-        if self.detail_url:
-            props["detail_url"] = self.detail_url
-        if self.image_url:
-            props["image_url"] = self.image_url
-        if self.credit_line:
-            props["credit_line"] = self.credit_line
-        if self.accession_number:
-            props["accession_number"] = self.accession_number
-        if self.crawl_date:
-            props["crawl_date"] = self.crawl_date
+    def to_artifact_triples(self) -> list[Triple]:
+        triples: list[Triple] = []
+        props: dict[str, Any] = {
+            "object_id": self.object_id,
+            "period": self.period,
+            "artifact_type": self.type,
+            "material": self.material,
+            "dimensions": self.dimensions,
+            "detail_url": self.detail_url,
+            "image_url": self.image_url,
+            "credit_line": self.credit_line,
+            "accession_number": self.accession_number,
+            "crawl_date": self.crawl_date,
+            "museum": self.museum,
+            "location": self.location,
+            "title": self.title,
+        }
+        props = {k: v for k, v in props.items() if v}
 
-        triple = ArtifactTriple(
-            artifact_name=self.title,
-            museum_name=self.museum,
-            dynasty_name=self.period,
-            material=self.material,
-            artifact_type=self.type,
-            description=self.description,
-            properties=props,
-            source=self.detail_url,
-        )
-        triples.append(triple)
+        artifact_uri = get_entity_uri(EntityType.ARTIFACT, self.title)
+
+        if self.museum:
+            triples.append(
+                ArtifactTriple(
+                    artifact_name=self.title,
+                    museum_name=self.museum,
+                    description=self.description,
+                    properties=props,
+                    source=self.detail_url,
+                ),
+            )
+
+        if self.period:
+            triples.append(
+                Triple(
+                    subject_uri=artifact_uri,
+                    predicate_uri=get_relationship_uri(RelationshipType.BELONGS_TO_DYNASTY),
+                    object_uri=get_entity_uri(EntityType.DYNASTY, self.period),
+                    subject_type=EntityType.ARTIFACT,
+                    object_type=EntityType.DYNASTY,
+                    subject_name=self.title,
+                    object_name=self.period,
+                    description=f"{self.title} 属于 {self.period}",
+                    properties=props,
+                    source=self.detail_url,
+                ),
+            )
+
+        if self.material:
+            triples.append(
+                Triple(
+                    subject_uri=artifact_uri,
+                    predicate_uri=get_relationship_uri(RelationshipType.MADE_OF_MATERIAL),
+                    object_uri=get_entity_uri(EntityType.ARTIFACT, self.material),
+                    subject_type=EntityType.ARTIFACT,
+                    object_type=EntityType.ARTIFACT,
+                    subject_name=self.title,
+                    object_name=self.material,
+                    description=f"{self.title} 材质为 {self.material}",
+                    properties=props,
+                    source=self.detail_url,
+                ),
+            )
+
+        if self.type:
+            triples.append(
+                Triple(
+                    subject_uri=artifact_uri,
+                    predicate_uri=get_relationship_uri(RelationshipType.IS_TYPE_OF),
+                    object_uri=get_entity_uri(EntityType.ARTIFACT, self.type),
+                    subject_type=EntityType.ARTIFACT,
+                    object_type=EntityType.ARTIFACT,
+                    subject_name=self.title,
+                    object_name=self.type,
+                    description=f"{self.title} 类型为 {self.type}",
+                    properties=props,
+                    source=self.detail_url,
+                ),
+            )
+
+        if self.location and self.museum:
+            triples.append(
+                Triple(
+                    subject_uri=get_entity_uri(EntityType.MUSEUM, self.museum),
+                    predicate_uri=get_relationship_uri(RelationshipType.LOCATED_AT),
+                    object_uri=get_entity_uri(EntityType.LOCATION, self.location),
+                    subject_type=EntityType.MUSEUM,
+                    object_type=EntityType.LOCATION,
+                    subject_name=self.museum,
+                    object_name=self.location,
+                    description=f"{self.museum} 位于 {self.location}",
+                    properties=props,
+                    source=self.detail_url,
+                ),
+            )
+
         return triples
 
 
@@ -187,7 +248,7 @@ class LLMExtractor:
         from pydantic_ai import Agent
 
         return cast(
-            Agent[ModelDeps, list[ExtractedTriple]],
+            "Agent[ModelDeps, list[ExtractedTriple]]",
             Agent(
                 model=self.model,
                 deps_type=ModelDeps,

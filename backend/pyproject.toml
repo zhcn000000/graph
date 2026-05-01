@@ -29,7 +29,6 @@ dependencies = [
   "openai>=2.6.1",
   "httpx",
   "tomlkit>=0.13.3",
-  "magika",
   "stanza>=1.11.0",
   "pydantic-monty>=0.0.4",
   "psutil>=7.2.2",

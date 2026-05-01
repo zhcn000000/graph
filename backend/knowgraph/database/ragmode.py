@@ -3,19 +3,17 @@ from collections import Counter
 from typing import NamedTuple
 from uuid import UUID
 
-from networkx import DiGraph, ego_graph, pagerank
+from networkx import DiGraph, ego_graph, pagerank_scipy
 from sqlalchemy import Float, cast, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
 
-from knowgraph.documents.converter import aload_documents
 from knowgraph.documents.embedder import aembed_documents, arerank_documents
 from knowgraph.documents.models import Document
-from knowgraph.documents.splitter import asplit_content, asplit_documents
+from knowgraph.documents.splitter import asplit_content
 from knowgraph.documents.tokenizer import atokenize_content
 from knowgraph.graph.edge_strength import EdgeConnectionInfo, EdgeStrengthCalculator, TripleBasedEdgeQuerier
-from knowgraph.graph.triples import LLMExtractor
-from knowgraph.utils.file import FileStream
+from knowgraph.graph.triples import CSVRowInput, LLMExtractor
 
 from .database import DatabaseManager
 from .document import DocumentStore
@@ -40,13 +38,14 @@ class GraphSearchResult(NamedTuple):
     path: DiGraph | None = None
 
 
-class RAGMode:  # noqa: PLR0904
+class RAGMode:
     def __init__(self, dbname: str = "data") -> None:
         self.__source = SourceStore(dbname)
         self.__db = DatabaseManager(dbname)
         self._graph_manager: AgeGraphManager | None = None
         self._edge_querier: TripleBasedEdgeQuerier | None = None
         self._edge_calculator: EdgeStrengthCalculator | None = None
+        self._extractor: LLMExtractor | None = None
 
     @property
     def graph_manager(self) -> AgeGraphManager:
@@ -65,6 +64,12 @@ class RAGMode:  # noqa: PLR0904
         if self._edge_calculator is None:
             self._edge_calculator = EdgeStrengthCalculator(graph_manager=self.graph_manager)
         return self._edge_calculator
+
+    @property
+    def extractor(self) -> LLMExtractor:
+        if self._extractor is None:
+            self._extractor = LLMExtractor()
+        return self._extractor
 
     async def aadd_rag_relation(self, rag_id: UUID, file_ids: UUID | list[UUID]) -> list[UUID]:
         if not file_ids:
@@ -98,30 +103,38 @@ class RAGMode:  # noqa: PLR0904
         if not documents:
             return []
 
-        extractor = LLMExtractor()
         all_doc_ids: list[UUID] = []
         full_graph = DiGraph()
 
-        async with self.__db.asession() as session:
-            for doc in documents:
-                chunks = [doc]
-                chunks.extend([
-                    Document(
-                        content=chunk,
-                        metadata=doc.metadata,
-                        source_name=doc.source_name,
-                        source_hash=doc.source_hash,
-                    )
-                    async for chunk in asplit_content(doc.content, chunk_size=512, chunk_overlap=64)
-                ])
-                seen_contents = set()
-                unique_chunks = [
-                    c for c in chunks if c.content not in seen_contents and not seen_contents.add(c.content)
-                ]
+        source_hashes = {doc.source_hash for doc in documents if doc.source_hash}
+        file_id_map: dict[str, UUID] = {}
+        if source_hashes:
+            async with self.__db.asession() as pre_session:
+                stmt = select(col(Source.id), col(Source.hash)).where(
+                    col(Source.hash).in_(list(source_hashes)),
+                )
+                result = await pre_session.execute(stmt)
+                file_id_map = {row[1]: row[0] for row in result.fetchall()}
 
-                vectors = await aembed_documents(unique_chunks)
+        for doc in documents:
+            file_id = file_id_map.get(doc.source_hash or "")
+            if file_id is None:
+                continue
 
-                triples = await extractor.aextract_from_document(doc)
+            try:
+                sub_chunks = [doc.content]
+                async for chunk in asplit_content(doc.content, chunk_size=512, chunk_overlap=64):
+                    sub_chunks.append(chunk)
+
+                seen = set()
+                sub_chunks = [c for c in sub_chunks if c not in seen and not seen.add(c)]
+
+                sub_docs = [Document(content=c) for c in sub_chunks]
+                vectors = await aembed_documents(sub_docs)
+
+                bmvector = await atokenize_content(doc.content)
+
+                triples = await self.extractor.aextract_from_document(doc)
                 entity_uris: set[str] = set()
                 for triple in triples:
                     subject_label = triple.subject.entity_type.value.capitalize()
@@ -146,27 +159,30 @@ class RAGMode:  # noqa: PLR0904
                     entity_uris.add(triple.subject.uri)
                     entity_uris.add(triple.object.uri)
 
-                insert_values = []
-                for chunk, vector in zip(unique_chunks, vectors, strict=False):
-                    chunk.entities = list(entity_uris)
-                    chunk_token_counts = await atokenize_content(chunk.content)
-                    insert_values.append({
-                        "file_id": select(col(Source.id)).where(col(Source.hash) == doc.source_hash).scalar_subquery(),
-                        "content": chunk.content,
-                        "vector": vector,
-                        "bmvector": chunk_token_counts,
-                        "entities": chunk.entities,
-                        "meta": chunk.metadata,
-                    })
+                insert_value = {
+                    "file_id": file_id,
+                    "content": doc.content,
+                    "vector": vectors,
+                    "bmvector": bmvector,
+                    "entities": list(entity_uris),
+                    "meta": doc.metadata,
+                }
+                stmt = insert(DocumentTable).values([insert_value]).returning(col(DocumentTable.id))
 
-                stmt = insert(DocumentTable).values(insert_values).returning(col(DocumentTable.id))
-                result = await session.execute(stmt)
-                all_doc_ids.extend([row[0] for row in result.fetchall()])
+                async with self.__db.asession() as session:
+                    result = await session.execute(stmt)
+                    await session.commit()
+                    doc_ids = [row[0] for row in result.fetchall()]
+                    all_doc_ids.extend(doc_ids)
 
-            await session.commit()
+            except Exception:
+                continue
 
         if full_graph.number_of_nodes() > 0:
-            await self.graph_manager.afrom_networkx(full_graph)
+            try:
+                await self.graph_manager.afrom_networkx(full_graph)
+            except Exception:
+                pass
 
         return all_doc_ids
 
@@ -308,9 +324,9 @@ class RAGMode:  # noqa: PLR0904
 
         total_pers = sum(personalization.values())
         if total_pers > 0:
-            pr_scores = pagerank(unified_graph, personalization=personalization)
+            pr_scores = pagerank_scipy(unified_graph, personalization=personalization)
         else:
-            pr_scores = pagerank(unified_graph)
+            pr_scores = pagerank_scipy(unified_graph)
 
         # Step 6: Query edges by entity names via edge_querier
         names: list[str] = [
@@ -504,7 +520,7 @@ class RAGMode:  # noqa: PLR0904
                     col(DocumentTable.id),
                     col(DocumentTable.content),
                     col(DocumentTable.meta),
-                    col(Source.filename),
+                    col(Source.name),
                     col(Source.hash),
                 )
                 .join(Source, col(Source.id) == col(DocumentTable.file_id))
@@ -544,20 +560,47 @@ class RAGMode:  # noqa: PLR0904
                     Document(
                         content=row.content,
                         source_name=meta.get("file_name"),
-                        source_hash=meta.get("source"),
+                        source_hash=meta.get("file_hash"),
                         metadata=meta,
                     ),
                 )
             return documents
 
-    async def aembed_documents(self, rag_id: UUID, files: list[FileStream]) -> None:
+    async def aadd_link_documents(
+        self,
+        rag_id: UUID,
+        name: str,
+        content: str,
+        link: str | None = None,
+        source_hash: str | None = None,
+    ) -> UUID | None:
+        from hashlib import sha256
+
         conf = await RAGConfig().aget(rag_id=rag_id)
         assert conf is not None, "知识库不存在"
 
-        documents = aload_documents(files)
-        documents = asplit_documents(documents)
-        documents = [doc async for doc in documents]
-        await self.aadd_documents(documents)
+        content_hash = source_hash or sha256(content.encode()).hexdigest()
+        source_id = await self.__source.ainsert_source(name=name, hash_val=content_hash, link=link)
+        if source_id is None:
+            existing_ids = await self.__source.aget_id_by_hashs([content_hash])
+            if existing_ids:
+                source_id = existing_ids[0]
+            else:
+                return None
+
+        doc = Document(
+            content=content,
+            source_name=name,
+            source_hash=content_hash,
+            metadata={"name": name, "link": link or ""},
+        )
+
+        await self.aadd_documents([doc])
+
+        file_ids = [source_id]
+        await self.aadd_rag_relation(rag_id, file_ids)
+
+        return source_id
 
     async def aquery_documents(
         self,
@@ -640,64 +683,87 @@ class RAGMode:  # noqa: PLR0904
 
         return context
 
-    async def aadd_embedding_documents(self, rag_id: UUID, files: list[FileStream]) -> list[UUID]:
-        if isinstance(files, FileStream):
-            files = [files]
-        await self.__source.ainsert_files(files)
-        file_ids = await self.__source.aget_id_by_hashs([file.file_hash for file in files])
-        async with self.__db.asession() as session:
-            stmt = select(col(DocumentTable.file_id)).where(
-                col(DocumentTable.file_id).in_(file_ids),
-            )
-            existing = await session.execute(stmt)
-            existing_file_ids = [row[0] for row in existing.fetchall()]
-        existing_file_names = await self.__source.aget_name_by_ids(existing_file_ids)
-        new_files = [file for file in files if file.name not in existing_file_names]
-        if new_files:
-            await self.aembed_documents(rag_id=rag_id, files=new_files)
-        return await self.aadd_rag_relation(rag_id, file_ids)
+    async def aload_from_csv(self, rag_id: UUID, csv_path: str) -> list[UUID]:
+        import json
+        from hashlib import sha256
 
-    async def adelete_embedding_documents(self, rag_id: UUID, file_ids: list[UUID] | None = None) -> list[UUID]:
+        import pandas as pd
+
+        df = pd.read_csv(csv_path)
+        structured_graph = DiGraph()
+        documents: list[Document] = []
+        source_infos: list[dict] = []
+
+        for _, row in df.iterrows():
+            try:
+                row_dict = row.to_dict()
+                row_input = CSVRowInput(**{k: v for k, v in row_dict.items() if pd.notna(v)})
+
+                for triple in row_input.to_artifact_triples():
+                    structured_graph.add_node(
+                        triple.subject_uri,
+                        label=triple.subject_type.value.capitalize(),
+                        name=triple.subject_name,
+                        entity_type=triple.subject_type.value,
+                    )
+                    structured_graph.add_node(
+                        triple.object_uri,
+                        label=triple.object_type.value.capitalize(),
+                        name=triple.object_name,
+                        entity_type=triple.object_type.value,
+                    )
+                    rel_type = triple.predicate_uri.rsplit("/", 1)[-1]
+                    structured_graph.add_edge(triple.subject_uri, triple.object_uri, label=rel_type)
+
+                content_str = json.dumps(row_input.model_dump(), ensure_ascii=False)
+                content_hash = sha256(content_str.encode()).hexdigest()
+                doc = Document(
+                    content=content_str,
+                    source_name=row_input.title,
+                    source_hash=content_hash,
+                    metadata=row_input.model_dump(),
+                )
+                documents.append(doc)
+                source_infos.append({
+                    "name": row_input.title,
+                    "hash": content_hash,
+                    "link": row_input.detail_url,
+                })
+            except Exception:
+                continue
+
+        if not documents:
+            return []
+
+        if structured_graph.number_of_nodes() > 0:
+            await self.graph_manager.afrom_networkx(structured_graph)
+
+        async with self.__db.asession() as session:
+            for info in source_infos:
+                stmt = (
+                    insert(Source)
+                    .values(name=info["name"], hash=info["hash"], link=info["link"])
+                    .on_conflict_do_nothing(index_elements=[col(Source.hash)])
+                )
+                await session.execute(stmt)
+            await session.commit()
+
+        await self.aadd_documents(documents)
+
+        file_ids = await self.__source.aget_id_by_hashs(
+            [d.source_hash for d in documents if d.source_hash],
+        )
+        if file_ids:
+            await self.aadd_rag_relation(rag_id, file_ids)
+
+        return file_ids
+
+    async def aremove_documents(self, rag_id: UUID, file_ids: list[UUID] | UUID | None = None) -> list[UUID]:
         removed = await self.aremove_rag_relation(rag_id, file_ids)
         if removed:
             await DocumentStore().adelete_orphan_by_file_ids(removed)
             await self.__source.adelete_orphan_files(removed)
         return removed
-
-    async def acopy_embedding_documents(
-        self,
-        source_rag_id: UUID,
-        target_rag_id: UUID,
-        file_ids: list[UUID] | None = None,
-    ) -> None:
-        if file_ids is None:
-            file_ids = await self.aget_embedding_documents(source_rag_id)
-        async with self.__db.asession() as session:
-            for file_id in file_ids:
-                check_stmt = select(RAGRelation).where(
-                    col(RAGRelation.rag_id) == target_rag_id,
-                    col(RAGRelation.file_id) == file_id,
-                )
-                existing = await session.execute(check_stmt)
-                if not existing.scalar_one_or_none():
-                    stmt = insert(RAGRelation).values(rag_id=target_rag_id, file_id=file_id)
-                    await session.execute(stmt)
-            await session.commit()
-
-    async def aget_embedding_documents(self, rag_id: UUID) -> list[UUID]:
-        async with self.__db.asession() as session:
-            stmt = select(col(RAGRelation.file_id)).where(col(RAGRelation.rag_id) == rag_id)
-            result = await session.execute(stmt)
-            return [row[0] for row in result.fetchall()]
-
-    async def amove_embedding_documents(
-        self,
-        source_rag_id: UUID,
-        target_rag_id: UUID,
-        file_ids: list[UUID] | None = None,
-    ) -> None:
-        await self.acopy_embedding_documents(source_rag_id, target_rag_id, file_ids)
-        await self.adelete_embedding_documents(source_rag_id, file_ids)
 
     async def areindex(self, reindex_vector: bool = True, reindex_bm25: bool = True) -> None:
         async with self.__db.acursor() as cur:

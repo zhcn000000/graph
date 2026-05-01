@@ -17,7 +17,6 @@ from knowgraph.utils.environments import (
     VLLM_PROTOCOL,
     settings,
 )
-from knowgraph.utils.file import FileStream, get_cache_file_path
 from knowgraph.utils.prompts import (
     ENTITY_EXTRACTION_TEMPLATE,
     GRAPH_RAG_QUERY_TEMPLATE,
@@ -62,7 +61,5 @@ __all__ = [
     "VLLM_HOST",
     "VLLM_PORT",
     "VLLM_PROTOCOL",
-    "FileStream",
-    "get_cache_file_path",
     "settings",
 ]

@@ -16,23 +16,23 @@ GRAPH_LABEL = "artifact_graph"
 def _quote_cypher_value(value: Any) -> str:
     if value is None:
         return "null"
-    elif isinstance(value, bool):
+    if isinstance(value, bool):
         return "true" if value else "false"
-    elif isinstance(value, int):
+    if isinstance(value, int):
         return str(value)
-    elif isinstance(value, float):
+    if isinstance(value, float):
         if math.isnan(value):
             return "NaN"
-        elif math.isinf(value):
+        if math.isinf(value):
             return str(value)
         return str(value)
-    elif isinstance(value, str):
+    if isinstance(value, str):
         escaped = value.replace("\\", "\\\\").replace("'", "\\'")
         return f"'{escaped}'"
-    elif isinstance(value, (list, tuple)):
+    if isinstance(value, (list, tuple)):
         items = ", ".join(_quote_cypher_value(v) for v in value)
         return f"[{items}]"
-    elif isinstance(value, dict):
+    if isinstance(value, dict):
         pairs = ", ".join(
             f"{_quote_cypher_key(k)}: {_quote_cypher_value(v)}"
             for k, v in value.items()  # type: ignore[arg-type]

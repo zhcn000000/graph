@@ -1,13 +1,12 @@
 from typing import Any, cast
 from uuid import UUID
 
-from fastapi import APIRouter, UploadFile
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from knowgraph.database import RAGMode
 from knowgraph.database.graph import AgeGraphManager
 from knowgraph.database.rag import RAGConfig
-from knowgraph.utils.file import FileStream
 
 router = APIRouter()
 
@@ -46,10 +45,23 @@ class RAGSearchResponse(BaseModel):
     results: list[dict[str, Any]]
 
 
-class FileUploadResponse(BaseModel):
+class SourceCreateRequest(BaseModel):
+    name: str
+    content: str
+    link: str | None = None
+    source_hash: str | None = None
+
+
+class SourceCreateResponse(BaseModel):
     success: bool
     status: str
-    file_ids: list[UUID]
+    source_id: UUID | None = None
+
+
+class SourceDeleteResponse(BaseModel):
+    success: bool
+    status: str
+    removed_ids: list[UUID]
 
 
 @router.post("/", response_model=RAGInfoResponse)
@@ -109,25 +121,30 @@ async def api_delete_rag(rag_id: UUID) -> dict[str, Any]:
         return {"success": False, "status": f"删除知识库失败: {e!s}"}
 
 
-@router.post("/{rag_id}/files", response_model=FileUploadResponse)
-async def api_upload_files(rag_id: UUID, files: list[UploadFile]) -> FileUploadResponse:
-    try:
-        file_streams = [await FileStream.afrom_request(f) for f in files]
-        rag_mode = RAGMode()
-        file_ids = await rag_mode.aadd_embedding_documents(rag_id, file_streams)
-        return FileUploadResponse(success=True, status="文件上传成功", file_ids=file_ids)
-    except Exception as e:
-        return FileUploadResponse(success=False, status=f"文件上传失败: {e!s}", file_ids=[])
-
-
-@router.delete("/{rag_id}/files")
-async def api_delete_files(rag_id: UUID, file_ids: list[UUID]) -> dict[str, Any]:
+@router.post("/{rag_id}/sources", response_model=SourceCreateResponse)
+async def api_add_source(rag_id: UUID, request: SourceCreateRequest) -> SourceCreateResponse:
     try:
         rag_mode = RAGMode()
-        await rag_mode.adelete_embedding_documents(rag_id, file_ids)
-        return {"success": True, "status": "删除文件成功"}
+        source_id = await rag_mode.aadd_link_documents(
+            rag_id=rag_id,
+            name=request.name,
+            content=request.content,
+            link=request.link,
+            source_hash=request.source_hash,
+        )
+        return SourceCreateResponse(success=True, status="来源添加成功", source_id=source_id)
     except Exception as e:
-        return {"success": False, "status": f"删除文件失败: {e!s}"}
+        return SourceCreateResponse(success=False, status=f"添加来源失败: {e!s}", source_id=None)
+
+
+@router.delete("/{rag_id}/sources")
+async def api_delete_sources(rag_id: UUID, file_ids: list[UUID]) -> SourceDeleteResponse:
+    try:
+        rag_mode = RAGMode()
+        removed = await rag_mode.aremove_documents(rag_id, file_ids)
+        return SourceDeleteResponse(success=True, status="删除来源成功", removed_ids=removed)
+    except Exception as e:
+        return SourceDeleteResponse(success=False, status=f"删除来源失败: {e!s}", removed_ids=[])
 
 
 @router.post("/{rag_id}/search", response_model=RAGSearchResponse)
@@ -233,7 +250,8 @@ async def api_update_vertex(uri: str, request: GraphEntityRequest, label: str | 
     try:
         rag_mode = RAGMode()
         vertex = await rag_mode.graph_manager.amupsert_vertex(
-            label or request.label, {"uri": uri, **request.properties}
+            label or request.label,
+            {"uri": uri, **request.properties},
         )
         return GraphOperationResponse(success=True, status="节点更新成功", data={"vertex": vertex})
     except Exception as e:

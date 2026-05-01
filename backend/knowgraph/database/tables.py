@@ -1,7 +1,5 @@
-import os
 from datetime import datetime
-from io import BytesIO
-from typing import TYPE_CHECKING, Annotated, Any, Self
+from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
@@ -11,7 +9,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
-    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -21,8 +18,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import declared_attr
 from sqlmodel import Field, SQLModel, col
-
-from knowgraph.utils.file import FileStream
 
 from .types import BM25Vector
 
@@ -49,34 +44,15 @@ class Source(SQLModel, table=True):
         ),
     ]
     hash: Annotated[str, Field(sa_column=Column(String(64), nullable=False, unique=True))]
-    filename: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True))]
-    content: Annotated[bytes, Field(sa_column=Column(LargeBinary, nullable=False))]
-
-    def to_filestream(self) -> FileStream:
-        name = os.path.split(self.filename)[-1]
-        return FileStream(file_hash=str(self.hash), name=name, stream=BytesIO(self.content), file_id=self.id)
-
-    @classmethod
-    def from_filestream(cls, filestream: FileStream) -> Self:
-        if filestream.file_id is not None:
-            return cls(
-                id=filestream.file_id,
-                hash=filestream.file_hash,
-                filename=filestream.name,
-                content=filestream.stream.getvalue(),
-            )
-        return cls(
-            hash=filestream.file_hash,
-            filename=filestream.name,
-            content=filestream.stream.getvalue(),
-        )
+    name: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True))]
+    link: Annotated[str | None, Field(sa_column=Column(String, nullable=True))]
 
     @declared_attr
     @classmethod
     def __table_args__(cls) -> tuple:
         return (
             CheckConstraint(func.length(col(cls.hash)) > 0, name="chk_source_hash_not_empty"),
-            CheckConstraint(func.length(col(cls.filename)) > 0, name="chk_source_filename_not_empty"),
+            CheckConstraint(func.length(col(cls.name)) > 0, name="chk_source_name_not_empty"),
         )
 
 
