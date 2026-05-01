@@ -5,7 +5,7 @@ from typing import Any
 
 from age.models import Edge, Path, Vertex
 from networkx import DiGraph
-from psycopg import sql as pgsql
+from psycopg.sql import SQL, Composable, Identifier, Literal
 
 from knowgraph.database.database import DatabaseManager
 from knowgraph.utils.environments import POSTGRES_DB
@@ -59,25 +59,25 @@ def _embed_params(cypher: str, params: dict[str, Any]) -> str:
     return cypher
 
 
-def _build_cypher_stmt(graph_name: str, cypher: str, columns: list[str]) -> pgsql.Composable:
+def _build_cypher_stmt(graph_name: str, cypher: str, columns: list[str]) -> Composable:
     if columns:
-        col_parts: list[pgsql.Composable] = []
+        col_parts: list[Composable] = []
         for c in columns:
             c = c.strip()
             if not c:
                 continue
             if " " in c:
                 name, type_name = c.split(" ", 1)
-                col_parts.append(pgsql.SQL("{} {}").format(pgsql.Identifier(name), pgsql.SQL(type_name)))
+                col_parts.append(SQL("{} {}").format(Identifier(name), Identifier(type_name)))
             else:
-                col_parts.append(pgsql.SQL("{} agtype").format(pgsql.Identifier(c)))
-        cols: pgsql.Composable = pgsql.SQL(", ").join(col_parts)
+                col_parts.append(SQL("{} agtype").format(Identifier(c)))
+        cols: Composable = SQL(", ").join(col_parts)
     else:
-        cols = pgsql.SQL('"v" agtype')
+        cols = SQL('"v" agtype')
 
-    return pgsql.SQL("SELECT * FROM cypher({graphName}, {cypher}) AS ({columns})").format(  # type: ignore[arg-type]
-        graphName=pgsql.Literal(graph_name),
-        cypher=pgsql.Literal(cypher),
+    return SQL("SELECT * FROM cypher({graphName}, {cypher}) AS ({columns})").format(  # type: ignore[arg-type]
+        graphName=Literal(graph_name),
+        cypher=Literal(cypher),
         columns=cols,
     )
 
@@ -328,6 +328,28 @@ class AgeGraphManager:
         RETURN nodes(path) as nodes, relationships(path) as edges
         """
         return await self.ato_networkx(cypher, {"uri": start_uri})
+
+    async def atraverse_multi(
+        self,
+        uris: list[str],
+        max_hops: int = 3,
+        direction: str = "both",
+    ) -> DiGraph:
+        if not uris:
+            return DiGraph()
+        if direction == "outbound":
+            rel_pattern = f"-[*1..{max_hops}]->"
+        elif direction == "inbound":
+            rel_pattern = f"<-[*1..{max_hops}]-"
+        else:
+            rel_pattern = f"-[*1..{max_hops}]-"
+
+        cypher = f"""
+        UNWIND $uris AS uri
+        MATCH path = (start {{uri: uri}}){rel_pattern}(end)
+        RETURN nodes(path) AS nodes, relationships(path) AS edges
+        """
+        return await self.ato_networkx(cypher, {"uris": uris})
 
     async def afind_paths(
         self,

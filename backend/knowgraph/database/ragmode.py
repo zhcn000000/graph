@@ -3,7 +3,7 @@ from collections import Counter
 from typing import NamedTuple
 from uuid import UUID
 
-from networkx import DiGraph, pagerank
+from networkx import DiGraph, ego_graph, pagerank
 from sqlalchemy import Float, cast, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
@@ -284,22 +284,26 @@ class RAGMode:  # noqa: PLR0904
         vertex_rows = await self.graph_manager.aexecute_cypher(vertex_cypher, {"uris": scan_uris})
         vertex_map: dict[str, dict[str, object]] = {r["uri"]: r for r in vertex_rows}
 
-        # Step 2: Traverse from each found vertex, build unified graph for PageRank
+        # Step 2: Batch traverse from all found vertices, build unified graph for PageRank
         unified_graph = DiGraph()
-        for entity_uri, _ in entity_uris_with_scores[: max(topn * 2, 20)]:
-            if entity_uri not in vertex_map:
-                continue
+        traverse_uris = [uri for uri, _ in entity_uris_with_scores[: max(topn * 2, 20)] if uri in vertex_map]
+        if traverse_uris:
             try:
-                sub = await self.graph_manager.atraverse(entity_uri, max_hops=max_hops)
-                unified_graph.add_nodes_from(sub.nodes(data=True))
-                unified_graph.add_edges_from(sub.edges(data=True))
+                unified_graph = await self.graph_manager.atraverse_multi(traverse_uris, max_hops=max_hops)
             except Exception:
                 pass
 
         if unified_graph.number_of_nodes() == 0:
             return []
 
-        # Step 3: PageRank with personalization from entity scores
+        # Step 3: Build URI → node_key lookup for path extraction
+        uri_to_node_key: dict[str, object] = {}
+        for node_key in unified_graph.nodes():
+            node_uri = unified_graph.nodes[node_key].get("uri", "")
+            if node_uri:
+                uri_to_node_key[node_uri] = node_key
+
+        # Step 5: PageRank with personalization from entity scores
         personalization: dict[str, float] = {}
         for node_key in unified_graph.nodes():
             node_uri = unified_graph.nodes[node_key].get("uri", "")
@@ -311,7 +315,7 @@ class RAGMode:  # noqa: PLR0904
         else:
             pr_scores = pagerank(unified_graph)
 
-        # Step 4: Query edges by entity names via edge_querier
+        # Step 6: Query edges by entity names via edge_querier
         names: list[str] = [
             str(vertex_map[uri]["name"])
             for uri in entity_score_map
@@ -320,7 +324,7 @@ class RAGMode:  # noqa: PLR0904
 
         edges_by_name = await self.edge_querier.query_edges_by_entity_names(names)
 
-        # Step 5: Re-rank edges against current query
+        # Step 7: Re-rank edges against current query
         combined_query = " ".join(queries)
         all_edges: list[EdgeConnectionInfo] = []
         for edges in edges_by_name.values():
@@ -328,7 +332,7 @@ class RAGMode:  # noqa: PLR0904
         if all_edges:
             await self.edge_calculator.compute_strength_for_edges(combined_query, all_edges)
 
-        # Step 6: Combine PageRank scores with edge strength
+        # Step 8: Combine PageRank scores with edge strength, populate path
         graph_results: list[GraphSearchResult] = []
         seen_uris: set[str] = set()
 
@@ -362,12 +366,22 @@ class RAGMode:  # noqa: PLR0904
             else:
                 final_score = pr_score
 
+            # Extract ego subgraph for this entity's local neighborhood
+            path_graph: DiGraph | None = None
+            entity_node_key = uri_to_node_key.get(entity_uri)
+            if entity_node_key is not None:
+                try:
+                    path_graph = ego_graph(unified_graph, entity_node_key, radius=max_hops, undirected=True)
+                except Exception:
+                    pass
+
             graph_results.append(
                 GraphSearchResult(
                     entity_uri=entity_uri,
                     entity_name=entity_name,
                     entity_type=entity_type,
                     score=final_score,
+                    path=path_graph,
                 ),
             )
 
