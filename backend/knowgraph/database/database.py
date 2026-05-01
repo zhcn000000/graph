@@ -63,6 +63,7 @@ class DatabaseManager:
             conn.set_read_only(read_only)
             if not read_only:
                 conn.set_autocommit(autocommit)
+            else:
                 conn.set_deferrable(deferrable)
             try:
                 with conn.cursor() as cursor:
@@ -84,6 +85,7 @@ class DatabaseManager:
                 await conn.set_read_only(read_only)
                 if not read_only:
                     await conn.set_autocommit(autocommit)
+                else:
                     await conn.set_deferrable(deferrable)
                 async with conn.cursor() as cursor:
                     await cursor.execute(
