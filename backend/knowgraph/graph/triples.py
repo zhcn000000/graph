@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
@@ -278,7 +279,8 @@ class LLMExtractor:
                 row_input = CSVRowInput(**row.to_dict())
                 triples = await self.aextract_from_csv_row(row_input)
                 all_triples.extend(triples)
-            except Exception:
+            except Exception as e:
+                warnings.warn(f"Skipping CSV row due to extraction failure: {e}", UserWarning, stacklevel=2)
                 continue
 
         return all_triples
@@ -292,7 +294,8 @@ class LLMExtractor:
                 row_input = CSVRowInput(**{k: v for k, v in row_dict.items() if pd.notna(v)})
                 triples = await self.aextract_from_csv_row(row_input)
                 all_triples.extend(triples)
-            except Exception:
+            except Exception as e:
+                warnings.warn(f"Skipping row due to extraction failure: {e}", UserWarning, stacklevel=2)
                 continue
 
         return all_triples

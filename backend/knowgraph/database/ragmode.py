@@ -1,4 +1,5 @@
 import operator
+import warnings
 from collections import Counter
 from typing import NamedTuple
 from uuid import UUID
@@ -99,7 +100,46 @@ class RAGMode:
             await session.commit()
             return [row[0] for row in result.fetchall()]
 
-    async def aadd_documents(self, documents: list[Document]) -> list[UUID]:
+    async def _extract_and_update_graph(self, content: str, full_graph: DiGraph) -> set[str]:
+        try:
+            triples = await self.extractor.aextract_from_document(Document(content=content))
+            entity_uris: set[str] = set()
+            for triple in triples:
+                subject_label = triple.subject.entity_type.value.capitalize()
+                object_label = triple.object.entity_type.value.capitalize()
+                full_graph.add_node(
+                    triple.subject.uri,
+                    label=subject_label,
+                    name=triple.subject.name,
+                    entity_type=triple.subject.entity_type.value,
+                )
+                full_graph.add_node(
+                    triple.object.uri,
+                    label=object_label,
+                    name=triple.object.name,
+                    entity_type=triple.object.entity_type.value,
+                )
+                full_graph.add_edge(
+                    triple.subject.uri,
+                    triple.object.uri,
+                    label=triple.predicate.value,
+                )
+                entity_uris.add(triple.subject.uri)
+                entity_uris.add(triple.object.uri)
+            return entity_uris
+        except Exception:
+            warnings.warn(
+                "LLM extraction failed, continuing without extracted entities.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return set()
+
+    async def aadd_documents(
+        self,
+        documents: list[Document],
+        extraction_contents: list[str | None] | None = None,
+    ) -> list[UUID]:
         if not documents:
             return []
 
@@ -116,73 +156,65 @@ class RAGMode:
                 result = await pre_session.execute(stmt)
                 file_id_map = {row[1]: row[0] for row in result.fetchall()}
 
-        for doc in documents:
+        insert_values: list[dict] = []
+        for i, doc in enumerate(documents):
             file_id = file_id_map.get(doc.source_hash or "")
             if file_id is None:
+                warnings.warn(
+                    f"Source not found for hash '{doc.source_hash}', skipping document.",
+                    UserWarning,
+                    stacklevel=2,
+                )
                 continue
 
-            try:
+            sub_chunks: list[str] = []
+            async for chunk in asplit_content(doc.content, chunk_size=512, chunk_overlap=64):
+                sub_chunks.append(chunk)
+            if not sub_chunks:
                 sub_chunks = [doc.content]
-                async for chunk in asplit_content(doc.content, chunk_size=512, chunk_overlap=64):
-                    sub_chunks.append(chunk)
 
-                seen = set()
-                sub_chunks = [c for c in sub_chunks if c not in seen and not seen.add(c)]
+            seen: set[str] = set()
+            sub_chunks = [c for c in sub_chunks if c not in seen and not seen.add(c)]
 
-                sub_docs = [Document(content=c) for c in sub_chunks]
-                vectors = await aembed_documents(sub_docs)
+            sub_docs = [Document(content=c) for c in sub_chunks]
+            vectors = await aembed_documents(sub_docs)
 
-                bmvector = await atokenize_content(doc.content)
+            bmvector = await atokenize_content(doc.content)
 
-                triples = await self.extractor.aextract_from_document(doc)
-                entity_uris: set[str] = set()
-                for triple in triples:
-                    subject_label = triple.subject.entity_type.value.capitalize()
-                    object_label = triple.object.entity_type.value.capitalize()
-                    full_graph.add_node(
-                        triple.subject.uri,
-                        label=subject_label,
-                        name=triple.subject.name,
-                        entity_type=triple.subject.entity_type.value,
-                    )
-                    full_graph.add_node(
-                        triple.object.uri,
-                        label=object_label,
-                        name=triple.object.name,
-                        entity_type=triple.object.entity_type.value,
-                    )
-                    full_graph.add_edge(
-                        triple.subject.uri,
-                        triple.object.uri,
-                        label=triple.predicate.value,
-                    )
-                    entity_uris.add(triple.subject.uri)
-                    entity_uris.add(triple.object.uri)
+            entity_uris: set[str] = set()
+            if extraction_contents is not None:
+                extraction_content = extraction_contents[i] if i < len(extraction_contents) else None
+                if extraction_content is not None:
+                    entity_uris |= await self._extract_and_update_graph(extraction_content, full_graph)
+            else:
+                entity_uris |= await self._extract_and_update_graph(doc.content, full_graph)
 
-                insert_value = {
-                    "file_id": file_id,
-                    "content": doc.content,
-                    "vector": vectors,
-                    "bmvector": bmvector,
-                    "entities": list(entity_uris),
-                    "meta": doc.metadata,
-                }
-                stmt = insert(DocumentTable).values([insert_value]).returning(col(DocumentTable.id))
+            entity_uris |= set(doc.entities)
 
-                async with self.__db.asession() as session:
-                    result = await session.execute(stmt)
-                    await session.commit()
-                    doc_ids = [row[0] for row in result.fetchall()]
-                    all_doc_ids.extend(doc_ids)
+            insert_values.append({
+                "file_id": file_id,
+                "content": doc.content,
+                "vector": vectors,
+                "bmvector": bmvector,
+                "entities": list(entity_uris),
+                "meta": doc.metadata,
+            })
 
-            except Exception:
-                continue
+        if insert_values:
+            async with self.__db.asession() as session:
+                stmt = insert(DocumentTable).values(insert_values).returning(col(DocumentTable.id))
+                result = await session.execute(stmt)
+                await session.commit()
+                all_doc_ids = [row[0] for row in result.fetchall()]
+        elif documents:
+            warnings.warn(
+                f"No documents were inserted out of {len(documents)} provided.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         if full_graph.number_of_nodes() > 0:
-            try:
-                await self.graph_manager.afrom_networkx(full_graph)
-            except Exception:
-                pass
+            await self.graph_manager.afrom_networkx(full_graph)
 
         return all_doc_ids
 
@@ -684,7 +716,7 @@ class RAGMode:
         return context
 
     async def aload_from_csv(self, rag_id: UUID, csv_path: str) -> list[UUID]:
-        import json
+        import warnings
         from hashlib import sha256
 
         import pandas as pd
@@ -693,44 +725,65 @@ class RAGMode:
         structured_graph = DiGraph()
         documents: list[Document] = []
         source_infos: list[dict] = []
+        extraction_contents: list[str | None] = []
 
         for _, row in df.iterrows():
             try:
                 row_dict = row.to_dict()
                 row_input = CSVRowInput(**{k: v for k, v in row_dict.items() if pd.notna(v)})
-
-                for triple in row_input.to_artifact_triples():
-                    structured_graph.add_node(
-                        triple.subject_uri,
-                        label=triple.subject_type.value.capitalize(),
-                        name=triple.subject_name,
-                        entity_type=triple.subject_type.value,
-                    )
-                    structured_graph.add_node(
-                        triple.object_uri,
-                        label=triple.object_type.value.capitalize(),
-                        name=triple.object_name,
-                        entity_type=triple.object_type.value,
-                    )
-                    rel_type = triple.predicate_uri.rsplit("/", 1)[-1]
-                    structured_graph.add_edge(triple.subject_uri, triple.object_uri, label=rel_type)
-
-                content_str = json.dumps(row_input.model_dump(), ensure_ascii=False)
-                content_hash = sha256(content_str.encode()).hexdigest()
-                doc = Document(
-                    content=content_str,
-                    source_name=row_input.title,
-                    source_hash=content_hash,
-                    metadata=row_input.model_dump(),
-                )
-                documents.append(doc)
-                source_infos.append({
-                    "name": row_input.title,
-                    "hash": content_hash,
-                    "link": row_input.detail_url,
-                })
-            except Exception:
+            except Exception as e:
+                warnings.warn(f"Skipping invalid CSV row: {e}", UserWarning, stacklevel=2)
                 continue
+
+            triples = row_input.to_artifact_triples()
+            for triple in triples:
+                structured_graph.add_node(
+                    triple.subject_uri,
+                    label=triple.subject_type.value.capitalize(),
+                    name=triple.subject_name,
+                    entity_type=triple.subject_type.value,
+                )
+                structured_graph.add_node(
+                    triple.object_uri,
+                    label=triple.object_type.value.capitalize(),
+                    name=triple.object_name,
+                    entity_type=triple.object_type.value,
+                )
+                rel_type = triple.predicate_uri.rsplit("/", 1)[-1]
+                structured_graph.add_edge(triple.subject_uri, triple.object_uri, label=rel_type)
+
+            structured_entities: list[str] = list({
+                uri for triple in triples for uri in (triple.subject_uri, triple.object_uri)
+            })
+
+            content_parts = [row_input.title]
+            if row_input.museum:
+                content_parts.append(row_input.museum)
+            if row_input.period:
+                content_parts.append(row_input.period)
+            if row_input.type:
+                content_parts.append(row_input.type)
+            if row_input.material:
+                content_parts.append(row_input.material)
+            if row_input.description:
+                content_parts.append(row_input.description)
+            content_str = "\n".join(content_parts)
+
+            content_hash = sha256(content_str.encode()).hexdigest()
+            doc = Document(
+                content=content_str,
+                source_name=row_input.title,
+                source_hash=content_hash,
+                metadata=row_input.model_dump(),
+                entities=structured_entities,
+            )
+            documents.append(doc)
+            extraction_contents.append(row_input.description or None)
+            source_infos.append({
+                "name": row_input.title,
+                "hash": content_hash,
+                "link": row_input.detail_url,
+            })
 
         if not documents:
             return []
@@ -748,12 +801,12 @@ class RAGMode:
                 await session.execute(stmt)
             await session.commit()
 
-        await self.aadd_documents(documents)
+        await self.aadd_documents(documents, extraction_contents=extraction_contents)
 
-        file_ids = await self.__source.aget_id_by_hashs(
-            [d.source_hash for d in documents if d.source_hash],
-        )
-        if file_ids:
+        unique_hashes = list({d.source_hash for d in documents if d.source_hash})
+        file_ids: list[UUID] = []
+        if unique_hashes:
+            file_ids = await self.__source.aget_id_by_hashs(unique_hashes)
             await self.aadd_rag_relation(rag_id, file_ids)
 
         return file_ids
