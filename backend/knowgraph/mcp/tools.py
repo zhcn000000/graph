@@ -3,7 +3,6 @@ from typing import Any
 from fastmcp import FastMCP
 
 from knowgraph.database import RAGMode
-from knowgraph.database.ragmode import GraphRAGConfig
 
 mcp = FastMCP("knowgraph")
 
@@ -120,7 +119,7 @@ async def expand_context(
 ) -> dict[str, Any]:
     rag_mode = RAGMode()
     try:
-        context = await rag_mode.aexpand_context_by_graph(
+        context = await rag_mode.graph_manager.aexpand_context(
             entity_uri=entity_uri,
             max_hops=max_hops,
             direction=direction,
@@ -138,7 +137,7 @@ async def get_entity_paths(
 ) -> dict[str, Any]:
     rag_mode = RAGMode()
     try:
-        paths = await rag_mode.aget_entity_paths(start_uri, end_uri, max_hops)
+        paths = await rag_mode.graph_manager.afind_entity_paths(start_uri, end_uri, max_hops)
         return paths
     except Exception as e:
         return {"error": str(e)}
@@ -152,13 +151,11 @@ async def graph_search(
 ) -> dict[str, Any]:
     rag_mode = RAGMode()
     try:
-        config = GraphRAGConfig()
-        config.MAX_HOPS = max_hops
         docs, graph_entities = await rag_mode.ahyprid_search(
             queries=queries,
             k=k,
             use_graph=True,
-            graph_config=config,
+            max_hops=max_hops,
         )
         return {
             "documents": [

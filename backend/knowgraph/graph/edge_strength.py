@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -309,3 +310,52 @@ class TripleBasedEdgeQuerier:
 
     async def _get_all_edges(self) -> list[EdgeConnectionInfo]:
         return await self.strength_calculator._get_all_edges()
+
+    async def query_edges_by_entity_names(
+        self,
+        names: list[str],
+        max_per_name: int = 20,
+    ) -> dict[str, list[EdgeConnectionInfo]]:
+        edges_by_name: dict[str, list[EdgeConnectionInfo]] = defaultdict(list)
+        if not names:
+            return edges_by_name
+
+        edge_cypher = """
+        UNWIND $names as name
+        MATCH (s)-[r]->(o)
+        WHERE startNode(r).name CONTAINS name
+        RETURN name as query_name, type(r) as relationship_type,
+               startNode(r).uri as start_node_uri, startNode(r).name as subject_name,
+               endNode(r).uri as end_node_uri, endNode(r).name as object_name,
+               r.description as description, r.connection_strength as connection_strength
+        LIMIT 500
+        UNION ALL
+        UNWIND $names as name
+        MATCH (s)-[r]->(o)
+        WHERE endNode(r).name CONTAINS name
+        RETURN name as query_name, type(r) as relationship_type,
+               startNode(r).uri as start_node_uri, startNode(r).name as subject_name,
+               endNode(r).uri as end_node_uri, endNode(r).name as object_name,
+               r.description as description, r.connection_strength as connection_strength
+        LIMIT 500
+        """
+        edge_rows = await self.graph_manager.aexecute_cypher(edge_cypher, {"names": names})
+        for row in edge_rows:
+            query_name = row["query_name"]
+            if len(edges_by_name[query_name]) >= max_per_name:
+                continue
+            predicate_desc = row.get("relationship_type", "").replace("_", " ")
+            edges_by_name[query_name].append(
+                EdgeConnectionInfo(
+                    start_node_uri=row.get("start_node_uri", ""),
+                    end_node_uri=row.get("end_node_uri", ""),
+                    relationship_type=row.get("relationship_type", ""),
+                    subject_name=row.get("subject_name", ""),
+                    object_name=row.get("object_name", ""),
+                    description=row.get("description"),
+                    predicate_description=predicate_desc,
+                    connection_strength=row.get("connection_strength"),
+                ),
+            )
+
+        return edges_by_name

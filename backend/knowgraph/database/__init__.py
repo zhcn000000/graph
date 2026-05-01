@@ -3,7 +3,7 @@ from .graph import AgeGraphManager
 from .history import HistoryStore
 from .pool import ConnectionPoolManager, pool_manager
 from .rag import RAGConfig
-from .ragmode import GraphRAGConfig, GraphSearchResult, RAGMode
+from .ragmode import GraphSearchResult, RAGMode
 from .source import SourceStore
 from .tables import (
     DocumentTable,
@@ -19,7 +19,6 @@ __all__ = [
     "ConnectionPoolManager",
     "DatabaseManager",
     "DocumentTable",
-    "GraphRAGConfig",
     "GraphSearchResult",
     "HistoryStore",
     "HistoryTable",

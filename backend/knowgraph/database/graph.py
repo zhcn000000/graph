@@ -1,14 +1,87 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
-from age import Edge, Path, Vertex
+from age.models import Edge, Path, Vertex
 from networkx import DiGraph
+from psycopg import sql as pgsql
 
 from knowgraph.database.database import DatabaseManager
 from knowgraph.utils.environments import POSTGRES_DB
 
 GRAPH_LABEL = "artifact_graph"
+
+
+def _quote_cypher_value(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if math.isnan(value):
+            return "NaN"
+        if value == float("inf"):
+            return str(value)
+        if value == float("-inf"):
+            return str(value)
+        return str(value)
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{escaped}'"
+    if isinstance(value, (list, tuple)):
+        items = ", ".join(_quote_cypher_value(v) for v in value)
+        return f"[{items}]"
+    if isinstance(value, dict):
+        pairs = ", ".join(
+            f"{_quote_cypher_key(k)}: {_quote_cypher_value(v)}"
+            for k, v in value.items()  # type: ignore[arg-type]
+        )
+        return f"{{{pairs}}}"
+    return _quote_cypher_value(str(value))
+
+
+def _quote_cypher_key(key: object) -> str:
+    if isinstance(key, str) and key.replace("_", "").isalnum():
+        return key
+    return _quote_cypher_value(key)
+
+
+def _embed_params(cypher: str, params: dict[str, Any]) -> str:
+    if not params:
+        return cypher
+    param_keys: list[str] = list(params.keys())
+    param_keys.sort(key=len, reverse=True)
+    for key in param_keys:
+        placeholder = f"${key}"
+        replacement = _quote_cypher_value(params[key])
+        cypher = cypher.replace(placeholder, replacement)
+    return cypher
+
+
+def _build_cypher_stmt(graph_name: str, cypher: str, columns: list[str]) -> pgsql.Composable:
+    if columns:
+        col_parts: list[pgsql.Composable] = []
+        for c in columns:
+            c = c.strip()
+            if not c:
+                continue
+            if " " in c:
+                name, type_name = c.split(" ", 1)
+                col_parts.append(pgsql.SQL("{} {}").format(pgsql.Identifier(name), pgsql.Identifier(type_name)))
+            else:
+                col_parts.append(pgsql.SQL("{} agtype").format(pgsql.Identifier(c)))
+        cols: pgsql.Composable = pgsql.SQL(", ").join(col_parts)
+    else:
+        cols = pgsql.SQL('"v" agtype')
+
+    return pgsql.SQL("SELECT * FROM cypher({graphName}, {cypher}) AS ({columns})").format(  # type: ignore[arg-type]
+        graphName=pgsql.Literal(graph_name),
+        cypher=pgsql.Literal(cypher),
+        columns=cols,
+    )
 
 
 class AgeGraphManager:
@@ -20,18 +93,30 @@ class AgeGraphManager:
         self,
         cypher: str,
         params: dict[str, Any] | None = None,
+        columns: list[str] | None = None,
         read_only: bool = True,
     ) -> list[dict[str, Any]]:
+        if columns is None:
+            columns = []
+
+        cypher_clean = cypher.replace("\n", " ").replace("\t", " ")
+        cypher_clean = _embed_params(cypher_clean, params or {})
+
+        stmt = _build_cypher_stmt(self.graph_name, cypher_clean, columns)
+
         async with self.__db.aconnection() as conn:
-            await conn.set_autocommit(read_only)
-            result = await conn.execute(cypher, params or {})  # type: ignore
             if read_only:
+                await conn.set_autocommit(False)
+            async with conn.cursor() as cur:
+                result = await cur.execute(stmt)  # type: ignore
                 rows = await result.fetchall()
                 if rows and result.description:
-                    columns = [desc[0] for desc in result.description]
-                    return [dict(zip(columns, row, strict=False)) for row in rows]
-                return []
-            await conn.commit()
+                    col_names = [desc[0] for desc in result.description]
+                    return [dict(zip(col_names, row, strict=False)) for row in rows]
+                if not read_only:
+                    await conn.commit()
+                else:
+                    await conn.rollback()
             return []
 
     @staticmethod
@@ -51,35 +136,21 @@ class AgeGraphManager:
         return {"nodes": nodes, "edges": edges}
 
     async def acreate_graph(self) -> bool:
-        try:
-            async with self.__db.aconnection() as conn:
-                await conn.set_autocommit(False)
-                result = await conn.execute(f"SELECT * FROM ag_graph WHERE graph_name = '{self.graph_name}';")  # type: ignore
-                exists = await result.fetchone()
-
-                if not exists:
-                    await conn.execute(f"SELECT create_graph('{self.graph_name}');")  # type: ignore
-                    await conn.commit()
-                    return True
-                await conn.commit()
-                return False
-        except Exception:
+        async with self.__db.acursor() as cur:
+            result = await cur.execute(f"SELECT * FROM ag_graph WHERE graph_name = '{self.graph_name}';")  # type: ignore
+            exists = await result.fetchone()
+            if not exists:
+                await cur.execute(f"SELECT create_graph('{self.graph_name}');")  # type: ignore
+                return True
             return False
 
     async def adrop_graph(self) -> bool:
-        try:
-            async with self.__db.aconnection() as conn:
-                await conn.set_autocommit(False)
-                result = await conn.execute(f"SELECT * FROM ag_graph WHERE graph_name = '{self.graph_name}';")  # type: ignore
-                exists = await result.fetchone()
-
-                if exists:
-                    await conn.execute(f"SELECT drop_graph('{self.graph_name}', true);")  # type: ignore
-                    await conn.commit()
-                    return True
-                await conn.commit()
-                return False
-        except Exception:
+        async with self.__db.acursor() as cur:
+            result = await cur.execute(f"SELECT * FROM ag_graph WHERE graph_name = '{self.graph_name}';")  # type: ignore
+            exists = await result.fetchone()
+            if exists:
+                await cur.execute(f"SELECT drop_graph('{self.graph_name}', true);")  # type: ignore
+                return True
             return False
 
     async def amupsert_vertex(
@@ -350,6 +421,68 @@ class AgeGraphManager:
                 )
         return graph
 
+    async def aexpand_context(
+        self,
+        entity_uri: str,
+        max_hops: int = 2,
+        direction: str = "both",
+    ) -> dict[str, Any]:
+        graph = await self.atraverse(entity_uri, max_hops=max_hops, direction=direction)
+
+        context: dict[str, Any] = {
+            "center_entity": entity_uri,
+            "connected_entities": [],
+            "paths": [],
+        }
+
+        for node_uri, data in graph.nodes(data=True):
+            if node_uri != entity_uri:
+                context["connected_entities"].append(
+                    {
+                        "uri": node_uri,
+                        "name": data.get("name"),
+                        "type": data.get("entity_type"),
+                    },
+                )
+
+        for u, v, data in graph.edges(data=True):
+            context["paths"].append(
+                {
+                    "start_uri": u,
+                    "end_uri": v,
+                    "relationship": data.get("relationship_type") or data.get("label"),
+                },
+            )
+
+        return context
+
+    async def afind_entity_paths(
+        self,
+        start_uri: str,
+        end_uri: str,
+        max_hops: int = 5,
+    ) -> dict[str, list[dict[str, str | None]]]:
+        graph = await self.afind_paths(start_uri, end_uri, max_hops)
+
+        path_dict: dict[str, list[dict[str, str | None]]] = {"nodes": [], "edges": []}
+        for node_uri, data in graph.nodes(data=True):
+            path_dict["nodes"].append(
+                {
+                    "uri": node_uri,
+                    "name": data.get("name"),
+                    "type": data.get("entity_type"),
+                },
+            )
+        for u, v, data in graph.edges(data=True):
+            path_dict["edges"].append(
+                {
+                    "start_uri": u,
+                    "end_uri": v,
+                    "relationship": data.get("relationship_type") or data.get("label"),
+                },
+            )
+        return path_dict
+
     async def afrom_networkx(self, graph: DiGraph) -> bool:
         try:
             nodes_by_label: dict[str, list[dict[str, Any]]] = {}
@@ -439,8 +572,8 @@ class AgeGraphManager:
                 if isinstance(x, Edge):
                     add_edge_to_networkx(x)
 
-        async with self.__db.aconnection() as conn:
-            result = await conn.execute(query)  # type: ignore
+        async with self.__db.acursor() as cur:
+            result = await cur.execute(query)  # type: ignore
             rows = await result.fetchall()
             for row in rows:
                 for x in row:

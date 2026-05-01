@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
 
-from knowgraph.database import GraphRAGConfig, RAGMode
+from knowgraph.database import RAGMode
 from knowgraph.database.graph import AgeGraphManager
 from knowgraph.database.rag import RAGConfig
 from knowgraph.utils.file import FileStream
@@ -163,6 +163,9 @@ class GraphSearchRequest(BaseModel):
     k: int = 4
     use_graph: bool = False
     max_hops: int = 3
+    graph_weight: float = 0.3
+    vector_weight: float = 0.4
+    bm25_weight: float = 0.3
 
 
 class GraphContextRequest(BaseModel):
@@ -318,13 +321,14 @@ async def api_find_paths(start_uri: str, end_uri: str, max_hops: int = 5) -> Gra
 async def api_graph_search(request: GraphSearchRequest) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        config = GraphRAGConfig()
-        config.MAX_HOPS = request.max_hops
         docs, graph_entities = await rag_mode.ahyprid_search(
             queries=request.queries,
             k=request.k,
             use_graph=True,
-            graph_config=config,
+            max_hops=request.max_hops,
+            graph_weight=request.graph_weight,
+            vector_weight=request.vector_weight,
+            bm25_weight=request.bm25_weight,
         )
         result_dicts = [
             {
@@ -356,7 +360,7 @@ async def api_graph_search(request: GraphSearchRequest) -> GraphOperationRespons
 async def api_graph_context(request: GraphContextRequest) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        context = await rag_mode.aexpand_context_by_graph(
+        context = await rag_mode.graph_manager.aexpand_context(
             entity_uri=request.entity_uri,
             max_hops=request.max_hops,
             direction=request.direction,
@@ -370,7 +374,7 @@ async def api_graph_context(request: GraphContextRequest) -> GraphOperationRespo
 async def api_entity_paths(request: PathQueryRequest) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        paths = await rag_mode.aget_entity_paths(request.start_uri, request.end_uri, request.max_hops)
+        paths = await rag_mode.graph_manager.afind_entity_paths(request.start_uri, request.end_uri, request.max_hops)
         return GraphOperationResponse(success=True, status="实体路径查询成功", data={"paths": paths})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"查询实体路径失败: {e!s}")
