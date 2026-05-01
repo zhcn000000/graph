@@ -109,7 +109,8 @@ class RAGMode:  # noqa: PLR0904
             return []
 
         extractor = LLMExtractor()
-        all_doc_ids = []
+        all_doc_ids: list[UUID] = []
+        full_graph = DiGraph()
 
         async with self.__db.asession() as session:
             for doc in documents:
@@ -136,28 +137,22 @@ class RAGMode:  # noqa: PLR0904
                 for triple in triples:
                     subject_label = triple.subject.entity_type.value.capitalize()
                     object_label = triple.object.entity_type.value.capitalize()
-                    await self.graph_manager.acreate_vertex(
-                        subject_label,
-                        {
-                            "uri": triple.subject.uri,
-                            "name": triple.subject.name,
-                            "entity_type": triple.subject.entity_type.value,
-                        },
+                    full_graph.add_node(
+                        triple.subject.uri,
+                        label=subject_label,
+                        name=triple.subject.name,
+                        entity_type=triple.subject.entity_type.value,
                     )
-                    await self.graph_manager.acreate_vertex(
-                        object_label,
-                        {
-                            "uri": triple.object.uri,
-                            "name": triple.object.name,
-                            "entity_type": triple.object.entity_type.value,
-                        },
+                    full_graph.add_node(
+                        triple.object.uri,
+                        label=object_label,
+                        name=triple.object.name,
+                        entity_type=triple.object.entity_type.value,
                     )
-                    await self.graph_manager.acreate_edge(
+                    full_graph.add_edge(
                         triple.subject.uri,
                         triple.object.uri,
-                        triple.predicate.value,
-                        start_label=subject_label,
-                        end_label=object_label,
+                        label=triple.predicate.value,
                     )
                     entity_uris.add(triple.subject.uri)
                     entity_uris.add(triple.object.uri)
@@ -178,6 +173,9 @@ class RAGMode:  # noqa: PLR0904
                 all_doc_ids.extend([row[0] for row in result.fetchall()])
 
             await session.commit()
+
+        if full_graph.number_of_nodes() > 0:
+            await self.graph_manager.afrom_networkx(full_graph)
 
         return all_doc_ids
 
@@ -312,7 +310,7 @@ class RAGMode:  # noqa: PLR0904
         MATCH (v {uri: uri})
         RETURN v.uri as uri, id(v) as id, v.name as name, v.entity_type as entity_type
         """
-        vertex_rows = await self.graph_manager._execute_cypher(vertex_cypher, {"uris": uris})
+        vertex_rows = await self.graph_manager.aexecute_cypher(vertex_cypher, {"uris": uris})
         vertex_map: dict[str, dict[str, object]] = {r["uri"]: r for r in vertex_rows}
 
         # Step 3: Batch lookup adjacent edges using entity names
@@ -342,7 +340,7 @@ class RAGMode:  # noqa: PLR0904
                    r.description as description, r.connection_strength as connection_strength
             LIMIT 500
             """
-            edge_rows = await self.graph_manager._execute_cypher(edge_cypher, {"names": names})
+            edge_rows = await self.graph_manager.aexecute_cypher(edge_cypher, {"names": names})
             for row in edge_rows:
                 query_name = row["query_name"]
                 if len(edges_by_name[query_name]) >= 20:
@@ -690,31 +688,27 @@ class RAGMode:  # noqa: PLR0904
         start_uri: str,
         end_uri: str,
         max_hops: int = 5,
-    ) -> list[dict]:
-        paths = await self.graph_manager.afind_paths(start_uri, end_uri, max_hops)
+    ) -> dict:
+        graph = await self.graph_manager.afind_paths(start_uri, end_uri, max_hops)
 
-        result = []
-        for graph in paths:
-            path_dict: dict[str, list[dict[str, str | None]]] = {"nodes": [], "edges": []}
-            for node_uri, data in graph.nodes(data=True):
-                path_dict["nodes"].append(
-                    {
-                        "uri": node_uri,
-                        "name": data.get("name"),
-                        "type": data.get("entity_type"),
-                    },
-                )
-            for u, v, data in graph.edges(data=True):
-                path_dict["edges"].append(
-                    {
-                        "start_uri": u,
-                        "end_uri": v,
-                        "relationship": data.get("relationship_type") or data.get("label"),
-                    },
-                )
-            result.append(path_dict)
-
-        return result
+        path_dict: dict[str, list[dict[str, str | None]]] = {"nodes": [], "edges": []}
+        for node_uri, data in graph.nodes(data=True):
+            path_dict["nodes"].append(
+                {
+                    "uri": node_uri,
+                    "name": data.get("name"),
+                    "type": data.get("entity_type"),
+                },
+            )
+        for u, v, data in graph.edges(data=True):
+            path_dict["edges"].append(
+                {
+                    "start_uri": u,
+                    "end_uri": v,
+                    "relationship": data.get("relationship_type") or data.get("label"),
+                },
+            )
+        return path_dict
 
     async def aadd_embedding_documents(self, rag_id: UUID, files: list[FileStream]) -> list[UUID]:
         if isinstance(files, FileStream):

@@ -62,23 +62,17 @@ async def get_triples(
     rag_mode = RAGMode()
     try:
         if entity_uri:
-            g = await rag_mode.graph_manager.aget_neighbors(entity_uri, direction="both", max_hops=1)
+            g = await rag_mode.graph_manager.atraverse(entity_uri, max_hops=1, direction="both")
             triples = []
-            for node_uri, _data in g.nodes(data=True):
-                if not node_uri:
+            for u, v, data in g.edges(data=True):
+                if relationship_type and data.get("relationship_type") != relationship_type:
                     continue
-                edge = await rag_mode.graph_manager.aget_edge(
-                    start_uri=entity_uri,
-                    end_uri=node_uri,
-                    relationship_type=relationship_type,
-                )
-                if edge:
-                    triples.append({
-                        "subject_uri": edge.get("start_uri"),
-                        "predicate_uri": edge.get("uri"),
-                        "object_uri": edge.get("end_uri"),
-                        "relationship_type": edge.get("relationship_type"),
-                    })
+                triples.append({
+                    "subject_uri": u,
+                    "predicate_uri": data.get("uri"),
+                    "object_uri": v,
+                    "relationship_type": data.get("relationship_type"),
+                })
             return triples
         if subject_uri and object_uri:
             edge = await rag_mode.graph_manager.aget_edge(subject_uri, object_uri, relationship_type)
@@ -141,13 +135,13 @@ async def get_entity_paths(
     start_uri: str,
     end_uri: str,
     max_hops: int = 5,
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     rag_mode = RAGMode()
     try:
         paths = await rag_mode.aget_entity_paths(start_uri, end_uri, max_hops)
         return paths
     except Exception as e:
-        return [{"error": str(e)}]
+        return {"error": str(e)}
 
 
 @mcp.tool()
@@ -196,7 +190,7 @@ async def create_graph_entity(
 ) -> dict[str, Any]:
     rag_mode = RAGMode()
     try:
-        vertex = await rag_mode.graph_manager.acreate_vertex(label, properties)
+        vertex = await rag_mode.graph_manager.amupsert_vertex(label, properties)
         if vertex:
             return {
                 "uri": vertex.get("uri"),
@@ -220,7 +214,7 @@ async def create_graph_relation(
 ) -> dict[str, Any]:
     rag_mode = RAGMode()
     try:
-        edge = await rag_mode.graph_manager.acreate_edge(start_uri, end_uri, relationship_type, properties)
+        edge = await rag_mode.graph_manager.amupsert_edge(start_uri, end_uri, relationship_type, properties)
         if edge:
             return {
                 "id": edge.get("id"),

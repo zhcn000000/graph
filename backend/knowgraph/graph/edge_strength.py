@@ -80,7 +80,7 @@ class EdgeStrengthCalculator:
                r.connection_strength as connection_strength
         LIMIT 10000
         """
-        results = await self.graph_manager._execute_cypher(cypher, {})
+        results = await self.graph_manager.aexecute_cypher(cypher, {})
         return self._parse_edge_rows(results)
 
     async def compute_strength_for_edges(
@@ -113,7 +113,7 @@ class EdgeStrengthCalculator:
 
         for edge in edges_with_strength:
             if edge.connection_strength is not None:
-                await self.graph_manager.aupdate_edge(
+                await self.graph_manager.amupsert_edge(
                     start_uri=edge.start_node_uri,
                     end_uri=edge.end_node_uri,
                     relationship_type=edge.relationship_type,
@@ -177,7 +177,7 @@ class EdgeStrengthCalculator:
         relationship_type: str,
         connection_strength: float,
     ) -> bool:
-        result = await self.graph_manager.aupdate_edge(
+        result = await self.graph_manager.amupsert_edge(
             start_uri=start_uri,
             end_uri=end_uri,
             relationship_type=relationship_type,
@@ -249,7 +249,7 @@ class TripleBasedEdgeQuerier:
         LIMIT {limit}
         """
 
-        results = await self.graph_manager._execute_cypher(cypher, params)
+        results = await self.graph_manager.aexecute_cypher(cypher, params)
 
         edges = []
         for row in results:

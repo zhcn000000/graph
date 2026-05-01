@@ -16,7 +16,7 @@ class AgeGraphManager:
         self.graph_name = graph_name
         self.__db = DatabaseManager(dbname)
 
-    async def _execute_cypher(
+    async def aexecute_cypher(
         self,
         cypher: str,
         params: dict[str, Any] | None = None,
@@ -82,7 +82,7 @@ class AgeGraphManager:
         except Exception:
             return False
 
-    async def acreate_vertex(
+    async def amupsert_vertex(
         self,
         label: str,
         properties: dict[str, Any],
@@ -105,7 +105,7 @@ class AgeGraphManager:
         RETURN id(v) as id, labels(v) as labels, v.uri as uri, v.name as name, v.entity_type as entity_type
         """
         try:
-            results = await self._execute_cypher(cypher, params, read_only=False)
+            results = await self.aexecute_cypher(cypher, params, read_only=False)
             if results:
                 row = results[0]
                 return {
@@ -133,7 +133,7 @@ class AgeGraphManager:
                v.entity_type as entity_type, v.description as description
         """
         try:
-            results = await self._execute_cypher(cypher, {"uri": uri})
+            results = await self.aexecute_cypher(cypher, {"uri": uri})
             if results:
                 row = results[0]
                 return {
@@ -148,39 +148,6 @@ class AgeGraphManager:
             pass
         return None
 
-    async def aupdate_vertex(
-        self,
-        uri: str,
-        properties: dict[str, Any],
-        label: str | None = None,
-    ) -> dict[str, Any] | None:
-        label_clause = f":{label}" if label else ""
-        props_set = ", ".join([f"v.{k} = ${k}" for k in properties])
-
-        cypher = f"""
-        MATCH (v{label_clause} {{uri: $uri}})
-        SET {props_set}
-        RETURN id(v) as id, labels(v) as labels, v.uri as uri, v.name as name, v.entity_type as entity_type
-        """
-        params: dict[str, Any] = {"uri": uri}
-        params.update(properties)
-
-        try:
-            results = await self._execute_cypher(cypher, params, read_only=False)
-            if results:
-                row = results[0]
-                return {
-                    "id": row.get("id"),
-                    "label": (row.get("labels") or [""])[0],
-                    "uri": row.get("uri"),
-                    "name": row.get("name"),
-                    "entity_type": row.get("entity_type"),
-                    **properties,
-                }
-        except Exception:
-            pass
-        return None
-
     async def adelete_vertex(self, uri: str, label: str | None = None) -> bool:
         label_clause = f":{label}" if label else ""
         cypher = f"""
@@ -189,14 +156,14 @@ class AgeGraphManager:
         RETURN count(*) as deleted_count
         """
         try:
-            results = await self._execute_cypher(cypher, {"uri": uri}, read_only=False)
+            results = await self.aexecute_cypher(cypher, {"uri": uri}, read_only=False)
             if results and results[0].get("deleted_count", 0) > 0:
                 return True
         except Exception:
             pass
         return False
 
-    async def acreate_edge(
+    async def amupsert_edge(
         self,
         start_uri: str,
         end_uri: str,
@@ -231,7 +198,7 @@ class AgeGraphManager:
         params.update(props)
 
         try:
-            results = await self._execute_cypher(cypher, params, read_only=False)
+            results = await self.aexecute_cypher(cypher, params, read_only=False)
             if results:
                 row = results[0]
                 return {
@@ -261,7 +228,7 @@ class AgeGraphManager:
                s.uri as start_uri, e.uri as end_uri
         """
         try:
-            results = await self._execute_cypher(cypher, {"start_uri": start_uri, "end_uri": end_uri})
+            results = await self.aexecute_cypher(cypher, {"start_uri": start_uri, "end_uri": end_uri})
             if results:
                 row = results[0]
                 return {
@@ -288,7 +255,7 @@ class AgeGraphManager:
         RETURN count(*) as deleted_count
         """
         try:
-            results = await self._execute_cypher(
+            results = await self.aexecute_cypher(
                 cypher,
                 {"start_uri": start_uri, "end_uri": end_uri},
                 read_only=False,
@@ -298,124 +265,6 @@ class AgeGraphManager:
         except Exception:
             pass
         return False
-
-    async def aupdate_edge(
-        self,
-        start_uri: str,
-        end_uri: str,
-        relationship_type: str,
-        properties: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        props_set = ", ".join([f"r.{k} = ${k}" for k in properties])
-        cypher = f"""
-        MATCH (s {{uri: $start_uri}})-[r:{relationship_type}]->(e {{uri: $end_uri}})
-        SET {props_set}
-        RETURN id(r) as id, r.uri as uri, type(r) as relationship_type,
-               s.uri as start_uri, e.uri as end_uri
-        """
-        params: dict[str, Any] = {"start_uri": start_uri, "end_uri": end_uri}
-        params.update(properties)
-
-        try:
-            results = await self._execute_cypher(cypher, params, read_only=False)
-            if results:
-                row = results[0]
-                return {
-                    "id": row.get("id"),
-                    "label": row.get("relationship_type"),
-                    "uri": row.get("uri"),
-                    "start_uri": row.get("start_uri"),
-                    "end_uri": row.get("end_uri"),
-                    "relationship_type": row.get("relationship_type"),
-                    **properties,
-                }
-        except Exception:
-            pass
-        return None
-
-    async def aget_neighbors(
-        self,
-        uri: str,
-        direction: str = "both",
-        max_hops: int = 1,
-    ) -> DiGraph:
-        if direction == "outbound":
-            rel_pattern = f"-[*1..{max_hops}]->"
-        elif direction == "inbound":
-            rel_pattern = f"<-[*1..{max_hops}]-"
-        else:
-            rel_pattern = f"-[*1..{max_hops}]-"
-
-        cypher = f"""
-        MATCH (v {{uri: $uri}}){rel_pattern}(neighbor)
-        RETURN DISTINCT
-            neighbor.uri as uri,
-            labels(neighbor) as labels,
-            neighbor.name as name,
-            neighbor.entity_type as entity_type
-        UNION
-        MATCH (v {{uri: $uri}})
-        RETURN
-            v.uri as uri,
-            labels(v) as labels,
-            v.name as name,
-            v.entity_type as entity_type
-        """
-        try:
-            results = await self._execute_cypher(cypher, {"uri": uri})
-            graph = DiGraph()
-            for row in results:
-                node_uri = row.get("uri")
-                if node_uri is None:
-                    continue
-                labels = row.get("labels") or []
-                label = labels[0] if labels else None
-                graph.add_node(
-                    node_uri,
-                    label=label,
-                    name=row.get("name"),
-                    entity_type=row.get("entity_type"),
-                )
-            return graph
-        except Exception:
-            return DiGraph()
-
-    async def aexecute_cypher(
-        self,
-        cypher: str,
-        params: dict[str, Any] | None = None,
-        read_only: bool = True,
-    ) -> list[dict[str, Any]]:
-        return await self._execute_cypher(cypher, params, read_only=read_only)
-
-    async def aquery_by_type(
-        self,
-        entity_type: str,
-        limit: int = 100,
-    ) -> DiGraph:
-        cypher = f"""
-        MATCH (v:{entity_type.capitalize()})
-        RETURN id(v) as id, labels(v) as labels, v.uri as uri, v.name as name, v.entity_type as entity_type
-        LIMIT {limit}
-        """
-        try:
-            results = await self._execute_cypher(cypher)
-            graph = DiGraph()
-            for row in results:
-                uri = row.get("uri")
-                if uri is None:
-                    continue
-                labels = row.get("labels") or [entity_type.capitalize()]
-                graph.add_node(
-                    uri,
-                    label=labels[0] if labels else None,
-                    id=row.get("id"),
-                    name=row.get("name"),
-                    entity_type=row.get("entity_type"),
-                )
-            return graph
-        except Exception:
-            return DiGraph()
 
     async def atraverse(
         self,
@@ -435,46 +284,8 @@ class AgeGraphManager:
         RETURN nodes(path) as nodes, relationships(path) as edges
         """
         try:
-            results = await self._execute_cypher(cypher, {"uri": start_uri})
-            graph = DiGraph()
-
-            for row in results:
-                for node_item in row.get("nodes", []):
-                    if not node_item:
-                        continue
-                    uri = node_item.get("uri")
-                    if uri is None:
-                        continue
-                    if uri in graph:
-                        continue
-                    labels = node_item.get("labels") or []
-                    graph.add_node(
-                        uri,
-                        label=labels[0] if labels else None,
-                        name=node_item.get("name"),
-                        entity_type=node_item.get("entity_type"),
-                        id=node_item.get("id"),
-                    )
-
-                for rel_item in row.get("edges", []):
-                    if not rel_item:
-                        continue
-                    edge_id = rel_item.get("id")
-                    if edge_id is not None and graph.has_edge(rel_item.get("start_uri"), rel_item.get("end_uri")):
-                        existing = graph.get_edge_data(rel_item.get("start_uri"), rel_item.get("end_uri"))
-                        if existing and existing.get("id") == edge_id:
-                            continue
-
-                    graph.add_edge(
-                        rel_item.get("start_uri"),
-                        rel_item.get("end_uri"),
-                        id=rel_item.get("id"),
-                        label=rel_item.get("type") or rel_item.get("label"),
-                        uri=rel_item.get("uri"),
-                        relationship_type=rel_item.get("type") or rel_item.get("label"),
-                    )
-
-            return graph
+            results = await self.aexecute_cypher(cypher, {"uri": start_uri})
+            return self._path_rows_to_digraph(results)
         except Exception:
             return DiGraph()
 
@@ -483,129 +294,141 @@ class AgeGraphManager:
         start_uri: str,
         end_uri: str,
         max_hops: int = 5,
-    ) -> list[DiGraph]:
+    ) -> DiGraph:
         cypher = f"""
         MATCH path = shortestPath((start {{uri: $start_uri}})-[*]->(end {{uri: $end_uri}}))
         WHERE size(relationships(path)) <= {max_hops}
         RETURN nodes(path) as nodes, relationships(path) as edges
         """
         try:
-            results = await self._execute_cypher(
+            results = await self.aexecute_cypher(
                 cypher,
                 {"start_uri": start_uri, "end_uri": end_uri},
             )
-            paths: list[DiGraph] = []
-            for row in results:
-                graph = DiGraph()
-                for node_item in row.get("nodes", []):
-                    if not node_item:
-                        continue
-                    uri = node_item.get("uri")
-                    if uri is None:
-                        continue
-                    labels = node_item.get("labels") or []
-                    graph.add_node(
-                        uri,
-                        label=labels[0] if labels else None,
-                        name=node_item.get("name"),
-                        entity_type=node_item.get("entity_type"),
-                        id=node_item.get("id"),
-                    )
-                for rel_item in row.get("edges", []):
-                    if not rel_item:
-                        continue
-                    graph.add_edge(
-                        rel_item.get("start_uri"),
-                        rel_item.get("end_uri"),
-                        id=rel_item.get("id"),
-                        label=rel_item.get("type") or rel_item.get("label"),
-                        uri=rel_item.get("uri"),
-                        relationship_type=rel_item.get("type") or rel_item.get("label"),
-                    )
-                paths.append(graph)
-            return paths
+            return self._path_rows_to_digraph(results)
         except Exception:
-            return []
+            return DiGraph()
 
-    async def aquery_graph(self, cypher: str, params: dict[str, Any] | None = None) -> DiGraph:
+    @staticmethod
+    def _path_rows_to_digraph(rows: list[dict[str, Any]]) -> DiGraph:
         graph = DiGraph()
-        try:
-            results = await self._execute_cypher(cypher, params)
-            for row in results:
-                for value in row.values():
-                    if isinstance(value, dict):
-                        uri = value.get("uri")
-                        if uri:
-                            labels = value.get("labels") or []
-                            graph.add_node(
-                                uri,
-                                label=labels[0] if labels else None,
-                                id=value.get("id"),
-                                name=value.get("name"),
-                                entity_type=value.get("entity_type"),
-                            )
-                    elif isinstance(value, list):
-                        for item in value:
-                            if isinstance(item, dict):
-                                uri = item.get("uri")
-                                if uri:
-                                    labels = item.get("labels") or []
-                                    graph.add_node(
-                                        uri,
-                                        label=labels[0] if labels else None,
-                                        id=item.get("id"),
-                                        name=item.get("name"),
-                                        entity_type=item.get("entity_type"),
-                                    )
-            return graph
-        except Exception:
-            raise
+        seen_nodes: set[str] = set()
+        seen_edges: set[tuple] = set()
+        for row in rows:
+            for node_item in row.get("nodes", []):
+                if not node_item:
+                    continue
+                uri = node_item.get("uri")
+                if uri is None or uri in seen_nodes:
+                    continue
+                seen_nodes.add(uri)
+                labels = node_item.get("labels") or []
+                graph.add_node(
+                    uri,
+                    label=labels[0] if labels else None,
+                    name=node_item.get("name"),
+                    entity_type=node_item.get("entity_type"),
+                    id=node_item.get("id"),
+                )
+            for rel_item in row.get("edges", []):
+                if not rel_item:
+                    continue
+                su = rel_item.get("start_uri")
+                eu = rel_item.get("end_uri")
+                eid = rel_item.get("id")
+                key = (su, eu, eid)
+                if key in seen_edges:
+                    continue
+                seen_edges.add(key)
+                graph.add_edge(
+                    su,
+                    eu,
+                    id=eid,
+                    label=rel_item.get("type") or rel_item.get("label"),
+                    uri=rel_item.get("uri"),
+                    relationship_type=rel_item.get("type") or rel_item.get("label"),
+                )
+        return graph
 
     async def afrom_networkx(self, graph: DiGraph) -> bool:
         try:
-            async with self.__db.aconnection() as conn:
-                await conn.set_autocommit(False)
-                for node_uri, data in graph.nodes(data=True):
-                    label = data.get("label", "Entity")
-                    properties: dict[str, Any] = data.get("properties", {})
-                    if isinstance(properties, dict):
-                        props = dict(properties)
-                    else:
-                        props = {}
-                    props["uri"] = data.get("uri", node_uri)
-                    name = data.get("name")
-                    entity_type = data.get("entity_type")
-                    if name is not None and "name" not in props:
-                        props["name"] = name
-                    if entity_type is not None and "entity_type" not in props:
-                        props["entity_type"] = entity_type
-                    if "name" not in props:
-                        props["name"] = str(node_uri)
-                    await self.acreate_vertex(label, props)
+            nodes_by_label: dict[str, list[dict[str, Any]]] = {}
+            for node_uri, data in graph.nodes(data=True):
+                label = data.get("label", "Entity")
+                props: dict[str, Any] = {"uri": data.get("uri", node_uri)}
 
-                for u, v, data in graph.edges(data=True):
-                    label = data.get("label", "related_to")
-                    props = dict(data.get("properties", {})) if isinstance(data.get("properties"), dict) else {}
-                    await self.acreate_edge(u, v, label, props)
+                if data.get("name") is not None:
+                    props["name"] = data["name"]
+                elif "name" not in props:
+                    props["name"] = str(node_uri)
 
-                await conn.commit()
+                if data.get("entity_type") is not None:
+                    props["entity_type"] = data["entity_type"]
+
+                extra = data.get("properties", {})
+                if isinstance(extra, dict):
+                    for k, v in extra.items():
+                        if k not in props:
+                            props[k] = v
+
+                nodes_by_label.setdefault(label, []).append(props)
+
+            for label, nodes in nodes_by_label.items():
+                cypher = f"""
+                UNWIND $nodes AS node
+                MERGE (v:{label} {{uri: node.uri}})
+                SET v += node
+                """
+                await self.aexecute_cypher(cypher, {"nodes": nodes}, read_only=False)
+
+            edges_by_type: dict[str, list[dict[str, Any]]] = {}
+            for u, v, data in graph.edges(data=True):
+                rel_type = data.get("label", "related_to")
+                start_uri = graph.nodes[u].get("uri", u)
+                end_uri = graph.nodes[v].get("uri", v)
+                predicate_uri = data.get("uri", f"cidoc:relationship/{rel_type}")
+
+                props: dict[str, Any] = {
+                    "uri": predicate_uri,
+                    "predicate_uri": predicate_uri,
+                }
+                extra = data.get("properties", {})
+                if isinstance(extra, dict):
+                    for k, val in extra.items():
+                        if k not in props:
+                            props[k] = val
+
+                edges_by_type.setdefault(rel_type, []).append({
+                    "s": start_uri,
+                    "e": end_uri,
+                    "p": props,
+                })
+
+            for rel_type, edges in edges_by_type.items():
+                cypher = f"""
+                UNWIND $edges AS edge
+                MATCH (s {{uri: edge.s}})
+                MATCH (e {{uri: edge.e}})
+                MERGE (s)-[r:{rel_type} {{uri: edge.p.uri}}]->(e)
+                SET r += edge.p
+                """
+                await self.aexecute_cypher(cypher, {"edges": edges}, read_only=False)
+
             return True
         except Exception:
             raise
 
     async def ato_networkx(self, query: str | None = None) -> DiGraph:
+
         graph = DiGraph()
 
         def add_node_to_networkx(node):
-            """Add Nodes in Networkx"""
             graph.add_node(node.id, label=node.label, properties=node.properties)
 
         def add_edge_to_networkx(edge):
-            """Add Edge in Networkx"""
             graph.add_edge(edge.start_id, edge.end_id, label=edge.label, properties=edge.properties)
 
         def add_path(path):
-            """Add Edge in Networkx"""
             for x in path:
                 if isinstance(x, Path):
                     add_path(x)
