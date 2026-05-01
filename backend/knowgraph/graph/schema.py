@@ -150,31 +150,20 @@ class Location(Entity):
         )
 
 
+_INVALID_URI_CHARS = {":", "{", "}", "[", "]", '"', "'", "\n", "\r", "\t"}
+
+
 def get_entity_uri(entity_type: EntityType, name: str) -> str:
     safe_name = name.strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
+    for ch in _INVALID_URI_CHARS:
+        if ch in safe_name:
+            msg = f"Entity name '{name}' contains invalid character '{ch}' for URI"
+            raise ValueError(msg)
     return f"cidoc:{entity_type.value}/{safe_name}"
 
 
 def get_relationship_uri(rel_type: RelationshipType) -> str:
     return f"cidoc:relationship/{rel_type.value}"
-
-
-class ArtifactModel(BaseModel):
-    object_id: str
-    title: str
-    period: str | None = None
-    type: str | None = None
-    material: str | None = None
-    description: str | None = None
-    dimensions: str | None = None
-    museum: str
-    location: str | None = None
-    detail_url: str | None = None
-    image_url: str | None = None
-    image_path: str | None = None
-    credit_line: str | None = None
-    accession_number: str | None = None
-    crawl_date: str | None = None
 
 
 class ExtractedEntity(BaseModel):

@@ -51,41 +51,63 @@ class DatabaseManager:
                 raise
 
     @contextmanager
-    def connection(self, schema: str = "public") -> Generator[Connection]:
+    def connection(
+        self,
+        schema: str = "public",
+        read_only: bool = False,
+        autocommit: bool = True,
+        deferrable: bool = False,
+    ) -> Generator[Connection]:
         pool = pool_manager.pool(self.dbname)
         with pool.connection() as conn:
+            conn.set_read_only(read_only)
+            if not read_only:
+                conn.set_autocommit(autocommit)
+                conn.set_deferrable(deferrable)
             try:
                 with conn.cursor() as cursor:
                     cursor.execute(f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;")  # type: ignore
                 yield conn
-                conn.commit()
+                if not autocommit or not read_only:
+                    conn.commit()
             except Exception:
                 conn.rollback()
                 raise
 
     @asynccontextmanager
-    async def aconnection(self, schema: str = "public") -> AsyncGenerator[AsyncConnection]:
+    async def aconnection(
+        self, schema: str = "public", read_only: bool = False, autocommit: bool = True, deferrable: bool = False
+    ) -> AsyncGenerator[AsyncConnection]:
         pool = await pool_manager.apool(self.dbname)
         async with pool.connection() as conn:
             try:
+                await conn.set_read_only(read_only)
+                if not read_only:
+                    await conn.set_autocommit(autocommit)
+                    await conn.set_deferrable(deferrable)
                 async with conn.cursor() as cursor:
                     await cursor.execute(
                         f"SET search_path TO '{schema}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
                     )  # type: ignore
                 yield conn
-                await conn.commit()
+                if not autocommit or not read_only:
+                    await conn.commit()
             except Exception:
                 await conn.rollback()
                 raise
 
     @contextmanager
-    def cursor(self, schema: str = "public") -> Generator[Cursor]:
-        with self.connection(schema) as conn, conn.cursor() as cursor:
+    def cursor(
+        self, schema: str = "public", read_only: bool = False, autocommit: bool = True, deferrable: bool = False
+    ) -> Generator[Cursor]:
+        with self.connection(schema, read_only, autocommit, deferrable) as conn, conn.cursor() as cursor:
             yield cursor
 
     @asynccontextmanager
-    async def acursor(self, schema: str = "public") -> AsyncGenerator[AsyncCursor]:
-        async with self.aconnection(schema) as conn, conn.cursor() as cursor:
+    async def acursor(
+        self, schema: str = "public", read_only: bool = False, autocommit: bool = True, deferrable: bool = False
+    ) -> AsyncGenerator[AsyncCursor]:
+        async with self.aconnection(schema, read_only, autocommit, deferrable) as conn, conn.cursor() as cursor:
             yield cursor
 
     async def acreate_table(self, table: type[SQLModel], schema: str = "public") -> None:

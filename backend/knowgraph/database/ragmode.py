@@ -120,7 +120,6 @@ class RAGMode:  # noqa: PLR0904
                 ]
 
                 vectors = await aembed_documents(unique_chunks)
-                token_counts = await atokenize_content(doc.content)
 
                 triples = await extractor.aextract_from_document(doc)
                 entity_uris: set[str] = set()
@@ -150,12 +149,14 @@ class RAGMode:  # noqa: PLR0904
                 insert_values = []
                 for chunk, vector in zip(unique_chunks, vectors, strict=False):
                     chunk.entities = list(entity_uris)
+                    chunk_token_counts = await atokenize_content(chunk.content)
                     insert_values.append({
                         "file_id": select(col(Source.id)).where(col(Source.hash) == doc.source_hash).scalar_subquery(),
                         "content": chunk.content,
                         "vector": vector,
-                        "bmvector": token_counts,
+                        "bmvector": chunk_token_counts,
                         "entities": chunk.entities,
+                        "meta": chunk.metadata,
                     })
 
                 stmt = insert(DocumentTable).values(insert_values).returning(col(DocumentTable.id))

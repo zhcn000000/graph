@@ -9,6 +9,17 @@ from ..documents.embedder import arerank_documents
 from ..documents.models import Document
 
 
+def _construct_edge_document(edge_info: EdgeConnectionInfo) -> str:
+    parts = [
+        f"{edge_info.subject_name}",
+        f"is {edge_info.predicate_description}",
+        f"{edge_info.object_name}",
+    ]
+    if edge_info.description:
+        parts.append(f"({edge_info.description})")
+    return " ".join(parts)
+
+
 @dataclass
 class EdgeConnectionInfo:
     start_node_uri: str
@@ -58,16 +69,6 @@ class EdgeStrengthCalculator:
             parts.append(f"Description: {edge_info.description}")
         return " | ".join(parts)
 
-    def _construct_edge_document(self, edge_info: EdgeConnectionInfo) -> str:
-        parts = [
-            f"{edge_info.subject_name}",
-            f"is {edge_info.predicate_description}",
-            f"{edge_info.object_name}",
-        ]
-        if edge_info.description:
-            parts.append(f"({edge_info.description})")
-        return " ".join(parts)
-
     async def _get_all_edges(self) -> list[EdgeConnectionInfo]:
         cypher = """
         MATCH (s)-[r]->(o)
@@ -79,7 +80,6 @@ class EdgeStrengthCalculator:
                endNode(r).name as object_name,
                r.description as description,
                r.connection_strength as connection_strength
-        LIMIT 10000
         """
         results = await self.graph_manager.aexecute_cypher(cypher, {})
         return self._parse_edge_rows(results)
@@ -95,7 +95,7 @@ class EdgeStrengthCalculator:
         if not edges:
             return []
 
-        edge_docs = [self._construct_edge_document(e) for e in edges]
+        edge_docs = [_construct_edge_document(e) for e in edges]
         documents = [Document(content=doc) for doc in edge_docs]
 
         reranked = await arerank_documents(query, documents, topn=None, skip_sorting=True)
@@ -164,7 +164,7 @@ class EdgeStrengthCalculator:
         if query is None:
             query = f"{subject_name} {predicate_desc} {object_name}"
 
-        doc = Document(content=self._construct_edge_document(edge_info))
+        doc = Document(content=_construct_edge_document(edge_info))
         reranked = await arerank_documents(query, [doc], topn=1)
 
         if reranked:
@@ -286,7 +286,7 @@ class TripleBasedEdgeQuerier:
         if not edges:
             return []
 
-        edge_docs = [self._construct_edge_document(e) for e in edges]
+        edge_docs = [_construct_edge_document(e) for e in edges]
         documents = [Document(content=doc) for doc in edge_docs]
 
         reranked = await arerank_documents(query, documents, topn=topn, skip_sorting=True)
@@ -297,16 +297,6 @@ class TripleBasedEdgeQuerier:
             reranked_edges.append(edge)
 
         return reranked_edges
-
-    def _construct_edge_document(self, edge_info: EdgeConnectionInfo) -> str:
-        parts = [
-            f"{edge_info.subject_name}",
-            f"is {edge_info.predicate_description}",
-            f"{edge_info.object_name}",
-        ]
-        if edge_info.description:
-            parts.append(f"({edge_info.description})")
-        return " ".join(parts)
 
     async def _get_all_edges(self) -> list[EdgeConnectionInfo]:
         return await self.strength_calculator._get_all_edges()
@@ -328,7 +318,6 @@ class TripleBasedEdgeQuerier:
                startNode(r).uri as start_node_uri, startNode(r).name as subject_name,
                endNode(r).uri as end_node_uri, endNode(r).name as object_name,
                r.description as description, r.connection_strength as connection_strength
-        LIMIT 500
         UNION ALL
         UNWIND $names as name
         MATCH (s)-[r]->(o)
@@ -337,7 +326,6 @@ class TripleBasedEdgeQuerier:
                startNode(r).uri as start_node_uri, startNode(r).name as subject_name,
                endNode(r).uri as end_node_uri, endNode(r).name as object_name,
                r.description as description, r.connection_strength as connection_strength
-        LIMIT 500
         """
         edge_rows = await self.graph_manager.aexecute_cypher(edge_cypher, {"names": names})
         for row in edge_rows:

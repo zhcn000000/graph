@@ -232,7 +232,9 @@ async def api_get_vertex(uri: str, label: str | None = None) -> GraphOperationRe
 async def api_update_vertex(uri: str, request: GraphEntityRequest, label: str | None = None) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        vertex = await rag_mode.graph_manager.amupsert_vertex(label or "", {"uri": uri, **request.properties})
+        vertex = await rag_mode.graph_manager.amupsert_vertex(
+            label or request.label, {"uri": uri, **request.properties}
+        )
         return GraphOperationResponse(success=True, status="节点更新成功", data={"vertex": vertex})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"更新节点失败: {e!s}")
