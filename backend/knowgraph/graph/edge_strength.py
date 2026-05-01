@@ -29,6 +29,24 @@ class EdgeStrengthCalculator:
         self.graph_manager = graph_manager or AgeGraphManager()
         self.batch_size = batch_size
 
+    @staticmethod
+    def _parse_edge_rows(results: list[dict[str, Any]]) -> list[EdgeConnectionInfo]:
+        edges = []
+        for row in results:
+            predicate_desc = row.get("relationship_type", "").replace("_", " ")
+            edge_info = EdgeConnectionInfo(
+                start_node_uri=row.get("start_node_uri", ""),
+                end_node_uri=row.get("end_node_uri", ""),
+                relationship_type=row.get("relationship_type", ""),
+                subject_name=row.get("subject_name", ""),
+                object_name=row.get("object_name", ""),
+                description=row.get("description"),
+                predicate_description=predicate_desc,
+                connection_strength=row.get("connection_strength"),
+            )
+            edges.append(edge_info)
+        return edges
+
     def _construct_edge_query(self, edge_info: EdgeConnectionInfo) -> str:
         parts = [
             f"Subject: {edge_info.subject_name}",
@@ -58,25 +76,12 @@ class EdgeStrengthCalculator:
                startNode(r).name as subject_name,
                endNode(r).uri as end_node_uri,
                endNode(r).name as object_name,
-               r.description as description
+               r.description as description,
+               r.connection_strength as connection_strength
         LIMIT 10000
         """
         results = await self.graph_manager._execute_cypher(cypher, {})
-
-        edges = []
-        for row in results:
-            predicate_desc = row.get("relationship_type", "").replace("_", " ")
-            edge_info = EdgeConnectionInfo(
-                start_node_uri=row.get("start_node_uri", ""),
-                end_node_uri=row.get("end_node_uri", ""),
-                relationship_type=row.get("relationship_type", ""),
-                subject_name=row.get("subject_name", ""),
-                object_name=row.get("object_name", ""),
-                description=row.get("description"),
-                predicate_description=predicate_desc,
-            )
-            edges.append(edge_info)
-        return edges
+        return self._parse_edge_rows(results)
 
     async def compute_strength_for_edges(
         self,
@@ -303,32 +308,4 @@ class TripleBasedEdgeQuerier:
         return " ".join(parts)
 
     async def _get_all_edges(self) -> list[EdgeConnectionInfo]:
-        cypher = """
-        MATCH (s)-[r]->(o)
-        RETURN r.uri as predicate_uri,
-               type(r) as relationship_type,
-               startNode(r).uri as start_node_uri,
-               startNode(r).name as subject_name,
-               endNode(r).uri as end_node_uri,
-               endNode(r).name as object_name,
-               r.description as description,
-               r.connection_strength as connection_strength
-        LIMIT 10000
-        """
-        results = await self.graph_manager._execute_cypher(cypher, {})
-
-        edges = []
-        for row in results:
-            predicate_desc = row.get("relationship_type", "").replace("_", " ")
-            edge_info = EdgeConnectionInfo(
-                start_node_uri=row.get("start_node_uri", ""),
-                end_node_uri=row.get("end_node_uri", ""),
-                relationship_type=row.get("relationship_type", ""),
-                subject_name=row.get("subject_name", ""),
-                object_name=row.get("object_name", ""),
-                description=row.get("description"),
-                predicate_description=predicate_desc,
-                connection_strength=row.get("connection_strength"),
-            )
-            edges.append(edge_info)
-        return edges
+        return await self.strength_calculator._get_all_edges()

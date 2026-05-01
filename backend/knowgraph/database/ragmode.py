@@ -302,29 +302,87 @@ class RAGMode:  # noqa: PLR0904
         if not entity_stats:
             return []
 
-        # Step 2: Look up top entities in graph and score them
+        top_entities = entity_stats[: max(topn * 3, 30)]
+
+        # Step 2: Batch lookup all vertices at once
+        uris = [uri for uri, _ in top_entities]
+        vertex_cypher = """
+        UNWIND $uris as uri
+        MATCH (v {uri: uri})
+        RETURN v.uri as uri, id(v) as id, v.name as name, v.entity_type as entity_type
+        """
+        vertex_rows = await self.graph_manager._execute_cypher(vertex_cypher, {"uris": uris})
+        vertex_map: dict[str, dict[str, object]] = {r["uri"]: r for r in vertex_rows}
+
+        # Step 3: Batch lookup adjacent edges using entity names
+        names = [r["name"] for r in vertex_map.values() if r.get("name")]
+        from collections import defaultdict
+
+        edges_by_name: dict[str, list[EdgeConnectionInfo]] = defaultdict(list)
+        if names:
+            from knowgraph.graph.edge_strength import EdgeConnectionInfo
+
+            edge_cypher = """
+            UNWIND $names as name
+            MATCH (s)-[r]->(o)
+            WHERE startNode(r).name CONTAINS name
+            RETURN name as query_name, type(r) as relationship_type,
+                   startNode(r).uri as start_node_uri, startNode(r).name as subject_name,
+                   endNode(r).uri as end_node_uri, endNode(r).name as object_name,
+                   r.description as description, r.connection_strength as connection_strength
+            LIMIT 500
+            UNION ALL
+            UNWIND $names as name
+            MATCH (s)-[r]->(o)
+            WHERE endNode(r).name CONTAINS name
+            RETURN name as query_name, type(r) as relationship_type,
+                   startNode(r).uri as start_node_uri, startNode(r).name as subject_name,
+                   endNode(r).uri as end_node_uri, endNode(r).name as object_name,
+                   r.description as description, r.connection_strength as connection_strength
+            LIMIT 500
+            """
+            edge_rows = await self.graph_manager._execute_cypher(edge_cypher, {"names": names})
+            for row in edge_rows:
+                query_name = row["query_name"]
+                if len(edges_by_name[query_name]) >= 20:
+                    continue
+                predicate_desc = row.get("relationship_type", "").replace("_", " ")
+                edges_by_name[query_name].append(
+                    EdgeConnectionInfo(
+                        start_node_uri=row.get("start_node_uri", ""),
+                        end_node_uri=row.get("end_node_uri", ""),
+                        relationship_type=row.get("relationship_type", ""),
+                        subject_name=row.get("subject_name", ""),
+                        object_name=row.get("object_name", ""),
+                        description=row.get("description"),
+                        predicate_description=predicate_desc,
+                        connection_strength=row.get("connection_strength"),
+                    ),
+                )
+
+        # Step 4: Re-rank edges dynamically against current query
+        combined_query = " ".join(queries)
+        all_edges: list[EdgeConnectionInfo] = []
+        for edges in edges_by_name.values():
+            all_edges.extend(edges)
+        if all_edges:
+            await self.edge_calculator.compute_strength_for_edges(combined_query, all_edges)
+
+        # Step 5: Build results with per-entity traversal
         graph_results: list[GraphSearchResult] = []
         seen_uris: set[str] = set()
-        top_entities = entity_stats[: max(topn * 3, 30)]
 
         for entity_uri, relevance in top_entities:
             if entity_uri in seen_uris:
                 continue
             seen_uris.add(entity_uri)
 
-            vertex = await self.graph_manager.aget_vertex(entity_uri)
-            if vertex is None or not vertex.name:
+            vertex = vertex_map.get(entity_uri)
+            if vertex is None or not vertex.get("name"):
                 continue
 
-            # Query edges in both subject and object directions
-            connected_edges = await self.edge_querier.query_edges_by_triple(
-                subject_name=vertex.name,
-                limit=10,
-            )
-            connected_edges += await self.edge_querier.query_edges_by_triple(
-                object_name=vertex.name,
-                limit=10,
-            )
+            entity_name = str(vertex["name"])
+            connected_edges = edges_by_name.get(entity_name, [])
 
             connected_strength = 0.0
             for edge in connected_edges:
@@ -340,8 +398,8 @@ class RAGMode:  # noqa: PLR0904
             graph_results.append(
                 GraphSearchResult(
                     entity_uri=entity_uri,
-                    entity_name=vertex.name,
-                    entity_type=vertex.entity_type or "",
+                    entity_name=entity_name,
+                    entity_type=str(vertex.get("entity_type", "")),
                     score=final_score,
                     path=path,
                 ),
@@ -404,7 +462,7 @@ class RAGMode:  # noqa: PLR0904
         regex: str | None = None,
         use_graph: bool = False,
         graph_config: GraphRAGConfig | None = None,
-    ) -> list[Document]:
+    ) -> tuple[list[Document], list[GraphSearchResult]]:
         topn = k * 5
         topk = k * 3
         rrf_k = 60
@@ -431,6 +489,7 @@ class RAGMode:  # noqa: PLR0904
                 regex=regex,
             )
 
+            graph_entities: list[GraphSearchResult] = []
             graph_search_results: list[tuple[UUID, float]] | None = None
             if use_graph:
                 graph_entities = await self._graph_search(
@@ -447,102 +506,6 @@ class RAGMode:  # noqa: PLR0904
                         for doc_id in doc_ids:
                             graph_doc_ids.append((doc_id, gsr.score))
                     graph_search_results = graph_doc_ids
-
-            doc_ids = self._rrf_fusion(
-                vector_results=vector_results,
-                bm25_results=bm25_results,
-                graph_results=graph_search_results,
-                topk=topk,
-                rrf_k=rrf_k,
-                graph_weight=graph_config.GRAPH_WEIGHT,
-                vector_weight=graph_config.VECTOR_WEIGHT,
-                bm25_weight=graph_config.BM25_WEIGHT,
-            )
-
-            if not doc_ids:
-                return []
-
-            doc_stmt = (
-                select(
-                    col(DocumentTable.id),
-                    col(DocumentTable.content),
-                    col(DocumentTable.meta),
-                    col(Source.filename),
-                    col(Source.hash),
-                )
-                .join(Source, col(Source.id) == col(DocumentTable.file_id))
-                .where(col(DocumentTable.id).in_(doc_ids))
-            )
-
-            doc_result = await session.execute(doc_stmt)
-            docs = {row[0]: row for row in doc_result.fetchall()}
-
-            ordered_docs = [docs[doc_id] for doc_id in doc_ids if doc_id in docs]
-
-            documents = [
-                Document(
-                    content=row[1],
-                    metadata=row[2] or {},
-                    source_name=row[3],
-                    source_hash=row[4],
-                )
-                for row in ordered_docs
-            ]
-
-            documents = await arerank_documents("\n".join(queries), documents)
-            return documents[:k]
-
-    async def ahyprid_search_with_graph(
-        self,
-        queries: list[str],
-        k: int = 4,
-        rag_id: UUID | None = None,
-        file_ids: list[UUID] | None = None,
-        regex: str | None = None,
-        graph_config: GraphRAGConfig | None = None,
-    ) -> tuple[list[Document], list[GraphSearchResult]]:
-        if graph_config is None:
-            graph_config = GraphRAGConfig()
-
-        topn = k * 5
-        topk = k * 3
-        rrf_k = 60
-
-        async with self.__db.asession() as session:
-            vector_results = await self._vector_search(
-                queries=queries,
-                topn=topn,
-                session=session,
-                rag_id=rag_id,
-                file_ids=file_ids,
-                regex=regex,
-            )
-
-            bm25_results = await self._bm25_search(
-                queries=queries,
-                topn=topn,
-                session=session,
-                rag_id=rag_id,
-                file_ids=file_ids,
-                regex=regex,
-            )
-
-            graph_entities = await self._graph_search(
-                queries=queries,
-                topn=graph_config.GRAPH_TOP_K,
-                max_hops=graph_config.MAX_HOPS,
-                graph_config=graph_config,
-                session=session,
-            )
-
-            graph_search_results: list[tuple[UUID, float]] | None = None
-            if graph_entities:
-                graph_doc_ids: list[tuple[UUID, float]] = []
-                for gsr in graph_entities:
-                    doc_ids = await self._get_entity_documents(gsr.entity_uri, session)
-                    for doc_id in doc_ids:
-                        graph_doc_ids.append((doc_id, gsr.score))
-                graph_search_results = graph_doc_ids
 
             doc_ids = self._rrf_fusion(
                 vector_results=vector_results,
@@ -629,7 +592,7 @@ class RAGMode:  # noqa: PLR0904
         conf = await RAGConfig().aget(rag_id)
         assert conf is not None, "知识库不存在"
 
-        results = await self.ahyprid_search(
+        results, _ = await self.ahyprid_search(
             queries,
             k=5,
             rag_id=rag_id,
@@ -727,7 +690,7 @@ class RAGMode:  # noqa: PLR0904
         end_uri: str,
         max_hops: int = 5,
     ) -> list[dict]:
-        paths = await self.afind_paths(start_uri, end_uri, max_hops)
+        paths = await self.graph_manager.afind_paths(start_uri, end_uri, max_hops)
 
         result = []
         for path in paths:

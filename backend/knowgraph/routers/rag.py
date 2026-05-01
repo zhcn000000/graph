@@ -186,7 +186,7 @@ class GraphOperationResponse(BaseModel):
 async def api_create_graph() -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        result = await rag_mode.acreate_graph()
+        result = await rag_mode.graph_manager.acreate_graph()
         status = "图创建成功" if result else "图已存在"
         return GraphOperationResponse(success=True, status=status, data={"created": result})
     except Exception as e:
@@ -197,7 +197,7 @@ async def api_create_graph() -> GraphOperationResponse:
 async def api_drop_graph() -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        result = await rag_mode.adrop_graph()
+        result = await rag_mode.graph_manager.adrop_graph()
         status = "图删除成功" if result else "图不存在"
         return GraphOperationResponse(success=True, status=status, data={"dropped": result})
     except Exception as e:
@@ -208,7 +208,7 @@ async def api_drop_graph() -> GraphOperationResponse:
 async def api_create_vertex(request: GraphEntityRequest) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        vertex = await rag_mode.acreate_vertex(request.label, request.properties)
+        vertex = await rag_mode.graph_manager.acreate_vertex(request.label, request.properties)
         return GraphOperationResponse(success=True, status="节点创建成功", data={"vertex": vertex})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"创建节点失败: {e!s}")
@@ -218,7 +218,7 @@ async def api_create_vertex(request: GraphEntityRequest) -> GraphOperationRespon
 async def api_get_vertex(uri: str, label: str | None = None) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        vertex = await rag_mode.aget_vertex(uri, label)
+        vertex = await rag_mode.graph_manager.aget_vertex(uri, label)
         return GraphOperationResponse(success=True, status="获取节点成功", data={"vertex": vertex})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"获取节点失败: {e!s}")
@@ -228,7 +228,7 @@ async def api_get_vertex(uri: str, label: str | None = None) -> GraphOperationRe
 async def api_update_vertex(uri: str, request: GraphEntityRequest, label: str | None = None) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        vertex = await rag_mode.aupdate_vertex(uri, request.properties, label)
+        vertex = await rag_mode.graph_manager.aupdate_vertex(uri, request.properties, label)
         return GraphOperationResponse(success=True, status="节点更新成功", data={"vertex": vertex})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"更新节点失败: {e!s}")
@@ -238,7 +238,7 @@ async def api_update_vertex(uri: str, request: GraphEntityRequest, label: str | 
 async def api_delete_vertex(uri: str, label: str | None = None) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        result = await rag_mode.adelete_vertex(uri, label)
+        result = await rag_mode.graph_manager.adelete_vertex(uri, label)
         return GraphOperationResponse(success=True, status="节点删除成功", data={"deleted": result})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"删除节点失败: {e!s}")
@@ -248,7 +248,7 @@ async def api_delete_vertex(uri: str, label: str | None = None) -> GraphOperatio
 async def api_create_edge(request: GraphEdgeRequest) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        edge = await rag_mode.acreate_edge(
+        edge = await rag_mode.graph_manager.acreate_edge(
             request.start_uri,
             request.end_uri,
             request.relationship_type,
@@ -263,7 +263,7 @@ async def api_create_edge(request: GraphEdgeRequest) -> GraphOperationResponse:
 async def api_get_edge(start_uri: str, end_uri: str, relationship_type: str | None = None) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        edge = await rag_mode.aget_edge(start_uri, end_uri, relationship_type)
+        edge = await rag_mode.graph_manager.aget_edge(start_uri, end_uri, relationship_type)
         return GraphOperationResponse(success=True, status="获取边成功", data={"edge": edge})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"获取边失败: {e!s}")
@@ -273,7 +273,7 @@ async def api_get_edge(start_uri: str, end_uri: str, relationship_type: str | No
 async def api_delete_edge(start_uri: str, end_uri: str, relationship_type: str) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        result = await rag_mode.adelete_edge(start_uri, end_uri, relationship_type)
+        result = await rag_mode.graph_manager.adelete_edge(start_uri, end_uri, relationship_type)
         return GraphOperationResponse(success=True, status="边删除成功", data={"deleted": result})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"删除边失败: {e!s}")
@@ -283,7 +283,7 @@ async def api_delete_edge(start_uri: str, end_uri: str, relationship_type: str) 
 async def api_get_neighbors(uri: str, direction: str = "both", max_hops: int = 1) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        neighbors = await rag_mode.aget_neighbors(uri, direction, max_hops)
+        neighbors = await rag_mode.graph_manager.aget_neighbors(uri, direction, max_hops)
         return GraphOperationResponse(success=True, status="获取邻居成功", data={"neighbors": neighbors})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"获取邻居失败: {e!s}")
@@ -293,7 +293,7 @@ async def api_get_neighbors(uri: str, direction: str = "both", max_hops: int = 1
 async def api_traverse(start_uri: str, max_hops: int = 3, direction: str = "both") -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        path = await rag_mode.atraverse(start_uri, max_hops, direction)
+        path = await rag_mode.graph_manager.atraverse(start_uri, max_hops, direction)
         return GraphOperationResponse(success=True, status="遍历成功", data={"nodes": path.nodes, "edges": path.edges})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"遍历失败: {e!s}")
@@ -303,7 +303,7 @@ async def api_traverse(start_uri: str, max_hops: int = 3, direction: str = "both
 async def api_find_paths(start_uri: str, end_uri: str, max_hops: int = 5) -> GraphOperationResponse:
     try:
         rag_mode = RAGMode()
-        paths = await rag_mode.afind_paths(start_uri, end_uri, max_hops)
+        paths = await rag_mode.graph_manager.afind_paths(start_uri, end_uri, max_hops)
         paths_data = [{"nodes": p.nodes, "edges": p.edges} for p in paths]
         return GraphOperationResponse(success=True, status="路径查询成功", data={"paths": paths_data})
     except Exception as e:
@@ -316,9 +316,10 @@ async def api_graph_search(request: GraphSearchRequest) -> GraphOperationRespons
         rag_mode = RAGMode()
         config = GraphRAGConfig()
         config.MAX_HOPS = request.max_hops
-        docs, graph_entities = await rag_mode.ahyprid_search_with_graph(
+        docs, graph_entities = await rag_mode.ahyprid_search(
             queries=request.queries,
             k=request.k,
+            use_graph=True,
             graph_config=config,
         )
         result_dicts = [

@@ -13,7 +13,6 @@ from .schema import (
     Location,
     Museum,
     RelationshipType,
-    Schema,
     get_entity_uri,
     get_relationship_uri,
 )
@@ -22,7 +21,6 @@ from .triples import (
     CSVRowInput,
     LLMExtractor,
     Triple,
-    TripleStore,
 )
 
 __all__ = [
@@ -40,10 +38,8 @@ __all__ = [
     "Location",
     "Museum",
     "RelationshipType",
-    "Schema",
     "Triple",
     "TripleBasedEdgeQuerier",
-    "TripleStore",
     "get_entity_uri",
     "get_relationship_uri",
 ]

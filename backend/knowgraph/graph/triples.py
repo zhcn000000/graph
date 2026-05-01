@@ -3,16 +3,15 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import StrEnum
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
 from pydantic import BaseModel
 
 from ..chat.chat_model import get_model
+from ..chat.struct import ModelDeps
 from ..documents.models import Document
 from .schema import (
-    Entity,
     EntityType,
     ExtractedTriple,
     RelationshipType,
@@ -20,12 +19,8 @@ from .schema import (
     get_relationship_uri,
 )
 
-
-class TripleStoreOperation(StrEnum):
-    INSERT = "insert"
-    DELETE = "delete"
-    UPDATE = "update"
-    UPSERT = "upsert"
+if TYPE_CHECKING:
+    from pydantic_ai import Agent
 
 
 @dataclass
@@ -41,46 +36,6 @@ class Triple:
     description: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
     source: str | None = None
-
-    def to_cypher(self) -> tuple[str, dict[str, Any]]:
-        props = {
-            "subject_uri": self.subject_uri,
-            "predicate_uri": self.predicate_uri,
-            "object_uri": self.object_uri,
-            "subject_type": self.subject_type.value,
-            "object_type": self.object_type.value,
-            "subject_name": self.subject_name,
-            "object_name": self.object_name,
-            "created_at": self.created_at.isoformat(),
-        }
-        if self.description:
-            props["description"] = self.description
-        if self.source:
-            props["source"] = self.source
-        props.update(self.properties)
-
-        cypher = """
-        MATCH (s:{subject_type} {{uri: $subject_uri}})
-        MATCH (o:{object_type} {{uri: $object_uri}})
-        CREATE (s)-[r:{predicate} {{uri: $predicate_uri}}]->(o)
-        SET r += $properties
-        RETURN id(r) as edge_id
-        """.format(
-            subject_type=self.subject_type.value.capitalize(),
-            object_type=self.object_type.value.capitalize(),
-            predicate=self.predicate_uri.split("/")[-1],
-        )
-        return cypher, props
-
-    def to_sparql(self) -> str:
-        return f"""
-        SELECT ?subject ?predicate ?object
-        WHERE {{
-            ?subject <{self.subject_uri}> ?predicate .
-            ?predicate <{self.predicate_uri}> ?object .
-            ?object <{self.object_uri}> ?value .
-        }}
-        """
 
 
 @dataclass
@@ -226,46 +181,31 @@ class LLMExtractor:
 
     def __init__(self, model_name: str | None = None):
         self.model = get_model(model_name)
+        self._agent = self._create_agent()
+
+    def _create_agent(self) -> Agent[ModelDeps, list[ExtractedTriple]]:
+        from pydantic_ai import Agent
+
+        return cast(
+            Agent[ModelDeps, list[ExtractedTriple]],
+            Agent(
+                model=self.model,
+                deps_type=ModelDeps,
+                output_type=list[ExtractedTriple],
+                instructions=self.SYSTEM_PROMPT,
+                output_retries=3,
+            ),
+        )
 
     async def aextract_from_csv_row(self, row: CSVRowInput) -> list[ExtractedTriple]:
         record_str = json.dumps(row.model_dump(), ensure_ascii=False, indent=2)
         user_prompt = self.USER_PROMPT_TEMPLATE.format(record=record_str)
-
-        from pydantic_ai import Agent
-
-        from ..chat.struct import ModelDeps
-
-        agent = cast(
-            "Agent[ModelDeps, list[ExtractedTriple]]",
-            Agent(
-                model=self.model,
-                deps_type=ModelDeps,
-                output_type=list[ExtractedTriple],
-                instructions=self.SYSTEM_PROMPT,
-                output_retries=3,
-            ),
-        )
-        result = await agent.run(user_prompt)
+        result = await self._agent.run(user_prompt)
         return result.output
 
     async def aextract_from_document(self, doc: Document) -> list[ExtractedTriple]:
         user_prompt = self.USER_PROMPT_TEMPLATE.format(record=doc.content)
-
-        from pydantic_ai import Agent
-
-        from ..chat.struct import ModelDeps
-
-        agent = cast(
-            "Agent[ModelDeps, list[ExtractedTriple]]",
-            Agent(
-                model=self.model,
-                deps_type=ModelDeps,
-                output_type=list[ExtractedTriple],
-                instructions=self.SYSTEM_PROMPT,
-                output_retries=3,
-            ),
-        )
-        result = await agent.run(user_prompt)
+        result = await self._agent.run(user_prompt)
         return result.output
 
     async def aextract_from_csv(self, csv_path: str) -> list[ExtractedTriple]:
@@ -295,262 +235,3 @@ class LLMExtractor:
                 continue
 
         return all_triples
-
-
-class TripleStore:
-    def __init__(self, graph_name: str = "artifact_graph"):
-        self.graph_name = graph_name
-
-    def _build_cypher_vertex_label(self, entity_type: EntityType) -> str:
-        return entity_type.value.capitalize()
-
-    def _build_cypher_edge_label(self, rel_type: RelationshipType) -> str:
-        return rel_type.value
-
-    def build_create_vertex_cypher(
-        self,
-        entity: Entity,
-    ) -> tuple[str, dict[str, Any]]:
-        label = self._build_cypher_vertex_label(entity.entity_type)
-        props = {
-            "uri": entity.uri,
-            "name": entity.name,
-            "entity_type": entity.entity_type.value,
-        }
-        if entity.description:
-            props["description"] = entity.description
-        props.update(entity.properties)
-
-        cypher = f"CREATE (v:{label} {{uri: $uri, name: $name, entity_type: $entity_type}})"
-        if props:
-            props_str = ", ".join([f"{k}: ${k}" for k in props])
-            cypher += f" SET {props_str}"
-
-        cypher += " RETURN id(v) as vertex_id"
-        return cypher, props
-
-    def build_create_edge_cypher(
-        self,
-        triple: Triple,
-    ) -> tuple[str, dict[str, Any]]:
-        subject_label = self._build_cypher_vertex_label(triple.subject_type)
-        object_label = self._build_cypher_vertex_label(triple.object_type)
-        edge_label = self._build_cypher_edge_label(RelationshipType(triple.predicate_uri.split("/")[-1]))
-
-        props = {
-            "subject_uri": triple.subject_uri,
-            "object_uri": triple.object_uri,
-            "predicate_uri": triple.predicate_uri,
-            "subject_name": triple.subject_name,
-            "object_name": triple.object_name,
-            "created_at": triple.created_at.isoformat(),
-        }
-        if triple.description:
-            props["description"] = triple.description
-        if triple.source:
-            props["source"] = triple.source
-        props.update(triple.properties)
-
-        cypher = f"""
-        MATCH (s:{subject_label} {{uri: $subject_uri}})
-        MATCH (o:{object_label} {{uri: $object_uri}})
-        CREATE (s)-[r:{edge_label} {{uri: $predicate_uri}}]->(o)
-        SET r += ${{props}}
-        RETURN id(r) as edge_id
-        """
-        return cypher, {"props": props}
-
-    def build_match_vertex_cypher(
-        self,
-        entity_uri: str | None = None,
-        entity_type: EntityType | None = None,
-        name: str | None = None,
-    ) -> tuple[str, dict[str, Any]]:
-        label = self._build_cypher_vertex_label(entity_type) if entity_type else None
-        conditions = []
-        params = {}
-
-        if entity_uri:
-            conditions.append("v.uri = $uri")
-            params["uri"] = entity_uri
-        if name:
-            conditions.append("v.name = $name")
-            params["name"] = name
-
-        where_clause = " AND ".join(conditions) if conditions else "true"
-        label_clause = f":{label}" if label else ""
-
-        cypher = f"MATCH (v{label_clause} {{{where_clause}}}) RETURN v"
-        return cypher, params
-
-    def build_match_edge_cypher(
-        self,
-        subject_uri: str | None = None,
-        object_uri: str | None = None,
-        predicate_uri: str | None = None,
-    ) -> tuple[str, dict[str, Any]]:
-        conditions = []
-        params = {}
-
-        if subject_uri:
-            conditions.append("startNode(r).uri = $subject_uri")
-            params["subject_uri"] = subject_uri
-        if object_uri:
-            conditions.append("endNode(r).uri = $object_uri")
-            params["object_uri"] = object_uri
-        if predicate_uri:
-            conditions.append("type(r) = $predicate_uri")
-            params["predicate_uri"] = predicate_uri.split("/")[-1]
-
-        where_clause = " AND ".join(conditions) if conditions else "true"
-
-        cypher = f"MATCH (s)-[r]->(o) WHERE {where_clause} RETURN r, startNode(r) as s, endNode(r) as o"
-        return cypher, params
-
-    def build_delete_vertex_cypher(
-        self,
-        entity_uri: str,
-    ) -> tuple[str, dict[str, Any]]:
-        cypher = "MATCH (v {uri: $uri}) DETACH DELETE v RETURN count(*) as deleted_count"
-        return cypher, {"uri": entity_uri}
-
-    def build_delete_edge_cypher(
-        self,
-        subject_uri: str,
-        object_uri: str,
-        predicate_uri: str,
-    ) -> tuple[str, dict[str, Any]]:
-        predicate_name = predicate_uri.rsplit("/", maxsplit=1)[-1]
-        cypher = f"""
-        MATCH (s {{uri: $subject_uri}})-[r:{predicate_name}]->(o {{uri: $object_uri}})
-        DELETE r
-        RETURN count(*) as deleted_count
-        """
-        return cypher, {"subject_uri": subject_uri, "object_uri": object_uri}
-
-    def build_update_vertex_cypher(
-        self,
-        entity_uri: str,
-        properties: dict[str, Any],
-    ) -> tuple[str, dict[str, Any]]:
-        props_set = ", ".join([f"v.{k} = ${k}" for k in properties])
-        cypher = f"MATCH (v {{uri: $uri}}) SET {props_set} RETURN v"
-        params = {"uri": entity_uri}
-        params.update(properties)
-        return cypher, params
-
-    def build_update_edge_cypher(
-        self,
-        subject_uri: str,
-        object_uri: str,
-        predicate_uri: str,
-        properties: dict[str, Any],
-    ) -> tuple[str, dict[str, Any]]:
-        predicate_name = predicate_uri.rsplit("/", maxsplit=1)[-1]
-        props_set = ", ".join([f"r.{k} = ${k}" for k in properties])
-        cypher = f"""
-        MATCH (s {{uri: $subject_uri}})-[r:{predicate_name}]->(o {{uri: $object_uri}})
-        SET {props_set}
-        RETURN r
-        """
-        params = {"subject_uri": subject_uri, "object_uri": object_uri}
-        params.update(properties)
-        return cypher, params
-
-    def build_upsert_vertex_cypher(
-        self,
-        entity: Entity,
-    ) -> tuple[str, dict[str, Any]]:
-        label = self._build_cypher_vertex_label(entity.entity_type)
-        props = {
-            "uri": entity.uri,
-            "name": entity.name,
-            "entity_type": entity.entity_type.value,
-        }
-        if entity.description:
-            props["description"] = entity.description
-        props.update(entity.properties)
-
-        props_str = ", ".join([f"{k}: ${k}" for k in props])
-
-        cypher = f"""
-        MERGE (v:{label} {{uri: $uri}})
-        ON CREATE SET v.name = $name, v.entity_type = $entity_type
-        ON MATCH SET v.name = $name, v.entity_type = $entity_type
-        SET v += ${props_str}
-        RETURN id(v) as vertex_id
-        """
-        return cypher, props
-
-    def build_upsert_edge_cypher(
-        self,
-        triple: Triple,
-    ) -> tuple[str, dict[str, Any]]:
-        subject_label = self._build_cypher_vertex_label(triple.subject_type)
-        object_label = self._build_cypher_vertex_label(triple.object_type)
-        edge_label = self._build_cypher_edge_label(RelationshipType(triple.predicate_uri.split("/")[-1]))
-
-        props = {
-            "subject_uri": triple.subject_uri,
-            "object_uri": triple.object_uri,
-            "predicate_uri": triple.predicate_uri,
-            "subject_name": triple.subject_name,
-            "object_name": triple.object_name,
-            "created_at": triple.created_at.isoformat(),
-        }
-        if triple.description:
-            props["description"] = triple.description
-        if triple.source:
-            props["source"] = triple.source
-        props.update(triple.properties)
-
-        cypher = f"""
-        MATCH (s:{subject_label} {{uri: $subject_uri}})
-        MATCH (o:{object_label} {{uri: $object_uri}})
-        MERGE (s)-[r:{edge_label}]->(o)
-        ON CREATE SET r.uri = $predicate_uri, r.subject_name = $subject_name, r.object_name = $object_name
-        ON MATCH SET r.uri = $predicate_uri, r.subject_name = $subject_name, r.object_name = $object_name
-        SET r += ${{props}}
-        RETURN id(r) as edge_id
-        """
-        return cypher, {"props": props}
-
-    def build_traverse_cypher(
-        self,
-        start_uri: str,
-        max_hops: int = 3,
-        direction: Literal["outbound", "inbound", "both"] = "both",
-    ) -> tuple[str, dict[str, Any]]:
-        if direction == "outbound":
-            rel_pattern = "-[r]->"
-        elif direction == "inbound":
-            rel_pattern = "<-[r]-"
-        else:
-            rel_pattern = "-[r]-"
-
-        cypher = f"""
-        MATCH path = (start {{uri: $start_uri}}){rel_pattern}*(1..{max_hops})(end)
-        WITH nodes(path) as nodes, rels(path) as rels
-        UNWIND range(0, size(nodes) - 1) as idx
-        WITH nodes[idx] as node, rels[idx] as rel, idx
-        WHERE rel IS NOT NULL
-        RETURN startNode(rel) as source, type(rel) as relationship, endNode(rel) as target, rel.uri as rel_uri
-        """
-        return cypher, {"start_uri": start_uri, "max_hops": max_hops}
-
-    def build_shortest_path_cypher(
-        self,
-        start_uri: str,
-        end_uri: str,
-    ) -> tuple[str, dict[str, Any]]:
-        cypher = """
-        MATCH path = shortestPath((start {uri: $start_uri})-[*]->(end {uri: $end_uri}))
-        WITH nodes(path) as nodes, rels(path) as rels
-        UNWIND range(0, size(nodes) - 1) as idx
-        WITH nodes[idx] as node, rels[idx] as rel, idx
-        RETURN idx, node.uri as node_uri, node.name as node_name,
-               CASE WHEN rel IS NOT NULL THEN type(rel) ELSE NULL END as relationship,
-               CASE WHEN rel IS NOT NULL THEN rel.uri ELSE NULL END as rel_uri
-        ORDER BY idx
-        """
-        return cypher, {"start_uri": start_uri, "end_uri": end_uri}

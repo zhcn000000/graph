@@ -28,36 +28,6 @@ class RelationshipType(StrEnum):
     RELATED_TO = "related_to"
 
 
-ENTITY_NAMESPACES: dict[EntityType, str] = {
-    EntityType.ARTIFACT: "artifact",
-    EntityType.MUSEUM: "museum",
-    EntityType.DYNASTY: "dynasty",
-    EntityType.ARTIST: "artist",
-    EntityType.LOCATION: "location",
-}
-
-RELATIONSHIP_NAMESPACES: dict[RelationshipType, str] = {
-    RelationshipType.COLLECTED_BY: "collected_by",
-    RelationshipType.CREATED_BY: "created_by",
-    RelationshipType.BELONGS_TO_DYNASTY: "belongs_to_dynasty",
-    RelationshipType.MADE_OF_MATERIAL: "made_of_material",
-    RelationshipType.IS_TYPE_OF: "is_type_of",
-    RelationshipType.LOCATED_AT: "located_at",
-    RelationshipType.DEPICTS: "depicts",
-    RelationshipType.RELATED_TO: "related_to",
-}
-
-
-class Schema:
-    @staticmethod
-    def get_entity_type_name(entity_type: EntityType) -> str:
-        return entity_type.value
-
-    @staticmethod
-    def get_relationship_type_name(rel_type: RelationshipType) -> str:
-        return rel_type.value
-
-
 @dataclass
 class Entity:
     uri: str
@@ -181,9 +151,8 @@ class Location(Entity):
 
 
 def get_entity_uri(entity_type: EntityType, name: str) -> str:
-    namespace = ENTITY_NAMESPACES[entity_type]
     safe_name = name.strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
-    return f"cidoc:{namespace}/{safe_name}"
+    return f"cidoc:{entity_type.value}/{safe_name}"
 
 
 def get_relationship_uri(rel_type: RelationshipType) -> str:

@@ -62,10 +62,12 @@ async def get_triples(
     rag_mode = RAGMode()
     try:
         if entity_uri:
-            neighbors = await rag_mode.aget_neighbors(entity_uri, direction="both", max_hops=1)
+            neighbors = await rag_mode.graph_manager.aget_neighbors(entity_uri, direction="both", max_hops=1)
             triples = []
             for neighbor in neighbors:
-                edge = await rag_mode.aget_edge(
+                if not neighbor.uri:
+                    continue
+                edge = await rag_mode.graph_manager.aget_edge(
                     start_uri=entity_uri,
                     end_uri=neighbor.uri,
                     relationship_type=relationship_type,
@@ -79,7 +81,7 @@ async def get_triples(
                     })
             return triples
         if subject_uri and object_uri:
-            edge = await rag_mode.aget_edge(subject_uri, object_uri, relationship_type)
+            edge = await rag_mode.graph_manager.aget_edge(subject_uri, object_uri, relationship_type)
             if edge:
                 return [
                     {
@@ -101,7 +103,7 @@ async def get_entity(
 ) -> dict[str, Any]:
     rag_mode = RAGMode()
     try:
-        vertex = await rag_mode.aget_vertex(uri, label)
+        vertex = await rag_mode.graph_manager.aget_vertex(uri, label)
         if vertex:
             return {
                 "uri": vertex.uri,
@@ -156,9 +158,10 @@ async def graph_search(
     try:
         config = GraphRAGConfig()
         config.MAX_HOPS = max_hops
-        docs, graph_entities = await rag_mode.ahyprid_search_with_graph(
+        docs, graph_entities = await rag_mode.ahyprid_search(
             queries=queries,
             k=k,
+            use_graph=True,
             graph_config=config,
         )
         return {
@@ -191,7 +194,7 @@ async def create_graph_entity(
 ) -> dict[str, Any]:
     rag_mode = RAGMode()
     try:
-        vertex = await rag_mode.acreate_vertex(label, properties)
+        vertex = await rag_mode.graph_manager.acreate_vertex(label, properties)
         if vertex:
             return {
                 "uri": vertex.uri,
@@ -213,7 +216,7 @@ async def create_graph_relation(
 ) -> dict[str, Any]:
     rag_mode = RAGMode()
     try:
-        edge = await rag_mode.acreate_edge(start_uri, end_uri, relationship_type, properties)
+        edge = await rag_mode.graph_manager.acreate_edge(start_uri, end_uri, relationship_type, properties)
         if edge:
             return {
                 "id": edge.id,

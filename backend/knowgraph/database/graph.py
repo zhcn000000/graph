@@ -47,7 +47,7 @@ class AgeGraphManager:
         read_only: bool = True,
     ) -> list[dict[str, Any]]:
         async with self.__db.aconnection() as conn:
-            await conn.set_autocommit(not read_only)
+            await conn.set_autocommit(read_only)
             result = await conn.execute(cypher, params or {})  # type: ignore
             if read_only:
                 rows = await result.fetchall()
@@ -55,6 +55,7 @@ class AgeGraphManager:
                     columns = [desc[0] for desc in result.description]
                     return [dict(zip(columns, row, strict=False)) for row in rows]
                 return []
+            await conn.commit()
             return []
 
     async def acreate_graph(self) -> bool:
@@ -390,8 +391,9 @@ class AgeGraphManager:
         self,
         cypher: str,
         params: dict[str, Any] | None = None,
+        read_only: bool = True,
     ) -> list[dict[str, Any]]:
-        return await self._execute_cypher(cypher, params, read_only=False)
+        return await self._execute_cypher(cypher, params, read_only=read_only)
 
     async def aquery_by_type(
         self,
