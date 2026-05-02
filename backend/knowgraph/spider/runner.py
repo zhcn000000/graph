@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from scrapy.crawler import CrawlerRunner
+from scrapy.crawler import AsyncCrawlerRunner
 from scrapy.utils.log import configure_logging
 
 from .config import MuseumConfig
@@ -11,7 +11,6 @@ from .models import CrawlResult
 from .spider import ArtifactSitemapSpider
 
 _DEFAULT_SETTINGS: dict[str, Any] = {
-    "TWISTED_REACTOR": "twisted.internet.asyncioreactor.AsyncioSelectorReactor",
     "ROBOTSTXT_OBEY": True,
     "DOWNLOAD_DELAY": 1.0,
     "RANDOMIZE_DOWNLOAD_DELAY": True,
@@ -49,7 +48,7 @@ class ScrapyCrawler:
         t0 = time.monotonic()
 
         configure_logging({"LOG_LEVEL": "WARNING"})
-        runner = CrawlerRunner(self._settings)
+        runner = AsyncCrawlerRunner(self._settings)
         stats_collector: dict[str, int] = {}
 
         await runner.crawl(
