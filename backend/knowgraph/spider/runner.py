@@ -30,7 +30,7 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
         "Accept-Language": "en-US,en;q=0.9,zh;q=0.8",
     },
     "ITEM_PIPELINES": {
-        "knowgraph.spider.scrapy_pipeline.ArtifactPipeline": 300,
+        "knowgraph.spider.pipeline.ArtifactPipeline": 300,
     },
     "SPIDER_MIDDLEWARES": {},
     "DOWNLOADER_MIDDLEWARES": {},
