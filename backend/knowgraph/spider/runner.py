@@ -9,12 +9,7 @@ from scrapy.utils.log import configure_logging
 
 from .config import MuseumConfig
 from .models import CrawlResult
-from .scrapy_spider import ArtifactSitemapSpider
-
-if "twisted.internet.reactor" not in sys.modules:
-    from twisted.internet import asyncioreactor  # type: ignore[import-untyped]
-
-    asyncioreactor.install()
+from .spider import ArtifactSitemapSpider
 
 _DEFAULT_SETTINGS: dict[str, Any] = {
     "TWISTED_REACTOR": "twisted.internet.asyncioreactor.AsyncioSelectorReactor",
