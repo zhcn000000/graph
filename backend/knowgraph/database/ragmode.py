@@ -21,7 +21,7 @@ from .document import DocumentStore
 from .graph import AgeGraphManager
 from .rag import RAGConfig
 from .source import SourceStore
-from .tables import DocumentTable, RAGRelation, Source
+from .tables import ArtifactRawTable, DocumentTable, RAGRelation, Source
 from .types import BM25Vector
 
 
@@ -733,6 +733,136 @@ class RAGMode:
                 row_input = CSVRowInput(**{k: v for k, v in row_dict.items() if pd.notna(v)})
             except Exception as e:
                 warnings.warn(f"Skipping invalid CSV row: {e}", UserWarning, stacklevel=2)
+                continue
+
+            triples = row_input.to_artifact_triples()
+            for triple in triples:
+                structured_graph.add_node(
+                    triple.subject_uri,
+                    label=triple.subject_type.value.capitalize(),
+                    name=triple.subject_name,
+                    entity_type=triple.subject_type.value,
+                )
+                structured_graph.add_node(
+                    triple.object_uri,
+                    label=triple.object_type.value.capitalize(),
+                    name=triple.object_name,
+                    entity_type=triple.object_type.value,
+                )
+                rel_type = triple.predicate_uri.rsplit("/", 1)[-1]
+                structured_graph.add_edge(triple.subject_uri, triple.object_uri, label=rel_type)
+
+            structured_entities: list[str] = list({
+                uri for triple in triples for uri in (triple.subject_uri, triple.object_uri)
+            })
+
+            content_parts = [row_input.title]
+            if row_input.museum:
+                content_parts.append(row_input.museum)
+            if row_input.period:
+                content_parts.append(row_input.period)
+            if row_input.type:
+                content_parts.append(row_input.type)
+            if row_input.material:
+                content_parts.append(row_input.material)
+            if row_input.description:
+                content_parts.append(row_input.description)
+            content_str = "\n".join(content_parts)
+
+            content_hash = sha256(content_str.encode()).hexdigest()
+            doc = Document(
+                content=content_str,
+                source_name=row_input.title,
+                source_hash=content_hash,
+                metadata=row_input.model_dump(),
+                entities=structured_entities,
+            )
+            documents.append(doc)
+            extraction_contents.append(row_input.description or None)
+            source_infos.append({
+                "name": row_input.title,
+                "hash": content_hash,
+                "link": row_input.detail_url,
+            })
+
+        if not documents:
+            return []
+
+        if structured_graph.number_of_nodes() > 0:
+            await self.graph_manager.afrom_networkx(structured_graph)
+
+        async with self.__db.asession() as session:
+            for info in source_infos:
+                stmt = (
+                    insert(Source)
+                    .values(name=info["name"], hash=info["hash"], link=info["link"])
+                    .on_conflict_do_nothing(index_elements=[col(Source.hash)])
+                )
+                await session.execute(stmt)
+            await session.commit()
+
+        await self.aadd_documents(documents, extraction_contents=extraction_contents)
+
+        unique_hashes = list({d.source_hash for d in documents if d.source_hash})
+        file_ids: list[UUID] = []
+        if unique_hashes:
+            file_ids = await self.__source.aget_id_by_hashs(unique_hashes)
+            await self.aadd_rag_relation(rag_id, file_ids)
+
+        return file_ids
+
+    async def alingest_artifacts(
+        self,
+        rag_id: UUID,
+        museum: str | None = None,
+        limit: int | None = None,
+    ) -> list[UUID]:
+        from hashlib import sha256
+
+        conf = await RAGConfig().aget(rag_id=rag_id)
+        assert conf is not None, "知识库不存在"
+
+        async with self.__db.asession() as session:
+            stmt = select(ArtifactRawTable)
+            if museum:
+                stmt = stmt.where(col(ArtifactRawTable.museum) == museum)
+            if limit:
+                stmt = stmt.limit(limit)
+            result = await session.execute(stmt)
+            artifacts = list(result.scalars().all())
+
+        if not artifacts:
+            return []
+
+        structured_graph = DiGraph()
+        documents: list[Document] = []
+        source_infos: list[dict] = []
+        extraction_contents: list[str | None] = []
+
+        for artifact in artifacts:
+            row_dict = {
+                "object_id": artifact.object_id or "",
+                "title": artifact.title or "Untitled",
+                "period": artifact.period or None,
+                "type": artifact.type or None,
+                "material": artifact.material or None,
+                "description": artifact.description or None,
+                "dimensions": artifact.dimensions or None,
+                "museum": artifact.museum,
+                "location": artifact.location or None,
+                "detail_url": artifact.detail_url or None,
+                "image_url": artifact.image_url or None,
+                "image_path": artifact.image_path or None,
+                "credit_line": artifact.credit_line or None,
+                "accession_number": artifact.accession_number or None,
+                "crawl_date": str(artifact.crawl_date) if artifact.crawl_date else None,
+            }
+            cleaned = {k: v for k, v in row_dict.items() if v is not None}
+
+            try:
+                row_input = CSVRowInput(**cleaned)
+            except Exception as e:
+                warnings.warn(f"Skipping artifact {artifact.id}: {e}", UserWarning, stacklevel=2)
                 continue
 
             triples = row_input.to_artifact_triples()
