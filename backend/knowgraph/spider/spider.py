@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any
 
 from bs4 import BeautifulSoup
+from scrapy import Request
 from scrapy.spiders import SitemapSpider
 
 from ..database.artifact import ArtifactStore
@@ -32,22 +33,53 @@ class ArtifactSitemapSpider(SitemapSpider):
         if museum_config is not None:
             rules: list[tuple[str, str]] = []
             for pattern in museum_config.artifact_url_patterns or []:
-                rules.append((re.escape(pattern), "parse_artifact"))
+                rules.append((re.escape(pattern), "parse"))
             if not rules:
-                rules = [(".*", "parse_artifact")]
-            kwargs["sitemap_urls"] = [museum_config.sitemap_url]
+                rules = [(".*", "parse")]
             kwargs["sitemap_rules"] = rules
             self._museum_config = museum_config
+            self._fallback_sitemap_url = museum_config.sitemap_url
 
         super().__init__(**kwargs)
 
     def _get_config(self) -> MuseumConfig | None:
         return getattr(self, "_museum_config", None)
 
+    def start_requests(self):
+        config = self._get_config()
+        if config:
+            robots_url = f"{config.website.rstrip('/')}/robots.txt"
+            yield Request(
+                robots_url,
+                callback=self._discover_sitemap,
+                dont_filter=True,
+                meta={"fallback_sitemap": getattr(self, "_fallback_sitemap_url", config.sitemap_url)},
+            )
+        else:
+            yield from super().start_requests()
+
+    def _discover_sitemap(self, response):
+        fallback = response.meta.get("fallback_sitemap", "")
+        sitemap_urls: list[str] = []
+
+        for line in response.text.splitlines():
+            line = line.strip()
+            if line.lower().startswith("sitemap:"):
+                url = line.split(":", 1)[1].strip()
+                if url:
+                    sitemap_urls.append(url)
+
+        if not sitemap_urls:
+            sitemap_urls = [fallback]
+
+        self.sitemap_urls = sitemap_urls
+        for url in sitemap_urls:
+            yield Request(url, callback=self._parse_sitemap)
+
     def closed(self, reason: str) -> None:
         self.stats_collector.update(self.stats)
 
-    async def parse_artifact(self, response):
+    async def parse(self, response):
         self.stats["parsed"] += 1
         config = self._get_config()
         museum_name = config.name if config else ""
