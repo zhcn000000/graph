@@ -35,6 +35,9 @@ dependencies = [
   "apache-age-python",
   "fastmcp>=3.2.4",
   "networkx>=3.6.1",
+  "lxml>=5.3.0",
+  "beautifulsoup4>=4.12.0",
+  "scrapy>=2.15.2",
 ]
 
 [project.scripts]

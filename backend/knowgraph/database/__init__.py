@@ -1,3 +1,4 @@
+from .artifact import ArtifactStore
 from .database import DatabaseManager
 from .graph import AgeGraphManager
 from .history import HistoryStore
@@ -6,6 +7,7 @@ from .rag import RAGConfig
 from .ragmode import GraphSearchResult, RAGMode
 from .source import SourceStore
 from .tables import (
+    ArtifactRawTable,
     DocumentTable,
     HistoryTable,
     RAGRelation,
@@ -16,6 +18,8 @@ from .tables import (
 
 __all__ = [
     "AgeGraphManager",
+    "ArtifactRawTable",
+    "ArtifactStore",
     "ConnectionPoolManager",
     "DatabaseManager",
     "DocumentTable",
