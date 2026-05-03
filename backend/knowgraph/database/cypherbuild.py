@@ -35,7 +35,7 @@ def _quote_key(key: object) -> str:
     return _quote_value(key)
 
 
-class CypherBuilder:  # noqa: PLR0904
+class CypherBuilder:
     """Fluent builder for constructing Cypher queries (Apache AGE compatible).
 
     Usage::
@@ -55,12 +55,11 @@ class CypherBuilder:  # noqa: PLR0904
 
     # -- Clause builders --
 
-    def match(self, pattern: str) -> Self:
-        self._clauses.append(f"MATCH {pattern}")
-        return self
-
-    def optional_match(self, pattern: str) -> Self:
-        self._clauses.append(f"OPTIONAL MATCH {pattern}")
+    def match(self, pattern: str, optional: bool = False) -> Self:
+        if optional:
+            self._clauses.append(f"OPTIONAL MATCH {pattern}")
+        else:
+            self._clauses.append(f"MATCH {pattern}")
         return self
 
     def merge(self, pattern: str) -> Self:
@@ -75,12 +74,11 @@ class CypherBuilder:  # noqa: PLR0904
         self._clauses.append(f"SET {', '.join(items)}")
         return self
 
-    def delete(self, *variables: str) -> Self:
-        self._clauses.append(f"DELETE {', '.join(variables)}")
-        return self
-
-    def detach_delete(self, *variables: str) -> Self:
-        self._clauses.append(f"DETACH DELETE {', '.join(variables)}")
+    def delete(self, *variables: str, detach: bool = False) -> Self:
+        if detach:
+            self._clauses.append(f"DETACH DELETE {', '.join(variables)}")
+        else:
+            self._clauses.append(f"DELETE {', '.join(variables)}")
         return self
 
     def unwind(self, expr: str, alias: str) -> Self:
@@ -185,6 +183,22 @@ class CypherBuilder:  # noqa: PLR0904
         lbl = f":{label}" if label else ""
         prp = CypherBuilder.props(props)
         return f"({variable}{lbl} {prp})" if prp else f"({variable}{lbl})"
+
+
+def match(pattern: str) -> CypherBuilder:
+    return CypherBuilder().match(pattern)
+
+
+def merge(pattern: str) -> CypherBuilder:
+    return CypherBuilder().merge(pattern)
+
+
+def unwind(expr: str, alias: str) -> CypherBuilder:
+    return CypherBuilder().unwind(expr, alias)
+
+
+def create(pattern: str) -> CypherBuilder:
+    return CypherBuilder().create(pattern)
 
 
 def _embed(cypher: str, params: dict[str, Any]) -> str:
