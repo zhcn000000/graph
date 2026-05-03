@@ -1,11 +1,11 @@
 import ast
 from collections import OrderedDict
-from typing import Self
+from typing import Any, Self
 
 import orjson
 from age.age import parseAgeValue
 from psycopg.adapt import Dumper, Loader
-from sqlalchemy import Float, String, cast
+from sqlalchemy import Float, String, TypeDecorator, cast, func, type_coerce
 from sqlalchemy.dialects.postgresql.base import ischema_names
 from sqlalchemy.sql.type_api import UserDefinedType
 
@@ -112,6 +112,19 @@ class AGType(UserDefinedType):
             return value
 
         return process
+
+
+class Password(TypeDecorator):
+    impl = String
+    cache_ok = True
+
+    def bind_expression(self, bindparam: Any) -> Any:
+        return func.crypt(bindparam, func.gen_salt("bf"))
+
+    class comparator_factory(String.Comparator):
+        def __eq__(self, other: object) -> Any:
+            local_pw = type_coerce(self.expr, String)
+            return local_pw == func.crypt(other, local_pw)
 
 
 ischema_names["bm25vector"] = BM25Vector  # type: ignore

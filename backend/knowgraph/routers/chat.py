@@ -260,7 +260,7 @@ async def api_chat(
                     success=True,
                 )  # type: ignore
             elif agent.is_model_request_node(node) or agent.is_call_tools_node(node):
-                async with node.stream(agent_run.ctx) as stream:
+                async with node.stream(agent_run.ctx) as stream:  # type: ignore
                     async for event in stream:
                         if isinstance(event, PartStartEvent):
                             if isinstance(event.part, ThinkingPart):

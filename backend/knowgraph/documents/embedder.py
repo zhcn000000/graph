@@ -1,12 +1,14 @@
 from collections.abc import Sequence
+from copy import deepcopy
+from typing import cast
 
 import httpx
 
-from knowgraph.utils.environments import VLLM_HOST, VLLM_PORT, VLLM_PROTOCOL
+from knowgraph.utils.environments import LLM_HOST, LLM_PORT, LLM_PROTOCOL
 
 from .models import Document
 
-MODEL_URL = f"{VLLM_PROTOCOL}://{VLLM_HOST}:{VLLM_PORT}"
+MODEL_URL = f"{LLM_PROTOCOL}://{LLM_HOST}:{LLM_PORT}"
 EMBEDDING_UID = "qwen3-embedding"
 RERANKER_UID = "qwen3-reranker"
 API_KEY = None
@@ -70,11 +72,15 @@ async def arerank_documents(
 
     results_list = results["results"]
     if skip_sorting:
-        doc_score_pairs = [(documents[item["index"]], item["relevance_score"]) for item in results_list]
-        doc_score_pairs.sort(key=lambda x: x[0].metadata.get("original_index", 0))
-        for doc, score in doc_score_pairs:
-            doc.query_score = score
-        reranked_docs = [doc for doc, _ in doc_score_pairs]
+        reranked_docs = list(deepcopy(documents))
+        for item in results_list:
+            if isinstance(documents[item["index"]], Document):
+                reranked_docs[item["index"]].query_score = item["relevance_score"]
+            else:
+                reranked_docs[item["index"]] = Document(
+                    content=reranked_docs[item["index"]], query_score=item["relevance_score"]
+                )
+        reranked_docs = cast(list[Document], reranked_docs)
     else:
         reranked_docs = [documents[item["index"]] for item in results_list]
         scores = [item["relevance_score"] for item in results_list]

@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 import time
 from typing import Any
 
 from scrapy.crawler import AsyncCrawlerRunner
 from scrapy.utils.log import configure_logging
+
+from knowgraph.spider.config import MUSEUM_CONFIGS
 
 from .config import MuseumConfig
 from .models import CrawlResult
@@ -17,7 +17,7 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
     "CONCURRENT_REQUESTS": 8,
     "CONCURRENT_REQUESTS_PER_DOMAIN": 4,
     "CONCURRENT_ITEMS": 100,
-    "USER_AGENT": "KnowGraph Artifact Crawler/1.0 (Academic Research Project)",
+    "USER_AGENT": "Chrome/139.0.2171.99 Safari/537.36",
     "LOG_LEVEL": "WARNING",
     "COOKIES_ENABLED": False,
     "TELNETCONSOLE_ENABLED": False,
@@ -43,7 +43,9 @@ class ScrapyCrawler:
         if settings:
             self._settings.update(settings)
 
-    async def acrawl_museum(self, config: MuseumConfig) -> CrawlResult:
+    async def acrawl_museum(self, config: MuseumConfig | str) -> CrawlResult:
+        if isinstance(config, str):
+            config = MUSEUM_CONFIGS[config]
         result = CrawlResult(museum=config.name)
         t0 = time.monotonic()
 
@@ -64,7 +66,9 @@ class ScrapyCrawler:
         result.elapsed = time.monotonic() - t0
         return result
 
-    async def acrawl_museums(self, configs: list[MuseumConfig]) -> list[CrawlResult]:
+    async def acrawl_museums(self, configs: list[MuseumConfig] | None = None) -> list[CrawlResult]:
+        if configs is None:
+            configs = list(MUSEUM_CONFIGS.values())
         results: list[CrawlResult] = []
         for config in configs:
             result = await self.acrawl_museum(config)

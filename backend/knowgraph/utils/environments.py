@@ -46,6 +46,8 @@ class EnvironmentSettings(BaseSettings):
     RAG_RELEASE_MODE: bool = False
     RAG_TMP_DIR: Path = Path(gettempdir()) / "knowgraph_tmp"
     RAG_TOKEN_EXPIRES_IN: int = 3600 * 6
+    SSL_KEY_PATH: Path | None = None
+    SSL_CERT_PATH: Path | None = None
     model_config = SettingsConfigDict(env_ignore_empty=True, env_file=env_file, extra="ignore")
 
     def model_post_init(self, context):
@@ -70,9 +72,9 @@ class EnvironmentSettings(BaseSettings):
 
 settings = EnvironmentSettings()
 
-VLLM_PORT = settings.LLM_PORT
-VLLM_HOST = settings.LLM_HOST
-VLLM_PROTOCOL = settings.LLM_PROTOCOL
+LLM_PORT = settings.LLM_PORT
+LLM_HOST = settings.LLM_HOST
+LLM_PROTOCOL = settings.LLM_PROTOCOL
 
 FASTAPI_PORT = settings.FASTAPI_PORT
 FASTAPI_HOST = settings.FASTAPI_HOST
@@ -92,6 +94,8 @@ TOKEN_EXPIRES_IN = settings.RAG_TOKEN_EXPIRES_IN
 UUID_SEED = settings.RAG_UUID_SEED
 
 RELEASE_MODE = settings.RAG_RELEASE_MODE
+SSL_KEY_PATH = settings.SSL_KEY_PATH
+SSL_CERT_PATH = settings.SSL_CERT_PATH
 
 if env_file is not None:
     load_dotenv(dotenv_path=env_file)

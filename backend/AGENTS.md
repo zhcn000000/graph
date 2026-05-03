@@ -58,6 +58,7 @@ backend/
 ### 1. Routers (API 入口)
 
 **chat.py** - 聊天路由 `/chat`
+
 - `POST /{session_id}/stream` - SSE 流式聊天
 - `GET /{session_id}/history` - 获取历史消息
 - `POST /title` - 生成会话标题
@@ -67,6 +68,7 @@ backend/
 - `GET /list` - 会话列表
 
 **rag.py** - RAG 路由 `/rag`
+
 - RAG 知识库 CRUD: 创建/列表/获取/更新/删除
 - 文件上传/删除
 - 搜索: `/rag/{rag_id}/search`
@@ -75,6 +77,7 @@ backend/
 ### 2. Chat (Agent 系统)
 
 使用 `pydantic_ai` 构建 AI Agent:
+
 - `model.py`: 定义 `agent` 和动态指令函数 `metadata_prompt`, `rag_prompt`
 - 支持流式输出 (SSE)
 - 工具集: `rag_toolkit` 等
@@ -104,6 +107,7 @@ FastMCP 工具,暴露图谱能力给外部 LLM 调用
 ## 入口
 
 `knowgraph/routers/__init__.py` 创建 FastAPI app,合并:
+
 - `/mcp` - MCP 协议端点
 - `/chat` - 聊天 API
 - `/rag` - RAG API
@@ -129,4 +133,9 @@ ruff format knowgraph/
 - postgresql + apache-age
 - fastmcp
 - orjson
-- uuid, typing 相关
+
+## 其他
+
+- 尽量在模块顶部导入包
+- 尽量使用sqlalchemy的ddl构建器构建stmt执行，除非无法构建
+- python版本为3.14,具有类型系统改进,因此使用`from __future__ import annotations`导入是不必要的

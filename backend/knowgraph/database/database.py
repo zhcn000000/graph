@@ -2,27 +2,55 @@ from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from warnings import warn
 
-from asyncer import asyncify
 from psycopg import AsyncConnection, AsyncCursor, Connection, Cursor, IsolationLevel
 from sqlalchemy import Engine, MetaData, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateSchema, CreateTable, DropSchema, DropTable
+from sqlalchemy_utils.functions.database import create_database, database_exists, drop_database
 from sqlmodel import SQLModel
 
 from .pool import pool_manager
 
 
 class DatabaseManager:
-    def __init__(self, dbname: str = "postgres") -> None:
+    def __init__(self, dbname: str = "data") -> None:
         assert isinstance(dbname, str), "Database name must be a string."
         self.dbname = dbname
         self._engine: Engine | None = None
         self._async_engine: AsyncEngine | None = None
 
+    @staticmethod
+    def create_db(dbname: str = "data") -> None:
+        url = pool_manager.url
+        url = url.set(database=dbname)
+        if not database_exists(url):
+            create_database(url)
+
+    @staticmethod
+    def drop_db(dbname: str = "data") -> None:
+        url = pool_manager.url
+        url = url.set(database=dbname)
+        if input(
+            f"Are you sure you want to drop the database '{dbname}'? This action cannot be undone. (y/n): "
+        ).lower() == "y" and database_exists(url):
+            drop_database(url)
+
+    def engine(self) -> Engine:
+        return pool_manager.engine(self.dbname)
+
+    async def aengine(self) -> AsyncEngine:
+        return await pool_manager.aengine(self.dbname)
+
+    def pool(self):
+        return pool_manager.pool(self.dbname)
+
+    async def apool(self):
+        return await pool_manager.apool(self.dbname)
+
     @contextmanager
     def session(self, schema: str = "public") -> Generator[Session]:
-        engine = pool_manager.engine(self.dbname)
+        engine = self.engine()
         with Session(engine) as session:
             try:
                 if schema == "public":
@@ -42,7 +70,7 @@ class DatabaseManager:
 
     @asynccontextmanager
     async def asession(self, schema: str = "public") -> AsyncGenerator[AsyncSession]:
-        engine = await pool_manager.aengine(self.dbname)
+        engine = await self.aengine()
         async with AsyncSession(engine) as session:
             try:
                 if schema == "public":
@@ -69,7 +97,7 @@ class DatabaseManager:
         deferrable: bool = False,
         isolation: IsolationLevel = IsolationLevel.READ_COMMITTED,
     ) -> Generator[Connection]:
-        pool = pool_manager.pool(self.dbname)
+        pool = self.pool()
         with pool.connection() as conn:
             conn.set_read_only(read_only)
             conn.set_isolation_level(isolation)
@@ -100,7 +128,7 @@ class DatabaseManager:
         deferrable: bool = False,
         isolation: IsolationLevel = IsolationLevel.READ_COMMITTED,
     ) -> AsyncGenerator[AsyncConnection]:
-        pool = await pool_manager.apool(self.dbname)
+        pool = await self.apool()
         async with pool.connection() as conn:
             try:
                 await conn.set_read_only(read_only)
@@ -154,13 +182,14 @@ class DatabaseManager:
     async def acreate_all(self, metadata: MetaData | None = None) -> None:
         if metadata is None:
             metadata = SQLModel.metadata
-        await asyncify(metadata.create_all)(pool_manager.engine(self.dbname))
+        async with (await self.aengine()).begin() as conn:
+            await conn.run_sync(metadata.create_all)
 
     async def adrop_all(self, metadata: MetaData | None = None) -> None:
         if metadata is None:
             metadata = SQLModel.metadata
-
-        await asyncify(metadata.drop_all)(pool_manager.engine(self.dbname))
+        async with (await self.aengine()).begin() as conn:
+            await conn.run_sync(metadata.drop_all)
 
     async def acreate_schema(self, schema: str) -> None:
         async with self.asession() as session:
@@ -191,7 +220,8 @@ class DatabaseManager:
                     f"Failed to create table {new_table.name} in schema {schema}: {e} fallback to sync create_all.",
                     stacklevel=2,
                 )
-        await asyncify(new_metadata.create_all)(pool_manager.engine(self.dbname), tables=[new_table])
+        async with (await self.aengine()).begin() as conn:
+            await conn.run_sync(new_metadata.create_all, tables=[new_table])
 
     async def adrop_table(self, table: type[SQLModel], schema: str = "public") -> None:
         table_name: str = table.__tablename__  # type: ignore
@@ -211,4 +241,5 @@ class DatabaseManager:
                     stacklevel=2,
                 )
 
-        await asyncify(new_metadata.drop_all)(pool_manager.engine(self.dbname), tables=[new_table])
+        async with (await self.aengine()).begin() as conn:
+            await conn.run_sync(new_metadata.drop_all, tables=[new_table])

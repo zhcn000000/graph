@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import re
 from datetime import date
@@ -38,8 +36,7 @@ class ArtifactSitemapSpider(SitemapSpider):
                 rules = [(".*", "parse")]
             kwargs["sitemap_rules"] = rules
             self._museum_config = museum_config
-            self._fallback_sitemap_url = museum_config.sitemap_url
-
+            self.sitemap_urls = [museum_config.sitemap_url]
         super().__init__(**kwargs)
 
     def _get_config(self) -> MuseumConfig | None:
@@ -51,30 +48,10 @@ class ArtifactSitemapSpider(SitemapSpider):
             robots_url = f"{config.website.rstrip('/')}/robots.txt"
             yield Request(
                 robots_url,
-                callback=self._discover_sitemap,
                 dont_filter=True,
-                meta={"fallback_sitemap": getattr(self, "_fallback_sitemap_url", config.sitemap_url)},
             )
         else:
             yield from super().start_requests()
-
-    def _discover_sitemap(self, response):
-        fallback = response.meta.get("fallback_sitemap", "")
-        sitemap_urls: list[str] = []
-
-        for line in response.text.splitlines():
-            line = line.strip()
-            if line.lower().startswith("sitemap:"):
-                url = line.split(":", 1)[1].strip()
-                if url:
-                    sitemap_urls.append(url)
-
-        if not sitemap_urls:
-            sitemap_urls = [fallback]
-
-        self.sitemap_urls = sitemap_urls
-        for url in sitemap_urls:
-            yield Request(url, callback=self._parse_sitemap)
 
     def closed(self, reason: str) -> None:
         self.stats_collector.update(self.stats)

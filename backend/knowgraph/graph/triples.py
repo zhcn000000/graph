@@ -1,13 +1,12 @@
-from __future__ import annotations
-
 import json
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import pandas as pd
 from pydantic import BaseModel
+from pydantic_ai import Agent
 
 from ..chat.chat_model import get_model
 from ..chat.struct import ModelDeps
@@ -19,9 +18,6 @@ from .schema import (
     get_entity_uri,
     get_relationship_uri,
 )
-
-if TYPE_CHECKING:
-    from pydantic_ai import Agent
 
 
 @dataclass
@@ -249,7 +245,7 @@ class LLMExtractor:
         from pydantic_ai import Agent
 
         return cast(
-            "Agent[ModelDeps, list[ExtractedTriple]]",
+            Agent[ModelDeps, list[ExtractedTriple]],
             Agent(
                 model=self.model,
                 deps_type=ModelDeps,
@@ -262,28 +258,17 @@ class LLMExtractor:
     async def aextract_from_csv_row(self, row: CSVRowInput) -> list[ExtractedTriple]:
         record_str = json.dumps(row.model_dump(), ensure_ascii=False, indent=2)
         user_prompt = self.USER_PROMPT_TEMPLATE.format(record=record_str)
-        result = await self._agent.run(user_prompt)
+        result = await self._agent.run(user_prompt, deps=ModelDeps(select_toolset=[]))
         return result.output
 
     async def aextract_from_document(self, doc: Document) -> list[ExtractedTriple]:
         user_prompt = self.USER_PROMPT_TEMPLATE.format(record=doc.content)
-        result = await self._agent.run(user_prompt)
+        result = await self._agent.run(user_prompt, deps=ModelDeps(select_toolset=[]))
         return result.output
 
     async def aextract_from_csv(self, csv_path: str) -> list[ExtractedTriple]:
         df = pd.read_csv(csv_path)
-        all_triples = []
-
-        for _, row in df.iterrows():
-            try:
-                row_input = CSVRowInput(**row.to_dict())
-                triples = await self.aextract_from_csv_row(row_input)
-                all_triples.extend(triples)
-            except Exception as e:
-                warnings.warn(f"Skipping CSV row due to extraction failure: {e}", UserWarning, stacklevel=2)
-                continue
-
-        return all_triples
+        return await self.aextract_from_dataframe(df)
 
     async def aextract_from_dataframe(self, df: pd.DataFrame) -> list[ExtractedTriple]:
         all_triples = []

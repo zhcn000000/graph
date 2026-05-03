@@ -1,10 +1,12 @@
 import operator
 import warnings
 from collections import Counter
+from hashlib import sha256
 from typing import NamedTuple
 from uuid import UUID
 
-from networkx import DiGraph, ego_graph, pagerank_scipy
+import pandas as pd
+from networkx import DiGraph, ego_graph, pagerank
 from sqlalchemy import Float, cast, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
@@ -356,9 +358,9 @@ class RAGMode:
 
         total_pers = sum(personalization.values())
         if total_pers > 0:
-            pr_scores = pagerank_scipy(unified_graph, personalization=personalization)
+            pr_scores = pagerank(unified_graph, personalization=personalization)
         else:
-            pr_scores = pagerank_scipy(unified_graph)
+            pr_scores = pagerank(unified_graph)
 
         # Step 6: Query edges by entity names via edge_querier
         names: list[str] = [
@@ -606,7 +608,6 @@ class RAGMode:
         link: str | None = None,
         source_hash: str | None = None,
     ) -> UUID | None:
-        from hashlib import sha256
 
         conf = await RAGConfig().aget(rag_id=rag_id)
         assert conf is not None, "知识库不存在"
@@ -716,17 +717,11 @@ class RAGMode:
         return context
 
     async def aload_from_csv(self, rag_id: UUID, csv_path: str) -> list[UUID]:
-        import warnings
-        from hashlib import sha256
-
-        import pandas as pd
-
-        df = pd.read_csv(csv_path)
         structured_graph = DiGraph()
         documents: list[Document] = []
         source_infos: list[dict] = []
         extraction_contents: list[str | None] = []
-
+        df = pd.read_csv(csv_path)
         for _, row in df.iterrows():
             try:
                 row_dict = row.to_dict()
@@ -817,7 +812,6 @@ class RAGMode:
         museum: str | None = None,
         limit: int | None = None,
     ) -> list[UUID]:
-        from hashlib import sha256
 
         conf = await RAGConfig().aget(rag_id=rag_id)
         assert conf is not None, "知识库不存在"
