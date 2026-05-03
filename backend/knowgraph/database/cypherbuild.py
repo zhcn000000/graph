@@ -1,7 +1,8 @@
 import math
-from typing import Any, Self
+from typing import Any, Literal, Self
 
-from psycopg.sql import SQL, Composable, Identifier, Literal
+from psycopg.sql import SQL, Composable, Identifier
+from psycopg.sql import Literal as SQLiteral
 
 
 def _quote_value(value: Any) -> str:
@@ -35,6 +36,29 @@ def _quote_key(key: object) -> str:
     return _quote_value(key)
 
 
+def _is_var_ref(value: str) -> bool:
+    """Check if a string should be treated as a Cypher variable/property reference."""
+    if value.startswith("$"):
+        return True
+    if "." in value:
+        return all(part.isidentifier() for part in value.split("."))
+    return value.isidentifier()
+
+
+def _format_props(props: dict[str, Any] | None) -> str:
+    """Format inline properties like ``{key: $val, key2: 'literal'}``."""
+    if not props:
+        return ""
+    parts = []
+    for k, v in props.items():
+        key = _quote_key(k)
+        if isinstance(v, str) and _is_var_ref(v):
+            parts.append(f"{key}: {v}")
+        else:
+            parts.append(f"{key}: {_quote_value(v)}")
+    return "{" + ", ".join(parts) + "}"
+
+
 def _embed(cypher: str, params: dict[str, Any]) -> str:
     param_keys = list(params.keys())
     param_keys.sort(key=len, reverse=True)
@@ -43,6 +67,66 @@ def _embed(cypher: str, params: dict[str, Any]) -> str:
         replacement = _quote_value(params[key])
         cypher = cypher.replace(placeholder, replacement)
     return cypher
+
+
+class PatternBuilder:
+    """Helper for building graph patterns (nodes, edges, paths) with proper quoting.
+
+    Usage::
+
+        PatternBuilder().node("v", "Artifact", {"uri": "$uri"}).build()
+        # (v:Artifact {uri: $uri})
+
+        PatternBuilder().node("s").rel("r", "RELATED_TO", direction="->").node("e").build()
+        # (s)-[r:RELATED_TO]->(e)
+    """
+
+    def __init__(self):
+        self._patterns: list[str] = []
+
+    def node(self, variable: str, label: str | None = None, props: dict[str, Any] | None = None) -> Self:
+        node_str = variable
+        if label:
+            node_str += f":{label}"
+        if props:
+            node_str += f" {_format_props(props)}"
+        self._patterns.append(f"({node_str})")
+        return self
+
+    def rel(
+        self,
+        variable: str = "",
+        label: str | None = None,
+        props: dict[str, Any] | None = None,
+        direction: Literal["->", "<-", "-"] = "-",
+        length: str | None = None,
+    ) -> Self:
+        inner = variable
+        if label:
+            inner += f":{label}"
+        if length:
+            inner += f"*{length}"
+        if props:
+            inner += f" {_format_props(props)}"
+
+        if inner:
+            bracket = f"[{inner}]"
+        else:
+            bracket = ""
+
+        if direction == "->":
+            self._patterns.append(f"-{bracket}->")
+        elif direction == "<-":
+            self._patterns.append(f"<-{bracket}-")
+        else:
+            self._patterns.append(f"-{bracket}-")
+        return self
+
+    def build(self) -> str:
+        return "".join(self._patterns)
+
+    def __str__(self) -> str:
+        return self.build()
 
 
 class CypherBuilder:
@@ -54,18 +138,24 @@ class CypherBuilder:
 
     # -- Clause builders --
 
-    def match(self, pattern: str, optional: bool = False) -> Self:
+    def match(self, pattern: str | PatternBuilder, optional: bool = False) -> Self:
+        if isinstance(pattern, PatternBuilder):
+            pattern = pattern.build()
         if optional:
             self._clauses.append(f"OPTIONAL MATCH {pattern}")
         else:
             self._clauses.append(f"MATCH {pattern}")
         return self
 
-    def merge(self, pattern: str) -> Self:
+    def merge(self, pattern: str | PatternBuilder) -> Self:
+        if isinstance(pattern, PatternBuilder):
+            pattern = pattern.build()
         self._clauses.append(f"MERGE {pattern}")
         return self
 
-    def create(self, pattern: str) -> Self:
+    def create(self, pattern: str | PatternBuilder) -> Self:
+        if isinstance(pattern, PatternBuilder):
+            pattern = pattern.build()
         self._clauses.append(f"CREATE {pattern}")
         return self
 
@@ -119,10 +209,23 @@ class CypherBuilder:
         self._params.update(other._params)
         return self
 
+    def detach_delete(self, *variables: str) -> Self:
+        return self.delete(*variables, detach=True)
+
     def raw(self, clause: str) -> Self:
         """Append a raw clause string directly."""
         self._clauses.append(clause)
         return self
+
+    # -- Static helpers --
+
+    @staticmethod
+    def ref(name: str) -> str:
+        return f"${name}"
+
+    @staticmethod
+    def assign(prefix: str, props: dict[str, Any]) -> str:
+        return ", ".join(f"{prefix}.{_quote_key(k)} = {CypherBuilder.ref(k)}" for k in props)
 
     # -- Param helpers --
 
@@ -145,60 +248,12 @@ class CypherBuilder:
     def __str__(self) -> str:
         return self.build()
 
-    # -- Static helpers --
 
-    @staticmethod
-    def ref(name: str) -> str:
-        """Build a parameter reference like ``$name``."""
-        return f"${name}"
-
-    @staticmethod
-    def val(value: Any) -> str:
-        """Quote a value for inline use in Cypher."""
-        return _quote_value(value)
-
-    @staticmethod
-    def key(value: Any) -> str:
-        """Quote a property key for use in Cypher."""
-        return _quote_key(value)
-
-    @staticmethod
-    def props(props: dict[str, Any] | None) -> str:
-        """Build inline properties like ``{key: $val, key2: 'literal'}``."""
-        if not props:
-            return ""
-        parts = []
-        for k, v in props.items():
-            key = _quote_key(k)
-            if isinstance(v, str) and v.startswith("$"):
-                parts.append(f"{key}: {v}")
-            else:
-                parts.append(f"{key}: {_quote_value(v)}")
-        return "{" + ", ".join(parts) + "}"
-
-    @staticmethod
-    def assign(prefix: str, props: dict[str, Any]) -> str:
-        """Build SET-style assignments like ``r.k = $k, r.v = $v``."""
-        return ", ".join(f"{prefix}.{_quote_key(k)} = {CypherBuilder.ref(k)}" for k in props)
-
-    @staticmethod
-    def label_opt(label: str | None) -> str:
-        """Build optional label clause like ``:Label`` or empty string."""
-        return f":{label}" if label else ""
-
-    @staticmethod
-    def node(variable: str, label: str | None = None, props: dict[str, Any] | None = None) -> str:
-        """Build a node pattern like ``(v:Label {key: $val})``."""
-        lbl = f":{label}" if label else ""
-        prp = CypherBuilder.props(props)
-        return f"({variable}{lbl} {prp})" if prp else f"({variable}{lbl})"
-
-
-def match(pattern: str) -> CypherBuilder:
+def match(pattern: str | PatternBuilder) -> CypherBuilder:
     return CypherBuilder().match(pattern)
 
 
-def merge(pattern: str) -> CypherBuilder:
+def merge(pattern: str | PatternBuilder) -> CypherBuilder:
     return CypherBuilder().merge(pattern)
 
 
@@ -206,8 +261,12 @@ def unwind(expr: str, alias: str) -> CypherBuilder:
     return CypherBuilder().unwind(expr, alias)
 
 
-def create(pattern: str) -> CypherBuilder:
+def create(pattern: str | PatternBuilder) -> CypherBuilder:
     return CypherBuilder().create(pattern)
+
+
+def node(variable: str, label: str | None = None, props: dict[str, Any] | None = None) -> PatternBuilder:
+    return PatternBuilder().node(variable, label, props)
 
 
 def build_cypher_stmt(
@@ -243,7 +302,7 @@ def build_cypher_stmt(
         cypher = cypher.build()
 
     return SQL("SELECT * FROM cypher({graphName}, {cypher}) AS ({columns})").format(
-        graphName=Literal(graph_name),
-        cypher=Literal(cypher),
+        graphName=SQLiteral(graph_name),
+        cypher=SQLiteral(cypher),
         columns=cols,
     )
