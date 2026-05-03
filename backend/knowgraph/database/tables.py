@@ -193,8 +193,8 @@ class Source(SQLModel, table=True):
         UUID | None,
         Field(
             sa_column=Column(
-                Uuid, ForeignKey(col(ArtifactRawTable.id), onupdate="CASCADE", ondelete="SET NULL"), nullable=True
-            )
+                Uuid, ForeignKey(col(ArtifactRawTable.id), onupdate="CASCADE", ondelete="SET NULL"), nullable=True,
+            ),
         ),
     ]
 

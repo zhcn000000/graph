@@ -1,8 +1,10 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 import pandas as pd
 from pydantic import Field
-from pydantic_ai import FunctionToolset, ModelRetry, RunContext, ToolDefinition
+from pydantic_ai import FunctionToolset, ModelRetry, RunContext
+from pydantic_monty import Monty
+from rich.pretty import pretty_repr
 
 from knowgraph.database.ragmode import RAGMode
 
@@ -13,14 +15,7 @@ toolset: FunctionToolset[ModelDeps] = FunctionToolset()
 rag_mode = RAGMode()
 
 
-async def prepare_tools(ctx: RunContext[ModelDeps], tool_def: ToolDefinition) -> ToolDefinition | None:
-    if "rag_toolkit" in ctx.deps.select_toolset:
-        return tool_def
-    return None
-
-
 @toolset.tool(
-    prepare=prepare_tools,
     name="search_documents",
     description="""
 根据查询语义搜索文档库，返回分页的文档列表。
@@ -91,7 +86,6 @@ async def search_documents(
 
 
 @toolset.tool(
-    prepare=prepare_tools,
     name="traverse_graph",
     description="""
 沿知识图谱中的实体URI向外遍历，获取关联实体及其相关文档。
@@ -156,7 +150,6 @@ async def traverse_graph(
 
 
 @toolset.tool(
-    prepare=prepare_tools,
     name="get_entity_info",
     description="""
 获取知识图谱中指定实体的详细信息，包括属性、关联关系等。
@@ -210,7 +203,6 @@ async def get_entity_info(
 
 
 @toolset.tool(
-    prepare=prepare_tools,
     name="get_entity_paths",
     description="""
 查询两个实体之间的最短路径。
@@ -244,3 +236,29 @@ async def get_entity_paths(
         return md
     except Exception as e:
         raise ModelRetry(f"路径查询失败: {e!s}") from e
+
+
+@toolset.tool(
+    name="python_repl",
+    description="这是一个可以执行Python代码的工具，输入Python代码并返回最后一条表达式的结果和控制台输出。"
+    "为了沙盒的安全性，以及沙盒的局限性，该工具不支持任何需要使用import导入的库，除了sys, typing, asyncio",
+)
+async def python_repl(
+    ctx: RunContext[ModelDeps],
+    code: Annotated[str, Field(description="要执行的Python代码")],
+) -> Annotated[str, Field(description="返回最后一行表达式的结果和控制台输出")]:
+    monty = Monty(code=code)
+    out = []
+
+    def print_callback(stream: Literal["stdout"], content: str) -> None:
+        if stream == "stdout":
+            out.append(content)
+
+    try:
+        result = await monty.run_async(print_callback=print_callback)
+    except Exception as e:
+        raise ModelRetry(f"执行Python代码时发生错误: {e}") from e
+    output = "表达式结果: " + pretty_repr(result)
+    if out:
+        output += "\n输出:\n" + "".join(out)
+    return output

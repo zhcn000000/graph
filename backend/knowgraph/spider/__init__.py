@@ -6,12 +6,12 @@ from .runner import ScrapyCrawler
 from .spider import ArtifactSitemapSpider
 
 __all__ = [
+    "MUSEUM_CONFIGS",
     "ArtifactData",
     "ArtifactPipeline",
     "ArtifactSitemapSpider",
     "ChineseArtifactFilter",
     "CrawlResult",
-    "MUSEUM_CONFIGS",
     "MuseumConfig",
     "ScrapyCrawler",
     "SitemapUrl",

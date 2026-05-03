@@ -32,7 +32,7 @@ class DatabaseManager:
         url = pool_manager.url
         url = url.set(database=dbname)
         if input(
-            f"Are you sure you want to drop the database '{dbname}'? This action cannot be undone. (y/n): "
+            f"Are you sure you want to drop the database '{dbname}'? This action cannot be undone. (y/n): ",
         ).lower() == "y" and database_exists(url):
             drop_database(url)
 

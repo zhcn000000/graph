@@ -39,7 +39,7 @@ from starlette.responses import StreamingResponse
 
 from knowgraph.chat.chat_model import get_model
 from knowgraph.chat.model import agent
-from knowgraph.chat.struct import ModelDeps, ToolEnum
+from knowgraph.chat.struct import ModelDeps
 from knowgraph.database.history import HistoryStore
 
 router = APIRouter()
@@ -102,7 +102,6 @@ class AssistantMessageItem(BaseModel):
 class ChatRequest(BaseModel):
     text: str
     files: list[str | dict] = []
-    tools: list[str] = ["rag_toolkit"]
     model: str | None = None
     thinking: bool = True
 
@@ -215,9 +214,7 @@ async def api_chat(
     request: ChatRequest,
 ) -> StreamingResponse:
     message_history = await db.aget_messages(session_id)
-    deps = ModelDeps(
-        select_toolset=[ToolEnum(t) for t in request.tools],
-    )
+    deps = ModelDeps()
     files: list[Any] = []
     messages: Sequence[UserContent] = [request.text] + files
     model = get_model(request.model)

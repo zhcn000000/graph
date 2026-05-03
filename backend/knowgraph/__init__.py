@@ -1,4 +1,4 @@
-from knowgraph.chat import ModelDeps, ToolEnum, agent, get_model, rag_toolset
+from knowgraph.chat import ModelDeps, agent, get_model, rag_toolset
 from knowgraph.database import (
     DatabaseManager,
     HistoryStore,
@@ -19,7 +19,6 @@ __all__ = [
     "ModelDeps",
     "RAGMode",
     "SourceStore",
-    "ToolEnum",
     "agent",
     "asplit_content",
     "atokenize_content",
