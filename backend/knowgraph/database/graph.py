@@ -1,104 +1,29 @@
-import math
 from typing import Any
 
 from age.models import Edge, Path, Vertex
 from networkx import DiGraph
-from psycopg.sql import SQL, Composable, Identifier, Literal
 
+from knowgraph.database.cypherbuild import CypherBuilder, build_cypher_stmt
 from knowgraph.database.database import DatabaseManager
 from knowgraph.utils.environments import POSTGRES_DB
 
 GRAPH_LABEL = "artifact_graph"
 
 
-def _quote_cypher_value(value: Any) -> str:
-    if value is None:
-        return "null"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        if math.isnan(value):
-            return "NaN"
-        if math.isinf(value):
-            return str(value)
-        return str(value)
-    if isinstance(value, str):
-        escaped = value.replace("\\", "\\\\").replace("'", "\\'")
-        return f"'{escaped}'"
-    if isinstance(value, (list, tuple)):
-        items = ", ".join(_quote_cypher_value(v) for v in value)
-        return f"[{items}]"
-    if isinstance(value, dict):
-        pairs = ", ".join(
-            f"{_quote_cypher_key(k)}: {_quote_cypher_value(v)}"
-            for k, v in value.items()  # type: ignore[arg-type]
-        )
-        return f"{{{pairs}}}"
-    return _quote_cypher_value(str(value))
-
-
-def _quote_cypher_key(key: object) -> str:
-    if isinstance(key, str) and key.replace("_", "").isalnum():
-        return key
-    return _quote_cypher_value(key)
-
-
-def _embed_params(cypher: str, params: dict[str, Any]) -> str:
-    if not params:
-        return cypher
-    param_keys: list[str] = list(params.keys())
-    param_keys.sort(key=len, reverse=True)
-    for key in param_keys:
-        placeholder = f"${key}"
-        replacement = _quote_cypher_value(params[key])
-        cypher = cypher.replace(placeholder, replacement)
-    return cypher
-
-
-def _build_cypher_stmt(graph_name: str, cypher: str, columns: list[str]) -> Composable:
-    if columns:
-        col_parts: list[Composable] = []
-        for c in columns:
-            c = c.strip()
-            if not c:
-                continue
-            if " " in c:
-                name, type_name = c.split(" ", 1)
-                col_parts.append(SQL("{} {}").format(Identifier(name), Identifier(type_name)))
-            else:
-                col_parts.append(SQL("{} agtype").format(Identifier(c)))
-        cols: Composable = SQL(", ").join(col_parts)
-    else:
-        cols = SQL('"v" agtype')
-
-    return SQL("SELECT * FROM cypher({graphName}, {cypher}) AS ({columns})").format(  # type: ignore[arg-type]
-        graphName=Literal(graph_name),
-        cypher=Literal(cypher),
-        columns=cols,
-    )
-
-
-class AgeGraphManager:
+class AgeGraphManager:  # noqa: PLR0904
     def __init__(self, graph_name: str = GRAPH_LABEL, dbname: str = POSTGRES_DB):
         self.graph_name = graph_name
         self.__db = DatabaseManager(dbname)
 
     async def aexecute_cypher(
         self,
-        cypher: str,
+        cypher: str | CypherBuilder,
         params: dict[str, Any] | None = None,
-        columns: list[str] | None = None,
+        columns: list[str | tuple[str, str]] | None = None,
         read_only: bool = True,
     ) -> list[dict[str, Any]]:
-        if columns is None:
-            columns = []
 
-        cypher_clean = cypher.replace("\n", " ").replace("\t", " ")
-        cypher_clean = _embed_params(cypher_clean, params or {})
-
-        stmt = _build_cypher_stmt(self.graph_name, cypher_clean, columns)
+        stmt = build_cypher_stmt(self.graph_name, cypher, columns, params)
 
         async with self.__db.acursor(read_only=read_only, autocommit=read_only) as cur:
             result = await cur.execute(stmt)  # type: ignore
@@ -150,14 +75,20 @@ class AgeGraphManager:
         if "uri" not in properties:
             return None
 
-        params: dict[str, Any] = {"uri": properties["uri"]}
-        cypher = f"""
-        MERGE (v:{label} {{uri: $uri}})
-        SET v += $props
-        RETURN id(v) as id, labels(v) as labels, v.uri as uri, v.name as name, v.entity_type as entity_type
-        """
-        params["props"] = {k: v for k, v in properties.items() if k != "uri"}
-        results = await self.aexecute_cypher(cypher, params, read_only=False)
+        cypher = (
+            CypherBuilder()
+            .merge(f"(v:{label} {{uri: $uri}})")
+            .set_("v += $props")
+            .return_(
+                "id(v) as id",
+                "labels(v) as labels",
+                "v.uri as uri",
+                "v.name as name",
+                "v.entity_type as entity_type",
+            )
+            .param(uri=properties["uri"], props={k: v for k, v in properties.items() if k != "uri"})
+        )
+        results = await self.aexecute_cypher(cypher, read_only=False)
         if results:
             row = results[0]
             return {
@@ -175,14 +106,21 @@ class AgeGraphManager:
         uri: str,
         label: str | None = None,
     ) -> dict[str, Any] | None:
-        label_clause = f":{label}" if label else ""
-        cypher = f"""
-        MATCH (v{label_clause} {{uri: $uri}})
-        RETURN id(v) as id, labels(v) as labels,
-               v.uri as uri, v.name as name,
-               v.entity_type as entity_type, v.description as description
-        """
-        results = await self.aexecute_cypher(cypher, {"uri": uri})
+        label_clause = CypherBuilder.label_opt(label)
+        cypher = (
+            CypherBuilder()
+            .match(f"(v{label_clause} {{uri: $uri}})")
+            .return_(
+                "id(v) as id",
+                "labels(v) as labels",
+                "v.uri as uri",
+                "v.name as name",
+                "v.entity_type as entity_type",
+                "v.description as description",
+            )
+            .param(uri=uri)
+        )
+        results = await self.aexecute_cypher(cypher)
         if results:
             row = results[0]
             return {
@@ -196,13 +134,15 @@ class AgeGraphManager:
         return None
 
     async def adelete_vertex(self, uri: str, label: str | None = None) -> bool:
-        label_clause = f":{label}" if label else ""
-        cypher = f"""
-        MATCH (v{label_clause} {{uri: $uri}})
-        DETACH DELETE v
-        RETURN count(*) as deleted_count
-        """
-        results = await self.aexecute_cypher(cypher, {"uri": uri}, read_only=False)
+        label_clause = CypherBuilder.label_opt(label)
+        cypher = (
+            CypherBuilder()
+            .match(f"(v{label_clause} {{uri: $uri}})")
+            .detach_delete("v")
+            .return_("count(*) as deleted_count")
+            .param(uri=uri)
+        )
+        results = await self.aexecute_cypher(cypher, read_only=False)
         if results and results[0].get("deleted_count", 0) > 0:
             return True
         return False
@@ -221,27 +161,20 @@ class AgeGraphManager:
         if properties:
             edge_props.update(properties)
 
-        props_set = ", ".join([f"r.{k} = ${k}" for k in edge_props])
+        start_match = CypherBuilder.label_opt(start_label)
+        end_match = CypherBuilder.label_opt(end_label)
 
-        start_match = f":{start_label}" if start_label else ""
-        end_match = f":{end_label}" if end_label else ""
+        cypher = (
+            CypherBuilder()
+            .match(f"(s{start_match} {{uri: $start_uri}})")
+            .match(f"(e{end_match} {{uri: $end_uri}})")
+            .merge(f"(s)-[r:{relationship_type} {{uri: $predicate_uri}}]->(e)")
+            .set_(CypherBuilder.assign("r", edge_props))
+            .return_("id(r) as id", "r.uri as uri", "type(r) as relationship_type")
+            .param(start_uri=start_uri, end_uri=end_uri, predicate_uri=predicate_uri, **edge_props)
+        )
 
-        cypher = f"""
-        MATCH (s{start_match} {{uri: $start_uri}})
-        MATCH (e{end_match} {{uri: $end_uri}})
-        MERGE (s)-[r:{relationship_type} {{uri: $predicate_uri}}]->(e)
-        SET {props_set}
-        RETURN id(r) as id, r.uri as uri, type(r) as relationship_type
-        """
-
-        params: dict[str, Any] = {
-            "start_uri": start_uri,
-            "end_uri": end_uri,
-            "predicate_uri": predicate_uri,
-        }
-        params.update(edge_props)
-
-        results = await self.aexecute_cypher(cypher, params, read_only=False)
+        results = await self.aexecute_cypher(cypher, read_only=False)
         if results:
             row = results[0]
             return {
@@ -261,14 +194,21 @@ class AgeGraphManager:
         end_uri: str,
         relationship_type: str | None = None,
     ) -> dict[str, Any] | None:
-        rel_clause = f":{relationship_type}" if relationship_type else ""
+        rel_clause = CypherBuilder.label_opt(relationship_type)
 
-        cypher = f"""
-        MATCH (s {{uri: $start_uri}})-[r{rel_clause}]->(e {{uri: $end_uri}})
-        RETURN id(r) as id, r.uri as uri, type(r) as relationship_type,
-               s.uri as start_uri, e.uri as end_uri
-        """
-        results = await self.aexecute_cypher(cypher, {"start_uri": start_uri, "end_uri": end_uri})
+        cypher = (
+            CypherBuilder()
+            .match(f"(s {{uri: $start_uri}})-[r{rel_clause}]->(e {{uri: $end_uri}})")
+            .return_(
+                "id(r) as id",
+                "r.uri as uri",
+                "type(r) as relationship_type",
+                "s.uri as start_uri",
+                "e.uri as end_uri",
+            )
+            .param(start_uri=start_uri, end_uri=end_uri)
+        )
+        results = await self.aexecute_cypher(cypher)
         if results:
             row = results[0]
             return {
@@ -287,16 +227,14 @@ class AgeGraphManager:
         end_uri: str,
         relationship_type: str,
     ) -> bool:
-        cypher = f"""
-        MATCH (s {{uri: $start_uri}})-[r:{relationship_type}]->(e {{uri: $end_uri}})
-        DELETE r
-        RETURN count(*) as deleted_count
-        """
-        results = await self.aexecute_cypher(
-            cypher,
-            {"start_uri": start_uri, "end_uri": end_uri},
-            read_only=False,
+        cypher = (
+            CypherBuilder()
+            .match(f"(s {{uri: $start_uri}})-[r:{relationship_type}]->(e {{uri: $end_uri}})")
+            .delete("r")
+            .return_("count(*) as deleted_count")
+            .param(start_uri=start_uri, end_uri=end_uri)
         )
+        results = await self.aexecute_cypher(cypher, read_only=False)
         if results and results[0].get("deleted_count", 0) > 0:
             return True
         return False
@@ -314,11 +252,13 @@ class AgeGraphManager:
         else:
             rel_pattern = f"-[*1..{max_hops}]-"
 
-        cypher = f"""
-        MATCH path = (start {{uri: $uri}}){rel_pattern}(end)
-        RETURN nodes(path) as nodes, relationships(path) as edges
-        """
-        return await self.ato_networkx(cypher, {"uri": start_uri})
+        cypher = (
+            CypherBuilder()
+            .match(f"path = (start {{uri: $uri}}){rel_pattern}(end)")
+            .return_("nodes(path) as nodes", "relationships(path) as edges")
+            .param(uri=start_uri)
+        )
+        return await self.ato_networkx(cypher)
 
     async def atraverse_multi(
         self,
@@ -335,12 +275,14 @@ class AgeGraphManager:
         else:
             rel_pattern = f"-[*1..{max_hops}]-"
 
-        cypher = f"""
-        UNWIND $uris AS uri
-        MATCH path = (start {{uri: uri}}){rel_pattern}(end)
-        RETURN nodes(path) AS nodes, relationships(path) AS edges
-        """
-        return await self.ato_networkx(cypher, {"uris": uris})
+        cypher = (
+            CypherBuilder()
+            .unwind("$uris", "uri")
+            .match(f"path = (start {{uri: uri}}){rel_pattern}(end)")
+            .return_("nodes(path) AS nodes", "relationships(path) AS edges")
+            .param(uris=uris)
+        )
+        return await self.ato_networkx(cypher)
 
     async def afind_paths(
         self,
@@ -348,13 +290,14 @@ class AgeGraphManager:
         end_uri: str,
         max_hops: int = 5,
     ) -> DiGraph:
-        cypher = f"""
-        MATCH path = shortestPath((start {{uri: $start_uri}})-[*]->(end {{uri: $end_uri}}))
-        WHERE size(relationships(path)) <= {max_hops}
-        RETURN nodes(path) as nodes, relationships(path) as edges
-        """
-
-        return await self.ato_networkx(cypher, {"start_uri": start_uri, "end_uri": end_uri})
+        cypher = (
+            CypherBuilder()
+            .match("path = shortestPath((start {uri: $start_uri})-[*]->(end {uri: $end_uri}))")
+            .where(f"size(relationships(path)) <= {max_hops}")
+            .return_("nodes(path) as nodes", "relationships(path) as edges")
+            .param(start_uri=start_uri, end_uri=end_uri)
+        )
+        return await self.ato_networkx(cypher)
 
     async def aexpand_context(
         self,
@@ -442,12 +385,14 @@ class AgeGraphManager:
             nodes_by_label.setdefault(label, []).append(props)
 
         for label, nodes in nodes_by_label.items():
-            cypher = f"""
-            UNWIND $nodes AS node
-            MERGE (v:{label} {{uri: node.uri}})
-            SET v += node
-            """
-            await self.aexecute_cypher(cypher, {"nodes": nodes}, read_only=False)
+            cypher = (
+                CypherBuilder()
+                .unwind("$nodes", "node")
+                .merge(f"(v:{label} {{uri: node.uri}})")
+                .set_("v += node")
+                .param(nodes=nodes)
+            )
+            await self.aexecute_cypher(cypher, read_only=False)
 
         edges_by_type: dict[str, list[dict[str, Any]]] = {}
         for u, v, data in graph.edges(data=True):
@@ -473,18 +418,20 @@ class AgeGraphManager:
             })
 
         for rel_type, edges in edges_by_type.items():
-            cypher = f"""
-            UNWIND $edges AS edge
-            MATCH (s {{uri: edge.s}})
-            MATCH (e {{uri: edge.e}})
-            MERGE (s)-[r:{rel_type} {{uri: edge.p.uri}}]->(e)
-            SET r += edge.p
-            """
-            await self.aexecute_cypher(cypher, {"edges": edges}, read_only=False)
+            cypher = (
+                CypherBuilder()
+                .unwind("$edges", "edge")
+                .match("(s {uri: edge.s})")
+                .match("(e {uri: edge.e})")
+                .merge(f"(s)-[r:{rel_type} {{uri: edge.p.uri}}]->(e)")
+                .set_("r += edge.p")
+                .param(edges=edges)
+            )
+            await self.aexecute_cypher(cypher, read_only=False)
 
         return True
 
-    async def ato_networkx(self, cypher: str, params: dict | None = None) -> DiGraph:
+    async def ato_networkx(self, cypher: str | CypherBuilder, params: dict | None = None) -> DiGraph:
 
         graph = DiGraph()
 
@@ -506,7 +453,9 @@ class AgeGraphManager:
                 elif isinstance(x, Edge):
                     add_edge_to_networkx(x)
 
-        rows = await self.aexecute_cypher(cypher, params, columns=["nodes agtype", "edges agtype"], read_only=True)
+        rows = await self.aexecute_cypher(
+            cypher, params=params, columns=["nodes agtype", "edges agtype"], read_only=True
+        )
         for row in rows:
             for value in row.values():
                 if isinstance(value, Path):
@@ -516,3 +465,107 @@ class AgeGraphManager:
                 elif isinstance(value, Vertex):
                     add_node_to_networkx(value)
         return graph
+
+    async def aget_all_edge_connections(self) -> list[dict[str, Any]]:
+        cypher = (
+            CypherBuilder()
+            .match("(s)-[r]->(o)")
+            .return_(
+                "r.uri as predicate_uri",
+                "type(r) as relationship_type",
+                "startNode(r).uri as start_node_uri",
+                "startNode(r).name as subject_name",
+                "endNode(r).uri as end_node_uri",
+                "endNode(r).name as object_name",
+                "r.description as description",
+                "r.connection_strength as connection_strength",
+            )
+        )
+        return await self.aexecute_cypher(cypher)
+
+    async def aquery_edge_connections(
+        self,
+        subject_name: str | None = None,
+        predicate: str | None = None,
+        object_name: str | None = None,
+        description: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        conditions: list[str] = []
+        builder = CypherBuilder().match("(s)-[r]->(o)")
+
+        if subject_name:
+            conditions.append("startNode(r).name CONTAINS $subject_name")
+            builder.param(subject_name=subject_name)
+        if predicate:
+            conditions.append("type(r) = $predicate")
+            builder.param(predicate=predicate)
+        if object_name:
+            conditions.append("endNode(r).name CONTAINS $object_name")
+            builder.param(object_name=object_name)
+        if description:
+            conditions.append("r.description CONTAINS $description")
+            builder.param(description=description)
+
+        if conditions:
+            builder.where(" AND ".join(conditions))
+
+        builder.return_(
+            "r.uri as predicate_uri",
+            "type(r) as relationship_type",
+            "startNode(r).uri as start_node_uri",
+            "startNode(r).name as subject_name",
+            "endNode(r).uri as end_node_uri",
+            "endNode(r).name as object_name",
+            "r.description as description",
+            "r.connection_strength as connection_strength",
+        ).limit(limit)
+
+        return await self.aexecute_cypher(builder)
+
+    async def aquery_edge_connections_by_entity_names(
+        self,
+        names: list[str],
+    ) -> list[dict[str, Any]]:
+        return_cols = (
+            "name as query_name",
+            "type(r) as relationship_type",
+            "startNode(r).uri as start_node_uri",
+            "startNode(r).name as subject_name",
+            "endNode(r).uri as end_node_uri",
+            "endNode(r).name as object_name",
+            "r.description as description",
+            "r.connection_strength as connection_strength",
+        )
+
+        sub1 = (
+            CypherBuilder()
+            .unwind("$names", "name")
+            .match("(s)-[r]->(o)")
+            .where("startNode(r).name CONTAINS name")
+            .return_(*return_cols)
+        )
+        sub2 = (
+            CypherBuilder()
+            .unwind("$names", "name")
+            .match("(s)-[r]->(o)")
+            .where("endNode(r).name CONTAINS name")
+            .return_(*return_cols)
+        )
+
+        return await self.aexecute_cypher(sub1.union(sub2, union_all=True).param(names=names))
+
+    async def aget_vertices_by_uris(self, uris: list[str]) -> list[dict[str, Any]]:
+        cypher = (
+            CypherBuilder()
+            .unwind("$uris", "uri")
+            .match("(v {uri: uri})")
+            .return_(
+                "v.uri as uri",
+                "id(v) as id",
+                "v.name as name",
+                "v.entity_type as entity_type",
+            )
+            .param(uris=uris)
+        )
+        return await self.aexecute_cypher(cypher)

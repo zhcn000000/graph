@@ -305,12 +305,7 @@ class RAGMode:
 
         # Step 1: Batch lookup all vertices at once
         scan_uris = [uri for uri, _ in entity_uris_with_scores[: max(topn * 3, 30)]]
-        vertex_cypher = """
-        UNWIND $uris as uri
-        MATCH (v {uri: uri})
-        RETURN v.uri as uri, id(v) as id, v.name as name, v.entity_type as entity_type
-        """
-        vertex_rows = await self.graph_manager.aexecute_cypher(vertex_cypher, {"uris": scan_uris})
+        vertex_rows = await self.graph_manager.aget_vertices_by_uris(scan_uris)
         vertex_map: dict[str, dict[str, object]] = {r["uri"]: r for r in vertex_rows}
 
         # Step 2: Batch traverse from all found vertices, build unified graph for PageRank

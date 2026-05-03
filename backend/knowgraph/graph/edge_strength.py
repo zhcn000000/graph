@@ -68,18 +68,7 @@ class EdgeStrengthCalculator:
         return " | ".join(parts)
 
     async def _get_all_edges(self) -> list[EdgeConnectionInfo]:
-        cypher = """
-        MATCH (s)-[r]->(o)
-        RETURN r.uri as predicate_uri,
-               type(r) as relationship_type,
-               startNode(r).uri as start_node_uri,
-               startNode(r).name as subject_name,
-               endNode(r).uri as end_node_uri,
-               endNode(r).name as object_name,
-               r.description as description,
-               r.connection_strength as connection_strength
-        """
-        results = await self.graph_manager.aexecute_cypher(cypher, {})
+        results = await self.graph_manager.aget_all_edge_connections()
         return self._parse_edge_rows(results)
 
     async def compute_strength_for_edges(
@@ -217,39 +206,13 @@ class TripleBasedEdgeQuerier:
         min_strength: float | None = None,
         limit: int = 100,
     ) -> list[EdgeConnectionInfo]:
-        conditions = []
-        params: dict[str, Any] = {}
-
-        if subject_name:
-            conditions.append("startNode(r).name CONTAINS $subject_name")
-            params["subject_name"] = subject_name
-        if predicate:
-            conditions.append("type(r) = $predicate")
-            params["predicate"] = predicate
-        if object_name:
-            conditions.append("endNode(r).name CONTAINS $object_name")
-            params["object_name"] = object_name
-        if description:
-            conditions.append("r.description CONTAINS $description")
-            params["description"] = description
-
-        where_clause = " AND ".join(conditions) if conditions else "true"
-
-        cypher = f"""
-        MATCH (s)-[r]->(o)
-        WHERE {where_clause}
-        RETURN r.uri as predicate_uri,
-               type(r) as relationship_type,
-               startNode(r).uri as start_node_uri,
-               startNode(r).name as subject_name,
-               endNode(r).uri as end_node_uri,
-               endNode(r).name as object_name,
-               r.description as description,
-               r.connection_strength as connection_strength
-        LIMIT {limit}
-        """
-
-        results = await self.graph_manager.aexecute_cypher(cypher, params)
+        results = await self.graph_manager.aquery_edge_connections(
+            subject_name=subject_name,
+            predicate=predicate,
+            object_name=object_name,
+            description=description,
+            limit=limit,
+        )
 
         edges = []
         for row in results:
@@ -309,24 +272,7 @@ class TripleBasedEdgeQuerier:
         if not names:
             return edges_by_name
 
-        edge_cypher = """
-        UNWIND $names as name
-        MATCH (s)-[r]->(o)
-        WHERE startNode(r).name CONTAINS name
-        RETURN name as query_name, type(r) as relationship_type,
-               startNode(r).uri as start_node_uri, startNode(r).name as subject_name,
-               endNode(r).uri as end_node_uri, endNode(r).name as object_name,
-               r.description as description, r.connection_strength as connection_strength
-        UNION ALL
-        UNWIND $names as name
-        MATCH (s)-[r]->(o)
-        WHERE endNode(r).name CONTAINS name
-        RETURN name as query_name, type(r) as relationship_type,
-               startNode(r).uri as start_node_uri, startNode(r).name as subject_name,
-               endNode(r).uri as end_node_uri, endNode(r).name as object_name,
-               r.description as description, r.connection_strength as connection_strength
-        """
-        edge_rows = await self.graph_manager.aexecute_cypher(edge_cypher, {"names": names})
+        edge_rows = await self.graph_manager.aquery_edge_connections_by_entity_names(names)
         for row in edge_rows:
             query_name = row["query_name"]
             if len(edges_by_name[query_name]) >= max_per_name:

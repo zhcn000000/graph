@@ -613,6 +613,15 @@ wheels = [
 ]
 
 [[package]]
+name = "cymple"
+version = "0.12.0"
+source = { registry = "https://mirrors.ustc.edu.cn/pypi/simple" }
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/03/ec/337f30befe8bffca9c82df7fa65e10f4ed93380e18d8b1d6910a7fbea930/cymple-0.12.0.tar.gz", hash = "sha256:25fffe86e723b369f2fb15a00a4f1fdc3962f2bb43fbe7a51e622b676a8dcf3d", size = 14749, upload-time = "2024-11-06T13:53:56.741Z" }
+wheels = [
+    { url = "https://mirrors.ustc.edu.cn/pypi/packages/25/10/6b255e08be93b41242048d6ce267ee10dc2db15a524e0cef7c8d8bbd9e20/cymple-0.12.0-py2.py3-none-any.whl", hash = "sha256:783b21242accd4db320623afad7acf366cf84129f15125c2f5112f231c17ba7a", size = 11990, upload-time = "2024-11-06T13:53:55.266Z" },
+]
+
+[[package]]
 name = "decorator"
 version = "5.2.1"
 source = { registry = "https://mirrors.ustc.edu.cn/pypi/simple" }
@@ -1492,6 +1501,7 @@ dependencies = [
     { name = "asyncer" },
     { name = "asyncpg" },
     { name = "beautifulsoup4" },
+    { name = "cymple" },
     { name = "fastapi", extra = ["standard"] },
     { name = "fastmcp" },
     { name = "httpx" },
@@ -1540,6 +1550,7 @@ requires-dist = [
     { name = "asyncer", specifier = ">=0.0.10" },
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "beautifulsoup4", specifier = ">=4.12.0" },
+    { name = "cymple", specifier = ">=0.12.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.119.1" },
     { name = "fastmcp", specifier = ">=3.2.4" },
     { name = "httpx" },

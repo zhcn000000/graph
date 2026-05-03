@@ -74,7 +74,7 @@ class BM25Vector(UserDefinedType):
 
         return process
 
-    class comparator_factory(UserDefinedType.Comparator):
+    class comparator_factory(UserDefinedType.Comparator):  # noqa: N801
         def neg_bm25_rank(self, other):
             return self.op("<&>", return_type=Float)(other)
 
@@ -121,7 +121,7 @@ class Password(TypeDecorator):
     def bind_expression(self, bindparam: Any) -> Any:
         return func.crypt(bindparam, func.gen_salt("bf"))
 
-    class comparator_factory(String.Comparator):
+    class comparator_factory(String.Comparator):  # noqa: N801,PLW1641
         def __eq__(self, other: object) -> Any:
             local_pw = type_coerce(self.expr, String)
             return local_pw == func.crypt(other, local_pw)

@@ -46,6 +46,7 @@ async def spider() -> None:
     crawler = ScrapyCrawler()
     await crawler.acrawl_museums()
 
+
 def main():
     traceback.install()
     uvloop.install()
