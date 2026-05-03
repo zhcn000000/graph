@@ -85,7 +85,6 @@ class CSVRowInput(BaseModel):
     location: str | None = None
     detail_url: str | None = None
     image_url: str | None = None
-    image_path: str | None = None
     credit_line: str | None = None
     accession_number: str | None = None
     crawl_date: str | None = None

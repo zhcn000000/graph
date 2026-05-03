@@ -1,7 +1,6 @@
 import operator
 import warnings
 from collections import Counter
-from hashlib import sha256
 from typing import NamedTuple
 from uuid import UUID
 
@@ -19,11 +18,9 @@ from knowgraph.graph.edge_strength import EdgeConnectionInfo, EdgeStrengthCalcul
 from knowgraph.graph.triples import CSVRowInput, LLMExtractor
 
 from .database import DatabaseManager
-from .document import DocumentStore
 from .graph import AgeGraphManager
-from .rag import RAGConfig
 from .source import SourceStore
-from .tables import ArtifactRawTable, DocumentTable, RAGRelation, Source
+from .tables import ArtifactRawTable, DocumentTable, Source
 from .types import BM25Vector
 
 
@@ -74,34 +71,6 @@ class RAGMode:
             self._extractor = LLMExtractor()
         return self._extractor
 
-    async def aadd_rag_relation(self, rag_id: UUID, file_ids: UUID | list[UUID]) -> list[UUID]:
-        if not file_ids:
-            return []
-        if isinstance(file_ids, UUID):
-            file_ids = [file_ids]
-        async with self.__db.asession() as session:
-            stmt = (
-                insert(RAGRelation)
-                .values([{"rag_id": rag_id, "file_id": file_id} for file_id in file_ids])
-                .on_conflict_do_nothing(index_elements=[col(RAGRelation.rag_id), col(RAGRelation.file_id)])
-                .returning(col(RAGRelation.file_id))
-            )
-            result = await session.execute(stmt)
-            await session.commit()
-            return [row[0] for row in result.fetchall()]
-
-    async def aremove_rag_relation(self, rag_id: UUID, file_ids: list[UUID] | UUID | None = None) -> list[UUID]:
-        if isinstance(file_ids, UUID):
-            file_ids = [file_ids]
-        async with self.__db.asession() as session:
-            stmt = delete(RAGRelation).where(col(RAGRelation.rag_id) == rag_id)
-            if file_ids:
-                stmt = stmt.where(col(RAGRelation.file_id).in_(file_ids))
-            stmt = stmt.returning(col(RAGRelation.file_id))
-            result = await session.execute(stmt)
-            await session.commit()
-            return [row[0] for row in result.fetchall()]
-
     async def _extract_and_update_graph(self, content: str, full_graph: DiGraph) -> set[str]:
         try:
             triples = await self.extractor.aextract_from_document(Document(content=content))
@@ -148,22 +117,22 @@ class RAGMode:
         all_doc_ids: list[UUID] = []
         full_graph = DiGraph()
 
-        source_hashes = {doc.source_hash for doc in documents if doc.source_hash}
+        source_names = {doc.name for doc in documents if doc.name}
         file_id_map: dict[str, UUID] = {}
-        if source_hashes:
+        if source_names:
             async with self.__db.asession() as pre_session:
-                stmt = select(col(Source.id), col(Source.hash)).where(
-                    col(Source.hash).in_(list(source_hashes)),
+                stmt = select(col(Source.id), col(Source.name)).where(
+                    col(Source.name).in_(list(source_names)),
                 )
                 result = await pre_session.execute(stmt)
                 file_id_map = {row[1]: row[0] for row in result.fetchall()}
 
         insert_values: list[dict] = []
         for i, doc in enumerate(documents):
-            file_id = file_id_map.get(doc.source_hash or "")
+            file_id = file_id_map.get(doc.name or "")
             if file_id is None:
                 warnings.warn(
-                    f"Source not found for hash '{doc.source_hash}', skipping document.",
+                    f"Source not found for name '{doc.name}', skipping document.",
                     UserWarning,
                     stacklevel=2,
                 )
@@ -235,19 +204,14 @@ class RAGMode:
         queries: list[str],
         topn: int,
         session,
-        rag_id: UUID | None = None,
         file_ids: list[UUID] | None = None,
         regex: str | None = None,
     ) -> list[UUID]:
         query_vector = await aembed_documents(queries)
 
         vector_stmt = select(col(DocumentTable.id))
-        if rag_id or file_ids:
-            vector_stmt = vector_stmt.join(Source, col(DocumentTable.file_id) == col(Source.id))
-        if rag_id:
-            vector_stmt = vector_stmt.join(RAGRelation, col(Source.id) == col(RAGRelation.file_id))
-            vector_stmt = vector_stmt.where(col(RAGRelation.rag_id) == rag_id)
         if file_ids:
+            vector_stmt = vector_stmt.join(Source, col(DocumentTable.file_id) == col(Source.id))
             vector_stmt = vector_stmt.where(col(Source.id).in_(file_ids))
         if regex:
             vector_stmt = vector_stmt.where(col(DocumentTable.content).op("~")(regex))
@@ -264,7 +228,6 @@ class RAGMode:
         queries: list[str],
         topn: int,
         session,
-        rag_id: UUID | None = None,
         file_ids: list[UUID] | None = None,
         regex: str | None = None,
     ) -> list[UUID]:
@@ -273,12 +236,8 @@ class RAGMode:
             query_count += await atokenize_content(q)
 
         bm25_stmt = select(col(DocumentTable.id))
-        if rag_id or file_ids:
-            bm25_stmt = bm25_stmt.join(Source, col(DocumentTable.file_id) == col(Source.id))
-        if rag_id:
-            bm25_stmt = bm25_stmt.join(RAGRelation, col(Source.id) == col(RAGRelation.file_id))
-            bm25_stmt = bm25_stmt.where(col(RAGRelation.rag_id) == rag_id)
         if file_ids:
+            bm25_stmt = bm25_stmt.join(Source, col(DocumentTable.file_id) == col(Source.id))
             bm25_stmt = bm25_stmt.where(col(Source.id).in_(file_ids))
         if regex:
             bm25_stmt = bm25_stmt.where(col(DocumentTable.content).op("~")(regex))
@@ -481,7 +440,6 @@ class RAGMode:
         self,
         queries: list[str],
         k: int = 4,
-        rag_id: UUID | None = None,
         file_ids: list[UUID] | None = None,
         regex: str | None = None,
         use_graph: bool = False,
@@ -489,6 +447,7 @@ class RAGMode:
         graph_weight: float = 0.3,
         vector_weight: float = 0.4,
         bm25_weight: float = 0.3,
+        offset: int = 0,
     ) -> tuple[list[Document], list[GraphSearchResult]]:
         topn = k * 5
         topk = k * 3
@@ -499,7 +458,6 @@ class RAGMode:
                 queries=queries,
                 topn=topn,
                 session=session,
-                rag_id=rag_id,
                 file_ids=file_ids,
                 regex=regex,
             )
@@ -508,7 +466,6 @@ class RAGMode:
                 queries=queries,
                 topn=topn,
                 session=session,
-                rag_id=rag_id,
                 file_ids=file_ids,
                 regex=regex,
             )
@@ -555,7 +512,7 @@ class RAGMode:
                     col(DocumentTable.content),
                     col(DocumentTable.meta),
                     col(Source.name),
-                    col(Source.hash),
+                    col(Source.link),
                 )
                 .join(Source, col(Source.id) == col(DocumentTable.file_id))
                 .where(col(DocumentTable.id).in_(doc_ids))
@@ -570,8 +527,8 @@ class RAGMode:
                 Document(
                     content=row[1],
                     metadata=row[2] or {},
-                    source_name=row[3],
-                    source_hash=row[4],
+                    name=row[3],
+                    link=row[4],
                 )
                 for row in ordered_docs
             ]
@@ -593,29 +550,22 @@ class RAGMode:
                 documents.append(
                     Document(
                         content=row.content,
-                        source_name=meta.get("file_name"),
-                        source_hash=meta.get("file_hash"),
+                        name=meta.get("file_name"),
+                        link=meta.get("file_hash"),
                         metadata=meta,
                     ),
                 )
             return documents
 
-    async def aadd_link_documents(
+    async def ainsert_document(
         self,
-        rag_id: UUID,
         name: str,
         content: str,
         link: str | None = None,
-        source_hash: str | None = None,
     ) -> UUID | None:
-
-        conf = await RAGConfig().aget(rag_id=rag_id)
-        assert conf is not None, "知识库不存在"
-
-        content_hash = source_hash or sha256(content.encode()).hexdigest()
-        source_id = await self.__source.ainsert_source(name=name, hash_val=content_hash, link=link)
+        source_id = await self.__source.ainsert_source(name=name, link=link)
         if source_id is None:
-            existing_ids = await self.__source.aget_id_by_hashs([content_hash])
+            existing_ids = await self.__source.aget_id_by_names([name])
             if existing_ids:
                 source_id = existing_ids[0]
             else:
@@ -623,21 +573,16 @@ class RAGMode:
 
         doc = Document(
             content=content,
-            source_name=name,
-            source_hash=content_hash,
+            name=name,
+            link=link,
             metadata={"name": name, "link": link or ""},
         )
 
         await self.aadd_documents([doc])
-
-        file_ids = [source_id]
-        await self.aadd_rag_relation(rag_id, file_ids)
-
         return source_id
 
     async def aquery_documents(
         self,
-        rag_id: UUID,
         queries: list[str],
         regex: str | None = None,
         file_ids: list[UUID] | None = None,
@@ -647,13 +592,9 @@ class RAGMode:
         vector_weight: float = 0.4,
         bm25_weight: float = 0.3,
     ) -> list[QueryDocumentResult]:
-        conf = await RAGConfig().aget(rag_id)
-        assert conf is not None, "知识库不存在"
-
         results, _ = await self.ahyprid_search(
             queries,
             k=5,
-            rag_id=rag_id,
             regex=regex,
             file_ids=file_ids,
             use_graph=use_graph,
@@ -666,7 +607,7 @@ class RAGMode:
         return [
             QueryDocumentResult(
                 content=result.content,
-                source_name=result.source_name or "untitled",
+                source_name=result.name or "untitled",
                 score=result.query_score if result.query_score is not None else float("nan"),
             )
             for result in results
@@ -716,7 +657,7 @@ class RAGMode:
 
         return context
 
-    async def aload_from_csv(self, rag_id: UUID, csv_path: str) -> list[UUID]:
+    async def aload_from_csv(self, csv_path: str) -> list[UUID]:
         structured_graph = DiGraph()
         documents: list[Document] = []
         source_infos: list[dict] = []
@@ -764,11 +705,10 @@ class RAGMode:
                 content_parts.append(row_input.description)
             content_str = "\n".join(content_parts)
 
-            content_hash = sha256(content_str.encode()).hexdigest()
             doc = Document(
                 content=content_str,
-                source_name=row_input.title,
-                source_hash=content_hash,
+                name=row_input.title,
+                link=row_input.detail_url,
                 metadata=row_input.model_dump(),
                 entities=structured_entities,
             )
@@ -776,7 +716,6 @@ class RAGMode:
             extraction_contents.append(row_input.description or None)
             source_infos.append({
                 "name": row_input.title,
-                "hash": content_hash,
                 "link": row_input.detail_url,
             })
 
@@ -790,31 +729,26 @@ class RAGMode:
             for info in source_infos:
                 stmt = (
                     insert(Source)
-                    .values(name=info["name"], hash=info["hash"], link=info["link"])
-                    .on_conflict_do_nothing(index_elements=[col(Source.hash)])
+                    .values(name=info["name"], link=info["link"])
+                    .on_conflict_do_nothing(index_elements=[col(Source.name)])
                 )
                 await session.execute(stmt)
             await session.commit()
 
         await self.aadd_documents(documents, extraction_contents=extraction_contents)
 
-        unique_hashes = list({d.source_hash for d in documents if d.source_hash})
+        source_names = list({d.name for d in documents if d.name})
         file_ids: list[UUID] = []
-        if unique_hashes:
-            file_ids = await self.__source.aget_id_by_hashs(unique_hashes)
-            await self.aadd_rag_relation(rag_id, file_ids)
+        if source_names:
+            file_ids = await self.__source.aget_id_by_names(source_names)
 
         return file_ids
 
     async def alingest_artifacts(
         self,
-        rag_id: UUID,
         museum: str | None = None,
         limit: int | None = None,
     ) -> list[UUID]:
-
-        conf = await RAGConfig().aget(rag_id=rag_id)
-        assert conf is not None, "知识库不存在"
 
         async with self.__db.asession() as session:
             stmt = select(ArtifactRawTable)
@@ -846,7 +780,6 @@ class RAGMode:
                 "location": artifact.location or None,
                 "detail_url": artifact.detail_url or None,
                 "image_url": artifact.image_url or None,
-                "image_path": artifact.image_path or None,
                 "credit_line": artifact.credit_line or None,
                 "accession_number": artifact.accession_number or None,
                 "crawl_date": str(artifact.crawl_date) if artifact.crawl_date else None,
@@ -893,11 +826,10 @@ class RAGMode:
                 content_parts.append(row_input.description)
             content_str = "\n".join(content_parts)
 
-            content_hash = sha256(content_str.encode()).hexdigest()
             doc = Document(
                 content=content_str,
-                source_name=row_input.title,
-                source_hash=content_hash,
+                name=row_input.title,
+                link=row_input.detail_url,
                 metadata=row_input.model_dump(),
                 entities=structured_entities,
             )
@@ -905,8 +837,8 @@ class RAGMode:
             extraction_contents.append(row_input.description or None)
             source_infos.append({
                 "name": row_input.title,
-                "hash": content_hash,
                 "link": row_input.detail_url,
+                "artifact_id": artifact.id,
             })
 
         if not documents:
@@ -919,26 +851,36 @@ class RAGMode:
             for info in source_infos:
                 stmt = (
                     insert(Source)
-                    .values(name=info["name"], hash=info["hash"], link=info["link"])
-                    .on_conflict_do_nothing(index_elements=[col(Source.hash)])
+                    .values(name=info["name"], link=info["link"], artifact_id=info["artifact_id"])
+                    .on_conflict_do_nothing(index_elements=[col(Source.name)])
                 )
                 await session.execute(stmt)
             await session.commit()
 
         await self.aadd_documents(documents, extraction_contents=extraction_contents)
 
-        unique_hashes = list({d.source_hash for d in documents if d.source_hash})
+        source_names = list({d.name for d in documents if d.name})
         file_ids: list[UUID] = []
-        if unique_hashes:
-            file_ids = await self.__source.aget_id_by_hashs(unique_hashes)
-            await self.aadd_rag_relation(rag_id, file_ids)
+        if source_names:
+            file_ids = await self.__source.aget_id_by_names(source_names)
 
         return file_ids
 
-    async def aremove_documents(self, rag_id: UUID, file_ids: list[UUID] | UUID | None = None) -> list[UUID]:
-        removed = await self.aremove_rag_relation(rag_id, file_ids)
+    async def aremove_documents(self, file_ids: list[UUID] | UUID | None = None) -> list[UUID]:
+        if isinstance(file_ids, UUID):
+            file_ids = [file_ids]
+        if not file_ids:
+            return []
+        async with self.__db.asession() as session:
+            stmt = (
+                delete(DocumentTable)
+                .where(col(DocumentTable.file_id).in_(file_ids))
+                .returning(col(DocumentTable.file_id))
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            removed = [row[0] for row in result.fetchall()]
         if removed:
-            await DocumentStore().adelete_orphan_by_file_ids(removed)
             await self.__source.adelete_orphan_files(removed)
         return removed
 

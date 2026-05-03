@@ -5,8 +5,8 @@ from pydantic_ai import Agent, RunContext
 from knowgraph.utils.templete import FIRST_INPUT_TEMPLATE, RAG_TEMPLATE
 
 from .chat_model import get_model
-from .rag_tool import toolset as rag_toolset
 from .struct import ModelDeps
+from .tools import toolset as rag_toolset
 
 agent: Agent[ModelDeps, str] = Agent(
     model=get_model(),

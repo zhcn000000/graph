@@ -91,7 +91,6 @@ class ArtifactSitemapSpider(SitemapSpider):
             "location": data.get("location", museum_location),
             "detail_url": data.get("detail_url", response.url),
             "image_url": data.get("image_url", ""),
-            "image_path": data.get("image_path", ""),
             "credit_line": data.get("credit_line", ""),
             "accession_number": data.get("accession_number", ""),
             "crawl_date": date.today(),

@@ -2,7 +2,6 @@ from knowgraph.chat import ModelDeps, ToolEnum, agent, get_model, rag_toolset
 from knowgraph.database import (
     DatabaseManager,
     HistoryStore,
-    RAGConfig,
     RAGMode,
     SourceStore,
 )
@@ -18,7 +17,6 @@ __all__ = [
     "Document",
     "HistoryStore",
     "ModelDeps",
-    "RAGConfig",
     "RAGMode",
     "SourceStore",
     "ToolEnum",

@@ -23,7 +23,6 @@ class ArtifactData:
     location: str = ""
     detail_url: str = ""
     image_url: str = ""
-    image_path: str = ""
     credit_line: str = ""
     accession_number: str = ""
     crawl_date: date | None = None
@@ -42,7 +41,6 @@ class ArtifactData:
             "location": self.location,
             "detail_url": self.detail_url,
             "image_url": self.image_url,
-            "image_path": self.image_path,
             "credit_line": self.credit_line,
             "accession_number": self.accession_number,
         }

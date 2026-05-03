@@ -1,17 +1,26 @@
 from typing import Annotated
 
 import pandas as pd
-from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
 from pydantic import Field
+from pydantic_ai import FunctionToolset, ModelRetry, RunContext, ToolDefinition
 
-from knowgraph.database import RAGMode
+from knowgraph.database.ragmode import RAGMode
 
-mcp = FastMCP("knowgraph")
+from .struct import ModelDeps
+
+toolset: FunctionToolset[ModelDeps] = FunctionToolset()
+
 rag_mode = RAGMode()
 
 
-@mcp.tool(
+async def prepare_tools(ctx: RunContext[ModelDeps], tool_def: ToolDefinition) -> ToolDefinition | None:
+    if "rag_toolkit" in ctx.deps.select_toolset:
+        return tool_def
+    return None
+
+
+@toolset.tool(
+    prepare=prepare_tools,
     name="search_documents",
     description="""
 根据查询语义搜索文档库，返回分页的文档列表。
@@ -22,6 +31,7 @@ rag_mode = RAGMode()
 """,
 )
 async def search_documents(
+    ctx: RunContext[ModelDeps],
     queries: Annotated[list[str], Field(description="搜索查询语句,1-5个")],
     regex: Annotated[str | None, Field(description="可选的正则表达式过滤条件")] = None,
     file_ids: Annotated[list[str] | None, Field(description="可选的源文件ID列表过滤条件")] = None,
@@ -77,10 +87,11 @@ async def search_documents(
 
         return md
     except Exception as e:
-        raise ToolError(f"搜索失败: {e!s}") from e
+        raise ModelRetry(f"搜索失败: {e!s}") from e
 
 
-@mcp.tool(
+@toolset.tool(
+    prepare=prepare_tools,
     name="traverse_graph",
     description="""
 沿知识图谱中的实体URI向外遍历，获取关联实体及其相关文档。
@@ -89,6 +100,7 @@ async def search_documents(
 """,
 )
 async def traverse_graph(
+    ctx: RunContext[ModelDeps],
     entity_uris: Annotated[list[str], Field(description="起始实体URI列表")],
     max_hops: Annotated[int, Field(description="最大跳数,默认2")] = 2,
     direction: Annotated[str, Field(description="遍历方向: outbound/inbound/both")] = "both",
@@ -140,10 +152,11 @@ async def traverse_graph(
 
         return md
     except Exception as e:
-        raise ToolError(f"图谱遍历失败: {e!s}") from e
+        raise ModelRetry(f"图谱遍历失败: {e!s}") from e
 
 
-@mcp.tool(
+@toolset.tool(
+    prepare=prepare_tools,
     name="get_entity_info",
     description="""
 获取知识图谱中指定实体的详细信息，包括属性、关联关系等。
@@ -151,6 +164,7 @@ async def traverse_graph(
 """,
 )
 async def get_entity_info(
+    ctx: RunContext[ModelDeps],
     uri: Annotated[str, Field(description="实体URI")],
 ) -> Annotated[str, Field(description="返回markdown格式的实体详情")]:
     try:
@@ -192,10 +206,11 @@ async def get_entity_info(
 
         return md
     except Exception as e:
-        raise ToolError(f"获取实体信息失败: {e!s}") from e
+        raise ModelRetry(f"获取实体信息失败: {e!s}") from e
 
 
-@mcp.tool(
+@toolset.tool(
+    prepare=prepare_tools,
     name="get_entity_paths",
     description="""
 查询两个实体之间的最短路径。
@@ -203,6 +218,7 @@ async def get_entity_info(
 """,
 )
 async def get_entity_paths(
+    ctx: RunContext[ModelDeps],
     start_uri: Annotated[str, Field(description="起始实体URI")],
     end_uri: Annotated[str, Field(description="目标实体URI")],
     max_hops: Annotated[int, Field(description="最大跳数,默认5")] = 5,
@@ -227,4 +243,4 @@ async def get_entity_paths(
 
         return md
     except Exception as e:
-        raise ToolError(f"路径查询失败: {e!s}") from e
+        raise ModelRetry(f"路径查询失败: {e!s}") from e

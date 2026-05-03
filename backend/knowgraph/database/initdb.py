@@ -1,4 +1,5 @@
 from .database import DatabaseManager
+from .graph import AgeGraphManager
 
 
 async def init_db():
@@ -20,3 +21,4 @@ async def init_db():
         )
 
     await db.acreate_all()
+    await AgeGraphManager().acreate_graph()

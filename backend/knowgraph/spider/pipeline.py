@@ -21,7 +21,6 @@ class ArtifactPipeline:
             location=item.get("location", ""),
             detail_url=item.get("detail_url", ""),
             image_url=item.get("image_url", ""),
-            image_path=item.get("image_path", ""),
             credit_line=item.get("credit_line", ""),
             accession_number=item.get("accession_number", ""),
             crawl_date=item.get("crawl_date", date.today()),

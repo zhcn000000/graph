@@ -32,87 +32,6 @@ if TYPE_CHECKING:
 VECTOR_DIM = 4096
 
 
-class Source(SQLModel, table=True):
-    __tablename__ = "source"
-    id: Annotated[
-        UUID,
-        Field(
-            sa_column=Column(
-                Uuid[UUID](native_uuid=True, as_uuid=True),
-                primary_key=True,
-                server_default=func.uuidv7(),
-            ),
-        ),
-    ]
-    hash: Annotated[str, Field(sa_column=Column(String(64), nullable=False, unique=True))]
-    name: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True))]
-    link: Annotated[str | None, Field(sa_column=Column(String, nullable=True))]
-
-    @declared_attr
-    @classmethod
-    def __table_args__(cls) -> tuple:
-        return (
-            CheckConstraint(func.length(col(cls.hash)) > 0, name="chk_source_hash_not_empty"),
-            CheckConstraint(func.length(col(cls.name)) > 0, name="chk_source_name_not_empty"),
-        )
-
-
-class RAGTable(SQLModel, table=True):
-    __tablename__ = "rag"
-    id: Annotated[
-        UUID,
-        Field(
-            sa_column=Column(
-                Uuid[UUID](native_uuid=True, as_uuid=True),
-                primary_key=True,
-                server_default=func.uuidv7(),
-            ),
-        ),
-    ]
-    name: Annotated[str, Field(sa_column=Column(String, nullable=False, unique=True, index=True))]
-    timestamp: Annotated[
-        datetime,
-        Field(sa_column=Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)),
-    ]
-    description: Annotated[str, Field(sa_column=Column(Text, nullable=False))]
-
-    @declared_attr
-    @classmethod
-    def __table_args__(cls) -> tuple:
-        return (CheckConstraint(func.length(col(cls.name)) > 0, name="chk_rag_name_not_empty"),)
-
-
-class RAGRelation(SQLModel, table=True):
-    __tablename__ = "document_relation"
-    file_id: Annotated[
-        UUID,
-        Field(
-            sa_column=Column(
-                Uuid[UUID](native_uuid=True, as_uuid=True),
-                ForeignKey(col(Source.id), onupdate="CASCADE", ondelete="CASCADE"),
-                nullable=False,
-                primary_key=True,
-            ),
-        ),
-    ]
-    rag_id: Annotated[
-        UUID,
-        Field(
-            sa_column=Column(
-                Uuid[UUID](native_uuid=True, as_uuid=True),
-                ForeignKey(col(RAGTable.id), onupdate="CASCADE", ondelete="CASCADE"),
-                nullable=False,
-                primary_key=True,
-            ),
-        ),
-    ]
-
-    @declared_attr
-    @classmethod
-    def __table_args__(cls) -> tuple:
-        return (UniqueConstraint(col(cls.file_id), col(cls.rag_id), name="uix_rag_file_id"),)
-
-
 class SessionTable(SQLModel, table=True):
     __tablename__ = "session"
     id: Annotated[
@@ -239,20 +158,11 @@ class ArtifactRawTable(SQLModel, table=True):
     location: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     detail_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=False))]
     image_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=True))]
-    image_path: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     credit_line: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     accession_number: Annotated[str, Field(sa_column=Column(String(256), nullable=True))]
     crawl_date: Annotated[
         date,
         Field(sa_column=Column(Date, nullable=False, server_default=func.current_date())),
-    ]
-    created_at: Annotated[
-        datetime,
-        Field(sa_column=Column(DateTime(timezone=True), nullable=False, server_default=func.now())),
-    ]
-    updated_at: Annotated[
-        datetime,
-        Field(sa_column=Column(DateTime(timezone=True), nullable=False, server_default=func.now())),
     ]
 
     @declared_attr
@@ -262,4 +172,36 @@ class ArtifactRawTable(SQLModel, table=True):
             UniqueConstraint(col(cls.detail_url), name="uq_artifact_raw_detail_url"),
             Index("idx_artifact_raw_museum", col(cls.museum)),
             Index("idx_artifact_raw_object_id", col(cls.object_id)),
+        )
+
+
+class Source(SQLModel, table=True):
+    __tablename__ = "source"
+    id: Annotated[
+        UUID,
+        Field(
+            sa_column=Column(
+                Uuid[UUID](native_uuid=True, as_uuid=True),
+                primary_key=True,
+                server_default=func.uuidv7(),
+            ),
+        ),
+    ]
+    name: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True))]
+    link: Annotated[str | None, Field(sa_column=Column(String, nullable=True))]
+    artifact_id = Annotated[
+        UUID | None,
+        Field(
+            sa_column=Column(
+                Uuid, ForeignKey(col(ArtifactRawTable.id), onupdate="CASCADE", ondelete="SET NULL"), nullable=True
+            )
+        ),
+    ]
+
+    @declared_attr
+    @classmethod
+    def __table_args__(cls) -> tuple:
+        return (
+            CheckConstraint(func.length(col(cls.name)) > 0, name="chk_source_name_not_empty"),
+            UniqueConstraint(col(cls.name), name="uq_source_name"),
         )
