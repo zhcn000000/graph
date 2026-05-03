@@ -89,12 +89,12 @@ class PatternBuilder:
         variable: str | None = None,
         label: str | None = None,
         props: dict[str, Any] | None = None,
-        direction: Literal["->", "<-", "-"] = "-",
+        direction: Literal["->", "<-", "--"] = "--",
         length: str | None = None,
     ) -> Self:
         inner = ""
         if variable:
-            inner += variable
+            inner = variable
         if label:
             inner += f":{label}"
         if length:
@@ -102,7 +102,7 @@ class PatternBuilder:
         if props:
             inner += f" {_format_props(props)}"
 
-        if inner:
+        if inner.strip():
             bracket = f"[{inner}]"
         else:
             bracket = ""
