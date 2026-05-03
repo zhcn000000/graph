@@ -1,9 +1,11 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 import pandas as pd
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import Field
+from pydantic_monty import Monty
+from rich.pretty import pretty_repr
 
 from knowgraph.database import RAGMode
 
@@ -228,3 +230,28 @@ async def get_entity_paths(
         return md
     except Exception as e:
         raise ToolError(f"路径查询失败: {e!s}") from e
+
+
+@mcp.tool(
+    name="python_repl",
+    description="这是一个可以执行Python代码的工具，输入Python代码并返回最后一条表达式的结果和控制台输出。"
+    "为了沙盒的安全性，以及沙盒的局限性，该工具不支持任何需要使用import导入的库，除了sys, typing, asyncio",
+)
+async def python_repl(
+    code: Annotated[str, Field(description="要执行的Python代码")],
+) -> Annotated[str, Field(description="返回最后一行表达式的结果和控制台输出")]:
+    monty = Monty(code=code)
+    out = []
+
+    def print_callback(stream: Literal["stdout"], content: str) -> None:
+        if stream == "stdout":
+            out.append(content)
+
+    try:
+        result = await monty.run_async(print_callback=print_callback)
+    except Exception as e:
+        raise ToolError(f"执行Python代码时发生错误: {e}") from e
+    output = "表达式结果: " + pretty_repr(result)
+    if out:
+        output += "\n输出:\n" + "".join(out)
+    return output
