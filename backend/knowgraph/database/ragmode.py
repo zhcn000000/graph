@@ -106,6 +106,11 @@ class RAGMode:
             )
             return set()
 
+    async def _next_document_index(self, session) -> int:
+        stmt = select(func.coalesce(func.max(col(DocumentTable.document_index)), 0))
+        result = await session.execute(stmt)
+        return (result.scalar() or 0) + 1
+
     async def aadd_documents(
         self,
         documents: list[Document],
@@ -128,6 +133,9 @@ class RAGMode:
                 file_id_map = {row[1]: row[0] for row in result.fetchall()}
 
         insert_values: list[dict] = []
+        async with self.__db.asession() as session:
+            next_doc_id = await self._next_document_index(session)
+
         for i, doc in enumerate(documents):
             file_id = file_id_map.get(doc.name or "")
             if file_id is None:
@@ -162,14 +170,19 @@ class RAGMode:
 
             entity_uris |= set(doc.entities)
 
-            insert_values.append({
-                "file_id": file_id,
-                "content": doc.content,
-                "vector": vectors,
-                "bmvector": bmvector,
-                "entities": list(entity_uris),
-                "meta": doc.metadata,
-            })
+            for chunk_idx, chunk_content in enumerate(sub_chunks):
+                insert_values.append({
+                    "file_id": file_id,
+                    "content": chunk_content,
+                    "vector": vectors,
+                    "bmvector": bmvector,
+                    "entities": list(entity_uris),
+                    "meta": doc.metadata,
+                    "document_index": next_doc_id,
+                    "chunk_index": chunk_idx,
+                })
+
+            next_doc_id += 1
 
         if insert_values:
             async with self.__db.asession() as session:
@@ -513,6 +526,8 @@ class RAGMode:
                     col(DocumentTable.meta),
                     col(Source.name),
                     col(Source.link),
+                    col(DocumentTable.document_index),
+                    col(DocumentTable.chunk_index),
                 )
                 .join(Source, col(Source.id) == col(DocumentTable.file_id))
                 .where(col(DocumentTable.id).in_(doc_ids))
@@ -525,10 +540,13 @@ class RAGMode:
 
             documents = [
                 Document(
+                    id=row[0],
                     content=row[1],
                     metadata=row[2] or {},
                     name=row[3],
                     link=row[4],
+                    document_index=row[5],
+                    chunk_index=row[6],
                 )
                 for row in ordered_docs
             ]
@@ -865,6 +883,88 @@ class RAGMode:
             file_ids = await self.__source.aget_id_by_names(source_names)
 
         return file_ids
+
+    async def aget_document_context(
+        self,
+        document_index: int,
+        chunk_index: int | None = None,
+        before: int = 1,
+        after: int = 1,
+    ) -> dict:
+        async with self.__db.asession() as session:
+            stmt = (
+                select(
+                    col(DocumentTable.id),
+                    col(DocumentTable.content),
+                    col(DocumentTable.chunk_index),
+                    col(DocumentTable.document_index),
+                    col(DocumentTable.entities),
+                )
+                .where(
+                    col(DocumentTable.document_index) == document_index,
+                )
+                .order_by(col(DocumentTable.chunk_index))
+            )
+
+            result = await session.execute(stmt)
+            rows = result.fetchall()
+
+        chunks = [
+            {
+                "id": str(row[0]),
+                "content": row[1],
+                "chunk_index": row[2],
+                "document_index": row[3],
+                "entities": row[4] or [],
+            }
+            for row in rows
+        ]
+
+        if chunk_index is not None:
+            lo = max(0, chunk_index - before)
+            hi = min(len(chunks), chunk_index + after + 1)
+            context_chunks: list[dict] = []
+            for c in chunks:
+                ci = c["chunk_index"]
+                if isinstance(ci, int) and lo <= ci <= hi:
+                    context_chunks.append(c)
+        else:
+            context_chunks = chunks
+
+        return {
+            "document_index": document_index,
+            "total_chunks": len(chunks),
+            "chunks": context_chunks,
+        }
+
+    async def aget_document_entities(
+        self,
+        document_index: int,
+    ) -> dict:
+        async with self.__db.asession() as session:
+            stmt = select(col(DocumentTable.entities)).where(
+                col(DocumentTable.document_index) == document_index,
+            )
+            result = await session.execute(stmt)
+            all_entities: set[str] = set()
+            for row in result.fetchall():
+                if row[0]:
+                    all_entities.update(row[0])
+
+            entity_details: list[dict] = []
+            for uri in all_entities:
+                vertex = await self.graph_manager.aget_vertex(uri)
+                if vertex:
+                    entity_details.append({
+                        "uri": uri,
+                        "name": vertex.get("name", uri),
+                        "entity_type": vertex.get("entity_type", ""),
+                    })
+
+        return {
+            "document_index": document_index,
+            "entities": entity_details,
+        }
 
     async def aremove_documents(self, file_ids: list[UUID] | UUID | None = None) -> list[UUID]:
         if isinstance(file_ids, UUID):

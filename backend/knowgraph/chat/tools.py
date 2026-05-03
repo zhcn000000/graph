@@ -56,12 +56,16 @@ async def search_documents(
             score = doc.query_score if doc.query_score is not None else float("nan")
             source = doc.name or "unknown"
             preview = doc.content[:300] + "..." if len(doc.content) > 300 else doc.content
-            data.append({
+            row = {
                 "#": offset + i + 1,
                 "来源": source,
                 "内容预览": preview,
                 "相关性%": f"{min(score, 1.0) * 100:.1f}",
-            })
+            }
+            if doc.document_index is not None:
+                row["文档ID"] = str(doc.document_index)
+                row["分块"] = doc.chunk_index if doc.chunk_index is not None else "-"
+            data.append(row)
 
         md = "## 搜索结果\n\n"
         md += f"查询: {queries}\n"
@@ -78,7 +82,8 @@ async def search_documents(
         dff = pd.DataFrame(data)
         md += dff.to_markdown(index=False)
         md += f"\n\n> 提示: 使用 `offset={offset + len(docs)}` 翻页查看更多结果。"
-        md += "\n> 使用 `traverse_graph` 工具沿实体URI深入探索图谱。"
+        md += "\n> 使用 `get_document_context` 通过文档ID获取更多上下文分块。"
+        md += "\n> 使用 `get_document_entities` 通过文档ID查询相关图实体。"
 
         return md
     except Exception as e:
@@ -236,6 +241,101 @@ async def get_entity_paths(
         return md
     except Exception as e:
         raise ModelRetry(f"路径查询失败: {e!s}") from e
+
+
+@toolset.tool(
+    name="get_document_context",
+    description="""
+获取指定文档的完整分块上下文，支持翻页查看文档的前后分块。
+当一个文档在搜索中被截断时，使用此工具获取该文档的相邻分块以获得更完整的上下文。
+返回结果包含 document_index，可用于后续查询相关图实体。
+""",
+)
+async def get_document_context(
+    ctx: RunContext[ModelDeps],
+    document_index: Annotated[int, Field(description="文档ID,来自搜索结果中的document_index字段")],
+    chunk_index: Annotated[
+        int | None, Field(description="当前所在的分块索引,用于获取前后相邻分块。不传则返回全部"),
+    ] = None,
+    before: Annotated[int, Field(description="获取当前分块之前的多少个分块")] = 1,
+    after: Annotated[int, Field(description="获取当前分块之后的多少个分块")] = 1,
+) -> Annotated[str, Field(description="返回markdown格式的文档分块上下文")]:
+    try:
+        context = await rag_mode.aget_document_context(
+            document_index=document_index,
+            chunk_index=chunk_index,
+            before=before,
+            after=after,
+        )
+
+        total = context["total_chunks"]
+        chunks = context["chunks"]
+        doc_id = context["document_index"]
+
+        md = f"## 文档上下文 (ID: {doc_id})\n\n"
+        md += f"总块数: {total} | 获取: {len(chunks)} 块\n\n"
+
+        if chunk_index is not None:
+            md += f"当前块索引: {chunk_index} (前后各 {before}/{after} 块)\n\n"
+
+        for chunk in chunks:
+            ci = chunk["chunk_index"]
+            cid = chunk["id"]
+            content = chunk["content"]
+            preview = content[:500] + "..." if len(content) > 500 else content
+            md += f"### 分块 {ci}\n"
+            md += f"- ID: `{cid}`\n"
+            md += f"- 内容:\n```\n{preview}\n```\n\n"
+
+        if total > len(chunks):
+            md += "> 提示: 设置 `chunk_index` 和 `before`/`after` 参数查看更多分块。"
+            md += f"\n> 使用 `get_document_entities` 工具通过 `document_index={doc_id}` 查询该文档的相关图实体。"
+
+        return md
+    except Exception as e:
+        raise ModelRetry(f"获取文档上下文失败: {e!s}") from e
+
+
+@toolset.tool(
+    name="get_document_entities",
+    description="""
+获取指定文档关联的所有知识图谱实体。
+通过搜索结果中的 document_index 查询该文档中的图实体（如人物、地点、事件等）。
+可用于深入了解某个文档中涉及的知识实体及其关系。
+""",
+)
+async def get_document_entities(
+    ctx: RunContext[ModelDeps],
+    document_index: Annotated[int, Field(description="文档ID,来自搜索结果中的document_index字段")],
+) -> Annotated[str, Field(description="返回markdown格式的实体列表")]:
+    try:
+        result = await rag_mode.aget_document_entities(document_index=document_index)
+
+        entities = result["entities"]
+        doc_id = result["document_index"]
+
+        md = f"## 文档实体 (document_index: {doc_id})\n\n"
+
+        if not entities:
+            md += "未找到与该文档关联的图实体。"
+            return md
+
+        data = []
+        for ent in entities:
+            data.append({
+                "名称": ent["name"],
+                "类型": ent["entity_type"],
+                "URI": ent["uri"],
+            })
+
+        dff = pd.DataFrame(data)
+        md += dff.to_markdown(index=False)
+        md += "\n\n> 使用 `traverse_graph` 工具通过实体URI深入探索图谱。"
+        md += "\n> 使用 `get_entity_info` 查看特定实体的详细信息。"
+
+        return md
+    except Exception as e:
+        raise ModelRetry(f"获取文档实体失败: {e!s}") from e
 
 
 @toolset.tool(

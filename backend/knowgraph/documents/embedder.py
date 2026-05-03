@@ -78,7 +78,8 @@ async def arerank_documents(
                 reranked_docs[item["index"]].query_score = item["relevance_score"]
             else:
                 reranked_docs[item["index"]] = Document(
-                    content=reranked_docs[item["index"]], query_score=item["relevance_score"],
+                    content=reranked_docs[item["index"]],
+                    query_score=item["relevance_score"],
                 )
         reranked_docs = cast("list[Document]", reranked_docs)
     else:

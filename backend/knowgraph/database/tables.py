@@ -10,9 +10,9 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
-    UniqueConstraint,
     Uuid,
     func,
 )
@@ -110,6 +110,14 @@ class DocumentTable(SQLModel, table=True):
         list[str],
         Field(sa_column=Column(ARRAY(String), nullable=False, server_default="{}")),
     ]
+    document_index: Annotated[
+        int | None,
+        Field(sa_column=Column(Integer, nullable=True)),
+    ]
+    chunk_index: Annotated[
+        int | None,
+        Field(sa_column=Column(Integer, nullable=True)),
+    ]
     meta: Annotated[
         dict,
         Field(default_factory=dict, sa_column=Column("metadata", JSONB, nullable=False, server_default="{}")),
@@ -132,6 +140,7 @@ class DocumentTable(SQLModel, table=True):
                 postgresql_ops={"bmvector": "bm25_ops"},
             ),
             Index("idx_documents_entities", col(cls.entities), postgresql_using="gin"),
+            Index("idx_doc_chunk", col(cls.document_index), col(cls.chunk_index), unique=True),
         )
 
 
@@ -147,7 +156,7 @@ class ArtifactRawTable(SQLModel, table=True):
             ),
         ),
     ]
-    object_id: Annotated[str, Field(sa_column=Column(String(512), nullable=True))]
+    object_id: Annotated[str, Field(sa_column=Column(String(512), nullable=True, index=True))]
     title: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     period: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     type: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
@@ -156,7 +165,7 @@ class ArtifactRawTable(SQLModel, table=True):
     dimensions: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     museum: Annotated[str, Field(sa_column=Column(String(256), nullable=False, index=True))]
     location: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
-    detail_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=False))]
+    detail_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=False, unique=True))]
     image_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=True))]
     credit_line: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     accession_number: Annotated[str, Field(sa_column=Column(String(256), nullable=True))]
@@ -164,15 +173,6 @@ class ArtifactRawTable(SQLModel, table=True):
         date,
         Field(sa_column=Column(Date, nullable=False, server_default=func.current_date())),
     ]
-
-    @declared_attr
-    @classmethod
-    def __table_args__(cls) -> tuple:
-        return (
-            UniqueConstraint(col(cls.detail_url), name="uq_artifact_raw_detail_url"),
-            Index("idx_artifact_raw_museum", col(cls.museum)),
-            Index("idx_artifact_raw_object_id", col(cls.object_id)),
-        )
 
 
 class Source(SQLModel, table=True):
@@ -187,13 +187,15 @@ class Source(SQLModel, table=True):
             ),
         ),
     ]
-    name: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True))]
+    name: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True, unique=True))]
     link: Annotated[str | None, Field(sa_column=Column(String, nullable=True))]
     artifact_id = Annotated[
         UUID | None,
         Field(
             sa_column=Column(
-                Uuid, ForeignKey(col(ArtifactRawTable.id), onupdate="CASCADE", ondelete="SET NULL"), nullable=True,
+                Uuid,
+                ForeignKey(col(ArtifactRawTable.id), onupdate="CASCADE", ondelete="SET NULL"),
+                nullable=True,
             ),
         ),
     ]
@@ -201,7 +203,4 @@ class Source(SQLModel, table=True):
     @declared_attr
     @classmethod
     def __table_args__(cls) -> tuple:
-        return (
-            CheckConstraint(func.length(col(cls.name)) > 0, name="chk_source_name_not_empty"),
-            UniqueConstraint(col(cls.name), name="uq_source_name"),
-        )
+        return (CheckConstraint(func.length(col(cls.name)) > 0, name="chk_source_name_not_empty"),)

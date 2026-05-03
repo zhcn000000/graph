@@ -214,7 +214,9 @@ async def api_traverse_multi(request: TraverseMultiRequest) -> GraphOperationRes
     try:
         rag_mode = RAGMode()
         g = await rag_mode.graph_manager.atraverse_multi(
-            request.uris, max_hops=request.max_hops, direction=request.direction,
+            request.uris,
+            max_hops=request.max_hops,
+            direction=request.direction,
         )
         return GraphOperationResponse(success=True, status="批量遍历成功", data=AgeGraphManager.digraph_to_json(g))
     except Exception as e:
