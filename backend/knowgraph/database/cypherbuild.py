@@ -1,4 +1,5 @@
 import math
+from copy import deepcopy
 from typing import Any, Literal, Self
 
 from psycopg.sql import SQL, Composable, Identifier
@@ -27,6 +28,12 @@ def _quote_value(value: Any) -> str:
     if isinstance(value, dict):
         pairs = ", ".join(f"{_quote_key(k)}: {_quote_value(v)}" for k, v in value.items())
         return f"{{{pairs}}}"
+    if isinstance(value, PatternBuilder):
+        return value.build()
+    if isinstance(value, ExpressionBuilder):
+        return value.build()
+    if isinstance(value, CypherBuilder):
+        return value.build()
     return _quote_value(str(value))
 
 
@@ -76,13 +83,14 @@ class PatternBuilder:
         self._patterns: list[str] = []
 
     def node(self, variable: str, label: str | None = None, props: dict[str, Any] | None = None) -> Self:
+        clone = deepcopy(self)
         node_str = variable
         if label:
             node_str += f":{label}"
         if props:
             node_str += f" {_format_props(props)}"
-        self._patterns.append(f"({node_str})")
-        return self
+        clone._patterns.append(f"({node_str})")
+        return clone
 
     def rel(
         self,
@@ -92,6 +100,7 @@ class PatternBuilder:
         direction: Literal["->", "<-", "--"] = "--",
         length: str | None = None,
     ) -> Self:
+        clone = deepcopy(self)
         inner = ""
         if variable:
             inner = variable
@@ -108,17 +117,238 @@ class PatternBuilder:
             bracket = ""
 
         if direction == "->":
-            self._patterns.append(f"-{bracket}->")
+            clone._patterns.append(f"-{bracket}->")
         elif direction == "<-":
-            self._patterns.append(f"<-{bracket}-")
+            clone._patterns.append(f"<-{bracket}-")
         else:
-            self._patterns.append(f"-{bracket}-")
-        return self
+            clone._patterns.append(f"-{bracket}-")
+        return clone
 
     def build(self) -> str:
         return "".join(self._patterns)
 
     def __str__(self) -> str:
+        return self.build()
+
+    def __rshift__(self, other):
+        return self.rel(other, direction="->")
+
+    def __lshift__(self, other):
+        return self.rel(other, direction="<-")
+
+    def __sub__(self, other):
+        return self.rel(other, direction="--")
+
+    def apply(self, pattern: PatternBuilder):
+        clone = deepcopy(self)
+        clone._patterns.extend(pattern._patterns)
+        return clone
+
+
+class ExpressionBuilder:  # noqa: PLW1641
+    """Helper for building Cypher expressions with proper quoting and operator support."""
+
+    def __init__(self) -> None:
+        self._exprs = []
+
+    def expr(self, value):
+        self._exprs.append(_quote_value(value))
+        return self
+
+    def raw(self, value: str):
+        self._exprs.append(value)
+
+    def __add__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("+ " + _quote_value(other))
+        return clone
+
+    add_ = __add__
+
+    def __sub__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("- " + _quote_value(other))
+        return clone
+
+    sub_ = __sub__
+
+    def __mul__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("* " + _quote_value(other))
+        return clone
+
+    mul_ = __mul__
+
+    def __eq__(self, other):  # pyright: ignore
+        clone = deepcopy(self)
+        clone._exprs.append("= " + _quote_value(other))
+        return clone
+
+    eq_ = __eq__
+
+    def __ne__(self, other):  # pyright: ignore
+        clone = deepcopy(self)
+        clone._exprs.append("<> " + _quote_value(other))
+        return clone
+
+    ne_ = __ne__
+
+    def __gt__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("> " + _quote_value(other))
+        return clone
+
+    gt_ = __gt__
+
+    def __ge__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append(">= " + _quote_value(other))
+        return clone
+
+    ge_ = __ge__
+
+    def __lt__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("< " + _quote_value(other))
+        return clone
+
+    lt_ = __lt__
+
+    def __le__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("<= " + _quote_value(other))
+        return clone
+
+    le_ = __le__
+
+    def __truediv__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("/ " + _quote_value(other))
+        return clone
+
+    div_ = __truediv__
+
+    def __mod__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("% " + _quote_value(other))
+        return clone
+
+    mod_ = __mod__
+
+    def __and__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("AND " + _quote_value(other))
+        return clone
+
+    and_ = __and__
+
+    def __or__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("OR " + _quote_value(other))
+        return clone
+
+    or_ = __or__
+
+    def __xor__(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("XOR " + _quote_value(other))
+        return clone
+
+    xor_ = __xor__
+
+    def __invert__(self):
+        clone = deepcopy(self)
+        clone._exprs.insert(0, "NOT ")
+        return clone
+
+    not_ = __invert__
+
+    def in_(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("IN " + _quote_value(other))
+        return clone
+
+    def is_(self, other):
+        clone = deepcopy(self)
+        if other is None:
+            clone._exprs.append("IS NULL")
+        else:
+            clone._exprs.append("IS " + _quote_value(other))
+        return clone
+
+    def is_not(self, other):
+        clone = deepcopy(self)
+        if other is None:
+            clone._exprs.append("IS NOT NULL")
+        else:
+            clone._exprs.append("IS NOT " + _quote_value(other))
+        return clone
+
+    def __iadd__(self, other):
+        self._exprs.append("+ " + _quote_value(other))
+
+    def __isub__(self, other):
+        self._exprs.append("- " + _quote_value(other))
+
+    def __imul__(self, other):
+        self._exprs.append("* " + _quote_value(other))
+
+    def __itruediv__(self, other):
+        self._exprs.append("/ " + _quote_value(other))
+
+    def __imod__(self, other):
+        self._exprs.append("% " + _quote_value(other))
+
+    def __iand__(self, other):
+        self._exprs.append("AND " + _quote_value(other))
+
+    def __ior__(self, other):
+        self._exprs.append("OR " + _quote_value(other))
+
+    def __ixor__(self, other):
+        self._exprs.append("XOR " + _quote_value(other))
+
+    def exists(self, pattern: str | PatternBuilder):
+        clone = deepcopy(self)
+        if isinstance(pattern, PatternBuilder):
+            pattern = pattern.build()
+        clone._exprs.append(f"EXISTS({pattern})")
+        return clone
+
+    def contains(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("CONTAINS " + _quote_value(other))
+        return clone
+
+    def startwith(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("STARTS WITH " + _quote_value(other))
+        return clone
+
+    def endwith(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("ENDS WITH " + _quote_value(other))
+        return clone
+
+    def regex(self, other):
+        clone = deepcopy(self)
+        clone._exprs.append("=~ " + _quote_value(other))
+        return clone
+
+    def build(self) -> str:
+        return " ".join(self._exprs)
+
+    def apply(self, expression: ExpressionBuilder):
+        clone = deepcopy(self)
+        clone._exprs.extend(expression._exprs)
+        return clone
+
+    def func(self, name: str, **args):
+        clone = deepcopy(self)
+        clone._exprs.append(f"{name}({_quote_value(args)[1:-1]})")
+        return clone
+
+    def __str__(self):
         return self.build()
 
 
@@ -130,84 +360,97 @@ class CypherBuilder:
         self._params: dict[str, Any] = {}
 
     def match(self, pattern: str | PatternBuilder, optional: bool = False) -> Self:
+        clone = deepcopy(self)
         if isinstance(pattern, PatternBuilder):
             pattern = pattern.build()
         if optional:
-            self._clauses.append(f"OPTIONAL MATCH {pattern}")
+            clone._clauses.append(f"OPTIONAL MATCH {pattern}")
         else:
-            self._clauses.append(f"MATCH {pattern}")
-        return self
+            clone._clauses.append(f"MATCH {pattern}")
+        return clone
 
     def merge(self, pattern: str | PatternBuilder) -> Self:
+        clone = deepcopy(self)
         if isinstance(pattern, PatternBuilder):
             pattern = pattern.build()
-        self._clauses.append(f"MERGE {pattern}")
-        return self
+        clone._clauses.append(f"MERGE {pattern}")
+        return clone
 
     def create(self, pattern: str | PatternBuilder) -> Self:
+        clone = deepcopy(self)
         if isinstance(pattern, PatternBuilder):
             pattern = pattern.build()
-        self._clauses.append(f"CREATE {pattern}")
-        return self
+        clone._clauses.append(f"CREATE {pattern}")
+        return clone
 
     def set_(self, *items: str) -> Self:
-        self._clauses.append(f"SET {', '.join(items)}")
-        return self
+        clone = deepcopy(self)
+        clone._clauses.append(f"SET {', '.join(items)}")
+        return clone
 
     def delete(self, *variables: str, detach: bool = False) -> Self:
+        clone = deepcopy(self)
         if detach:
-            self._clauses.append(f"DETACH DELETE {', '.join(variables)}")
+            clone._clauses.append(f"DETACH DELETE {', '.join(variables)}")
         else:
-            self._clauses.append(f"DELETE {', '.join(variables)}")
-        return self
+            clone._clauses.append(f"DELETE {', '.join(variables)}")
+        return clone
 
     def unwind(self, expr: str, alias: str) -> Self:
-        self._clauses.append(f"UNWIND {expr} AS {alias}")
-        return self
+        clone = deepcopy(self)
+        clone._clauses.append(f"UNWIND {expr} AS {alias}")
+        return clone
 
     def where(self, condition: str) -> Self:
-        self._clauses.append(f"WHERE {condition}")
-        return self
+        clone = deepcopy(self)
+        clone._clauses.append(f"WHERE {condition}")
+        return clone
 
     def limit(self, n: int) -> Self:
-        self._clauses.append(f"LIMIT {n}")
-        return self
+        clone = deepcopy(self)
+        clone._clauses.append(f"LIMIT {n}")
+        return clone
 
     def with_(self, *items: str | tuple[str, str]) -> Self:
+        clone = deepcopy(self)
         converted_items = []
         for item in items:
             if isinstance(item, tuple):
                 converted_items.append(f"{item[0]} AS {item[1]}")
             else:
                 converted_items.append(item)
-        self._clauses.append(f"WITH {', '.join(converted_items)}")
-        return self
+        clone._clauses.append(f"WITH {', '.join(converted_items)}")
+        return clone
 
     def return_(self, *items: str | tuple[str, str]) -> Self:
+        clone = deepcopy(self)
         converted_items = []
         for item in items:
             if isinstance(item, tuple):
                 converted_items.append(f"{item[0]} AS {item[1]}")
             else:
                 converted_items.append(item)
-        self._clauses.append(f"RETURN {', '.join(converted_items)}")
-        return self
+        clone._clauses.append(f"RETURN {', '.join(converted_items)}")
+        return clone
 
     def union(self, other: CypherBuilder, union_all: bool = False) -> CypherBuilder:
         keyword = "UNION ALL" if union_all else "UNION"
-        self._clauses.append(keyword)
-        self._clauses.extend(other._clauses)
-        self._params.update(other._params)
-        return self
+        clone = deepcopy(self)
+        clone._clauses.append(keyword)
+        clone._clauses.extend(other._clauses)
+        clone._params.update(other._params)
+        return clone
 
     def raw(self, clause: str) -> Self:
         """Append a raw clause string directly."""
-        self._clauses.append(clause)
-        return self
+        clone = deepcopy(self)
+        clone._clauses.append(clause)
+        return clone
 
     def param(self, **kwargs: Any) -> Self:
-        self._params.update(kwargs)
-        return self
+        clone = deepcopy(self)
+        clone._params.update(kwargs)
+        return clone
 
     @property
     def params(self) -> dict[str, Any]:
@@ -220,6 +463,12 @@ class CypherBuilder:
         if self._params:
             cypher = _embed(cypher, self._params)
         return cypher
+
+    def apply(self, cypher: CypherBuilder):
+        clone = deepcopy(self)
+        clone._clauses.extend(cypher._clauses)
+        clone._params.update(cypher.params)
+        return clone
 
     def __str__(self) -> str:
         return self.build()
