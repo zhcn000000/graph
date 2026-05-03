@@ -35,19 +35,18 @@ def _quote_key(key: object) -> str:
     return _quote_value(key)
 
 
+def _embed(cypher: str, params: dict[str, Any]) -> str:
+    param_keys = list(params.keys())
+    param_keys.sort(key=len, reverse=True)
+    for key in param_keys:
+        placeholder = f"${key}"
+        replacement = _quote_value(params[key])
+        cypher = cypher.replace(placeholder, replacement)
+    return cypher
+
+
 class CypherBuilder:
-    """Fluent builder for constructing Cypher queries (Apache AGE compatible).
-
-    Usage::
-
-        cypher = (
-            CypherBuilder()
-            .match("(v:Artifact {uri: $uri})")
-            .return_("v.uri as uri", "v.name as name")
-            .param(uri="http://example.org/artifact/1")
-        )
-        result = await graph.aexecute_cypher(cypher)
-    """
+    """Fluent builder for constructing Cypher queries (Apache AGE compatible)."""
 
     def __init__(self):
         self._clauses: list[str] = []
@@ -91,6 +90,16 @@ class CypherBuilder:
 
     def limit(self, n: int) -> Self:
         self._clauses.append(f"LIMIT {n}")
+        return self
+
+    def with_(self, *items: str | tuple[str, str]) -> Self:
+        converted_items = []
+        for item in items:
+            if isinstance(item, tuple):
+                converted_items.append(f"{item[0]} AS {item[1]}")
+            else:
+                converted_items.append(item)
+        self._clauses.append(f"WITH {', '.join(converted_items)}")
         return self
 
     def return_(self, *items: str | tuple[str, str]) -> Self:
@@ -199,16 +208,6 @@ def unwind(expr: str, alias: str) -> CypherBuilder:
 
 def create(pattern: str) -> CypherBuilder:
     return CypherBuilder().create(pattern)
-
-
-def _embed(cypher: str, params: dict[str, Any]) -> str:
-    param_keys = list(params.keys())
-    param_keys.sort(key=len, reverse=True)
-    for key in param_keys:
-        placeholder = f"${key}"
-        replacement = _quote_value(params[key])
-        cypher = cypher.replace(placeholder, replacement)
-    return cypher
 
 
 def build_cypher_stmt(
