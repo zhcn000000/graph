@@ -77,6 +77,68 @@ class HistoryTable(SQLModel, table=True):
     messages: Annotated[list[Any], Field(sa_column=Column(JSONB, nullable=False, server_default="[]"))]
 
 
+class ArtifactRawTable(SQLModel, table=True):
+    __tablename__ = "artifact_raw"
+    id: Annotated[
+        UUID,
+        Field(
+            sa_column=Column(
+                Uuid[UUID](native_uuid=True, as_uuid=True),
+                primary_key=True,
+                server_default=func.uuidv7(),
+            ),
+        ),
+    ]
+    object_id: Annotated[str, Field(sa_column=Column(String(512), nullable=True, index=True))]
+    title: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
+    period: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
+    type: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
+    material: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
+    description: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
+    dimensions: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
+    museum: Annotated[str, Field(sa_column=Column(String(256), nullable=False, index=True))]
+    location: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
+    detail_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=False, unique=True))]
+    image_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=True))]
+    credit_line: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
+    accession_number: Annotated[str, Field(sa_column=Column(String(256), nullable=True))]
+    crawl_date: Annotated[
+        date,
+        Field(sa_column=Column(Date, nullable=False, server_default=func.current_date())),
+    ]
+
+
+class Source(SQLModel, table=True):
+    __tablename__ = "source"
+    id: Annotated[
+        UUID,
+        Field(
+            sa_column=Column(
+                Uuid[UUID](native_uuid=True, as_uuid=True),
+                primary_key=True,
+                server_default=func.uuidv7(),
+            ),
+        ),
+    ]
+    name: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True, unique=True))]
+    link: Annotated[str | None, Field(sa_column=Column(String, nullable=True))]
+    artifact_id: Annotated[
+        UUID | None,
+        Field(
+            sa_column=Column(
+                Uuid,
+                ForeignKey(col(ArtifactRawTable.id), onupdate="CASCADE", ondelete="SET NULL"),
+                nullable=True,
+            ),
+        ),
+    ]
+
+    @declared_attr
+    @classmethod
+    def __table_args__(cls) -> tuple:
+        return (CheckConstraint(func.length(col(cls.name)) > 0, name="chk_source_name_not_empty"),)
+
+
 class DocumentTable(SQLModel, table=True):
     __tablename__ = "documents"
     id: Annotated[
@@ -142,65 +204,3 @@ class DocumentTable(SQLModel, table=True):
             Index("idx_documents_entities", col(cls.entities), postgresql_using="gin"),
             Index("idx_doc_chunk", col(cls.document_index), col(cls.chunk_index), unique=True),
         )
-
-
-class ArtifactRawTable(SQLModel, table=True):
-    __tablename__ = "artifact_raw"
-    id: Annotated[
-        UUID,
-        Field(
-            sa_column=Column(
-                Uuid[UUID](native_uuid=True, as_uuid=True),
-                primary_key=True,
-                server_default=func.uuidv7(),
-            ),
-        ),
-    ]
-    object_id: Annotated[str, Field(sa_column=Column(String(512), nullable=True, index=True))]
-    title: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
-    period: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
-    type: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
-    material: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
-    description: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
-    dimensions: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
-    museum: Annotated[str, Field(sa_column=Column(String(256), nullable=False, index=True))]
-    location: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
-    detail_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=False, unique=True))]
-    image_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=True))]
-    credit_line: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
-    accession_number: Annotated[str, Field(sa_column=Column(String(256), nullable=True))]
-    crawl_date: Annotated[
-        date,
-        Field(sa_column=Column(Date, nullable=False, server_default=func.current_date())),
-    ]
-
-
-class Source(SQLModel, table=True):
-    __tablename__ = "source"
-    id: Annotated[
-        UUID,
-        Field(
-            sa_column=Column(
-                Uuid[UUID](native_uuid=True, as_uuid=True),
-                primary_key=True,
-                server_default=func.uuidv7(),
-            ),
-        ),
-    ]
-    name: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True, unique=True))]
-    link: Annotated[str | None, Field(sa_column=Column(String, nullable=True))]
-    artifact_id = Annotated[
-        UUID | None,
-        Field(
-            sa_column=Column(
-                Uuid,
-                ForeignKey(col(ArtifactRawTable.id), onupdate="CASCADE", ondelete="SET NULL"),
-                nullable=True,
-            ),
-        ),
-    ]
-
-    @declared_attr
-    @classmethod
-    def __table_args__(cls) -> tuple:
-        return (CheckConstraint(func.length(col(cls.name)) > 0, name="chk_source_name_not_empty"),)
