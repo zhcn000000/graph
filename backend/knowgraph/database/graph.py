@@ -3,16 +3,7 @@ from typing import Any
 from age.models import Edge, Path, Vertex
 from networkx import DiGraph
 
-from knowgraph.database.cypherbuild import (
-    CypherBuilder,
-    build_cypher_stmt,
-    match,
-    merge,
-    unwind,
-)
-from knowgraph.database.cypherbuild import (
-    node as pnode,
-)
+from knowgraph.database.cypherbuild import CypherBuilder, assign, build_cypher_stmt, match, merge, node, unwind
 from knowgraph.database.database import DatabaseManager
 from knowgraph.utils.environments import POSTGRES_DB
 
@@ -85,7 +76,7 @@ class AgeGraphManager:  # noqa: PLR0904
             return None
 
         cypher = (
-            merge(pnode("v", label, {"uri": "$uri"}))
+            merge(node("v", label, {"uri": "$uri"}))
             .set_("v += $props")
             .return_(
                 "id(v) as id",
@@ -115,7 +106,7 @@ class AgeGraphManager:  # noqa: PLR0904
         label: str | None = None,
     ) -> dict[str, Any] | None:
         cypher = (
-            match(pnode("v", label, {"uri": "$uri"}))
+            match(node("v", label, {"uri": "$uri"}))
             .return_(
                 "id(v) as id",
                 "labels(v) as labels",
@@ -141,8 +132,8 @@ class AgeGraphManager:  # noqa: PLR0904
 
     async def adelete_vertex(self, uri: str, label: str | None = None) -> bool:
         cypher = (
-            match(pnode("v", label, {"uri": "$uri"}))
-            .detach_delete("v")
+            match(node("v", label, {"uri": "$uri"}))
+            .delete("v", detach=True)
             .return_("count(*) as deleted_count")
             .param(uri=uri)
         )
@@ -166,12 +157,12 @@ class AgeGraphManager:  # noqa: PLR0904
             edge_props.update(properties)
 
         cypher = (
-            match(pnode("s", start_label, {"uri": "$start_uri"}))
-            .match(pnode("e", end_label, {"uri": "$end_uri"}))
+            match(node("s", start_label, {"uri": "$start_uri"}))
+            .match(node("e", end_label, {"uri": "$end_uri"}))
             .merge(
-                pnode("s").rel("r", relationship_type, {"uri": "$predicate_uri"}, direction="->").node("e"),
+                node("s").rel("r", relationship_type, {"uri": "$predicate_uri"}, direction="->").node("e"),
             )
-            .set_(CypherBuilder.assign("r", edge_props))
+            .set_(assign("r", edge_props))
             .return_("id(r) as id", "r.uri as uri", "type(r) as relationship_type")
             .param(start_uri=start_uri, end_uri=end_uri, predicate_uri=predicate_uri, **edge_props)
         )
@@ -198,7 +189,7 @@ class AgeGraphManager:  # noqa: PLR0904
     ) -> dict[str, Any] | None:
         cypher = (
             match(
-                pnode("s", props={"uri": "$start_uri"})
+                node("s", props={"uri": "$start_uri"})
                 .rel("r", relationship_type, direction="->")
                 .node("e", props={"uri": "$end_uri"}),
             )
@@ -232,7 +223,7 @@ class AgeGraphManager:  # noqa: PLR0904
     ) -> bool:
         cypher = (
             match(
-                pnode("s", props={"uri": "$start_uri"})
+                node("s", props={"uri": "$start_uri"})
                 .rel("r", relationship_type, direction="->")
                 .node("e", props={"uri": "$end_uri"}),
             )
@@ -259,7 +250,7 @@ class AgeGraphManager:  # noqa: PLR0904
             rel_dir = "-"
 
         path_pattern = (
-            pnode("start", props={"uri": "$uri"}).rel("", length=f"1..{max_hops}", direction=rel_dir).node("end")
+            node("start", props={"uri": "$uri"}).rel("", length=f"1..{max_hops}", direction=rel_dir).node("end")
         )
         cypher = (
             match(f"path = {path_pattern}")
@@ -284,7 +275,7 @@ class AgeGraphManager:  # noqa: PLR0904
             rel_dir = "-"
 
         path_pattern = (
-            pnode("start", props={"uri": "uri"}).rel("", length=f"1..{max_hops}", direction=rel_dir).node("end")
+            node("start", props={"uri": "uri"}).rel("", length=f"1..{max_hops}", direction=rel_dir).node("end")
         )
         cypher = (
             unwind("$uris", "uri")
@@ -301,7 +292,7 @@ class AgeGraphManager:  # noqa: PLR0904
         max_hops: int = 5,
     ) -> DiGraph:
         path_pattern = (
-            pnode("start", props={"uri": "$start_uri"})
+            node("start", props={"uri": "$start_uri"})
             .rel("", length="*", direction="->")
             .node("end", props={"uri": "$end_uri"})
         )
@@ -401,7 +392,7 @@ class AgeGraphManager:  # noqa: PLR0904
         for label, nodes in nodes_by_label.items():
             cypher = (
                 unwind("$nodes", "node")
-                .merge(pnode("v", label, {"uri": "node.uri"}))
+                .merge(node("v", label, {"uri": "node.uri"}))
                 .set_("v += node")
                 .param(nodes=nodes)
             )
@@ -433,10 +424,10 @@ class AgeGraphManager:  # noqa: PLR0904
         for rel_type, edges in edges_by_type.items():
             cypher = (
                 unwind("$edges", "edge")
-                .match(pnode("s", props={"uri": "edge.s"}))
-                .match(pnode("e", props={"uri": "edge.e"}))
+                .match(node("s", props={"uri": "edge.s"}))
+                .match(node("e", props={"uri": "edge.e"}))
                 .merge(
-                    pnode("s").rel("r", rel_type, {"uri": "edge.p.uri"}, direction="->").node("e"),
+                    node("s").rel("r", rel_type, {"uri": "edge.p.uri"}, direction="->").node("e"),
                 )
                 .set_("r += edge.p")
                 .param(edges=edges)
@@ -481,7 +472,7 @@ class AgeGraphManager:  # noqa: PLR0904
         return graph
 
     async def aget_all_edge_connections(self) -> list[dict[str, Any]]:
-        cypher = match(pnode("s").rel("r", direction="->").node("o")).return_(
+        cypher = match(node("s").rel("r", direction="->").node("o")).return_(
             "r.uri as predicate_uri",
             "type(r) as relationship_type",
             "startNode(r).uri as start_node_uri",
@@ -502,7 +493,7 @@ class AgeGraphManager:  # noqa: PLR0904
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         conditions: list[str] = []
-        builder = match(pnode("s").rel("r", direction="->").node("o"))
+        builder = match(node("s").rel("r", direction="->").node("o"))
 
         if subject_name:
             conditions.append("startNode(r).name CONTAINS $subject_name")
@@ -548,7 +539,7 @@ class AgeGraphManager:  # noqa: PLR0904
             "r.connection_strength as connection_strength",
         )
 
-        edge_pattern = pnode("s").rel("r", direction="->").node("o")
+        edge_pattern = node("s").rel("r", direction="->").node("o")
 
         sub1 = (
             unwind("$names", "name").match(edge_pattern).where("startNode(r).name CONTAINS name").return_(*return_cols)
@@ -560,7 +551,7 @@ class AgeGraphManager:  # noqa: PLR0904
     async def aget_vertices_by_uris(self, uris: list[str]) -> list[dict[str, Any]]:
         cypher = (
             unwind("$uris", "uri")
-            .match(pnode("v", props={"uri": "uri"}))
+            .match(node("v", props={"uri": "uri"}))
             .return_(
                 "v.uri as uri",
                 "id(v) as id",

@@ -70,16 +70,7 @@ def _embed(cypher: str, params: dict[str, Any]) -> str:
 
 
 class PatternBuilder:
-    """Helper for building graph patterns (nodes, edges, paths) with proper quoting.
-
-    Usage::
-
-        PatternBuilder().node("v", "Artifact", {"uri": "$uri"}).build()
-        # (v:Artifact {uri: $uri})
-
-        PatternBuilder().node("s").rel("r", "RELATED_TO", direction="->").node("e").build()
-        # (s)-[r:RELATED_TO]->(e)
-    """
+    """Helper for building graph patterns (nodes, edges, paths) with proper quoting."""
 
     def __init__(self):
         self._patterns: list[str] = []
@@ -95,13 +86,15 @@ class PatternBuilder:
 
     def rel(
         self,
-        variable: str = "",
+        variable: str | None = None,
         label: str | None = None,
         props: dict[str, Any] | None = None,
         direction: Literal["->", "<-", "-"] = "-",
         length: str | None = None,
     ) -> Self:
-        inner = variable
+        inner = ""
+        if variable:
+            inner += variable
         if label:
             inner += f":{label}"
         if length:
@@ -135,8 +128,6 @@ class CypherBuilder:
     def __init__(self):
         self._clauses: list[str] = []
         self._params: dict[str, Any] = {}
-
-    # -- Clause builders --
 
     def match(self, pattern: str | PatternBuilder, optional: bool = False) -> Self:
         if isinstance(pattern, PatternBuilder):
@@ -209,25 +200,10 @@ class CypherBuilder:
         self._params.update(other._params)
         return self
 
-    def detach_delete(self, *variables: str) -> Self:
-        return self.delete(*variables, detach=True)
-
     def raw(self, clause: str) -> Self:
         """Append a raw clause string directly."""
         self._clauses.append(clause)
         return self
-
-    # -- Static helpers --
-
-    @staticmethod
-    def ref(name: str) -> str:
-        return f"${name}"
-
-    @staticmethod
-    def assign(prefix: str, props: dict[str, Any]) -> str:
-        return ", ".join(f"{prefix}.{_quote_key(k)} = {CypherBuilder.ref(k)}" for k in props)
-
-    # -- Param helpers --
 
     def param(self, **kwargs: Any) -> Self:
         self._params.update(kwargs)
@@ -267,6 +243,14 @@ def create(pattern: str | PatternBuilder) -> CypherBuilder:
 
 def node(variable: str, label: str | None = None, props: dict[str, Any] | None = None) -> PatternBuilder:
     return PatternBuilder().node(variable, label, props)
+
+
+def ref(name: str) -> str:
+    return f"${name}"
+
+
+def assign(prefix: str, props: dict[str, Any]) -> str:
+    return ", ".join(f"{prefix}.{_quote_key(k)} = {ref(k)}" for k in props)
 
 
 def build_cypher_stmt(
