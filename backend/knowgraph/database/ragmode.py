@@ -74,8 +74,17 @@ class RAGMode:
     async def _extract_and_update_graph(self, content: str, full_graph: DiGraph) -> set[str]:
         try:
             triples = await self.extractor.aextract_from_document(Document(content=content))
-            entity_uris: set[str] = set()
-            for triple in triples:
+        except Exception:
+            warnings.warn(
+                "LLM extraction call failed, continuing without extracted entities.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return set()
+
+        entity_uris: set[str] = set()
+        for triple in triples:
+            try:
                 subject_label = triple.subject.entity_type.value.capitalize()
                 object_label = triple.object.entity_type.value.capitalize()
                 full_graph.add_node(
@@ -97,14 +106,13 @@ class RAGMode:
                 )
                 entity_uris.add(triple.subject.uri)
                 entity_uris.add(triple.object.uri)
-            return entity_uris
-        except Exception:
-            warnings.warn(
-                "LLM extraction failed, continuing without extracted entities.",
-                UserWarning,
-                stacklevel=2,
-            )
-            return set()
+            except ValueError as e:
+                warnings.warn(
+                    f"Skipping triple due to invalid entity URI: {e}",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        return entity_uris
 
     async def _next_document_index(self, session) -> int:
         stmt = select(func.coalesce(func.max(col(DocumentTable.document_index)), 0))
@@ -289,7 +297,6 @@ class RAGMode:
         topn: int,
         entity_uris_with_scores: list[tuple[str, float]],
         max_hops: int = 2,
-        session=None,
     ) -> list[GraphSearchResult]:
         if not entity_uris_with_scores:
             return []
@@ -322,7 +329,7 @@ class RAGMode:
             if node_uri:
                 uri_to_node_key[node_uri] = node_key
 
-        # Step 5: PageRank with personalization from entity scores
+        # Step 4: PageRank with personalization from entity scores
         personalization: dict[str, float] = {}
         for node_key in unified_graph.nodes():
             node_uri = unified_graph.nodes[node_key].get("uri", "")
@@ -334,7 +341,7 @@ class RAGMode:
         else:
             pr_scores = pagerank(unified_graph)
 
-        # Step 6: Query edges by entity names via edge_querier
+        # Step 5: Query edges by entity names via edge_querier
         names: list[str] = [
             str(vertex_map[uri]["name"])
             for uri in entity_score_map
@@ -343,7 +350,7 @@ class RAGMode:
 
         edges_by_name = await self.edge_querier.query_edges_by_entity_names(names)
 
-        # Step 7: Re-rank edges against current query
+        # Step 6: Re-rank edges against current query
         combined_query = " ".join(queries)
         all_edges: list[EdgeConnectionInfo] = []
         for edges in edges_by_name.values():
@@ -351,7 +358,7 @@ class RAGMode:
         if all_edges:
             await self.edge_calculator.compute_strength_for_edges(combined_query, all_edges)
 
-        # Step 8: Combine PageRank scores with edge strength, populate path
+        # Step 7: Combine PageRank scores with edge strength, populate path
         graph_results: list[GraphSearchResult] = []
         seen_uris: set[str] = set()
 
@@ -494,7 +501,6 @@ class RAGMode:
                     topn=topn,
                     entity_uris_with_scores=entity_stats,
                     max_hops=max_hops,
-                    session=session,
                 )
                 if graph_entities:
                     graph_doc_ids: list[tuple[UUID, float]] = []
@@ -626,7 +632,7 @@ class RAGMode:
             QueryDocumentResult(
                 content=result.content,
                 source_name=result.name or "untitled",
-                score=result.query_score if result.query_score is not None else float("nan"),
+                score=result.query_score if result.query_score is not None else 0.0,
             )
             for result in results
         ]
@@ -645,7 +651,6 @@ class RAGMode:
                 topn=10,
                 entity_uris_with_scores=entity_stats,
                 max_hops=max_hops,
-                session=session,
             )
 
         context = {

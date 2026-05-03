@@ -1,7 +1,8 @@
 from typing import Annotated
 
+from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from pydantic import Field
-from pydantic_ai import FunctionToolset, ModelRetry, RunContext
 
 from knowgraph.tools.base import (
     get_document_context_base,
@@ -13,12 +14,10 @@ from knowgraph.tools.base import (
     traverse_graph_base,
 )
 
-from .struct import ModelDeps
-
-toolset: FunctionToolset[ModelDeps] = FunctionToolset()
+mcp = FastMCP("knowgraph")
 
 
-@toolset.tool(
+@mcp.tool(
     name="search_documents",
     description="""
 根据查询语义搜索文档库，返回分页的文档列表。
@@ -29,7 +28,6 @@ toolset: FunctionToolset[ModelDeps] = FunctionToolset()
 """,
 )
 async def search_documents(
-    ctx: RunContext[ModelDeps],
     queries: Annotated[list[str], Field(description="搜索查询语句,1-5个")],
     regex: Annotated[str | None, Field(description="可选的正则表达式过滤条件")] = None,
     file_ids: Annotated[list[str] | None, Field(description="可选的源文件ID列表过滤条件")] = None,
@@ -45,10 +43,10 @@ async def search_documents(
             use_graph=use_graph,
         )
     except Exception as e:
-        raise ModelRetry(f"搜索失败: {e!s}") from e
+        raise ToolError(f"搜索失败: {e!s}") from e
 
 
-@toolset.tool(
+@mcp.tool(
     name="traverse_graph",
     description="""
 沿知识图谱中的实体URI向外遍历，获取关联实体及其相关文档。
@@ -57,7 +55,6 @@ async def search_documents(
 """,
 )
 async def traverse_graph(
-    ctx: RunContext[ModelDeps],
     entity_uris: Annotated[list[str], Field(description="起始实体URI列表")],
     max_hops: Annotated[int, Field(description="最大跳数,默认2")] = 2,
     direction: Annotated[str, Field(description="遍历方向: outbound/inbound/both")] = "both",
@@ -69,10 +66,10 @@ async def traverse_graph(
             direction=direction,
         )
     except Exception as e:
-        raise ModelRetry(f"图谱遍历失败: {e!s}") from e
+        raise ToolError(f"图谱遍历失败: {e!s}") from e
 
 
-@toolset.tool(
+@mcp.tool(
     name="get_entity_info",
     description="""
 获取知识图谱中指定实体的详细信息，包括属性、关联关系等。
@@ -80,16 +77,15 @@ async def traverse_graph(
 """,
 )
 async def get_entity_info(
-    ctx: RunContext[ModelDeps],
     uri: Annotated[str, Field(description="实体URI")],
 ) -> Annotated[str, Field(description="返回markdown格式的实体详情")]:
     try:
         return await get_entity_info_base(uri=uri)
     except Exception as e:
-        raise ModelRetry(f"获取实体信息失败: {e!s}") from e
+        raise ToolError(f"获取实体信息失败: {e!s}") from e
 
 
-@toolset.tool(
+@mcp.tool(
     name="get_entity_paths",
     description="""
 查询两个实体之间的最短路径。
@@ -97,7 +93,6 @@ async def get_entity_info(
 """,
 )
 async def get_entity_paths(
-    ctx: RunContext[ModelDeps],
     start_uri: Annotated[str, Field(description="起始实体URI")],
     end_uri: Annotated[str, Field(description="目标实体URI")],
     max_hops: Annotated[int, Field(description="最大跳数,默认5")] = 5,
@@ -109,10 +104,10 @@ async def get_entity_paths(
             max_hops=max_hops,
         )
     except Exception as e:
-        raise ModelRetry(f"路径查询失败: {e!s}") from e
+        raise ToolError(f"路径查询失败: {e!s}") from e
 
 
-@toolset.tool(
+@mcp.tool(
     name="get_document_context",
     description="""
 获取指定文档的完整分块上下文，支持翻页查看文档的前后分块。
@@ -121,7 +116,6 @@ async def get_entity_paths(
 """,
 )
 async def get_document_context(
-    ctx: RunContext[ModelDeps],
     document_index: Annotated[int, Field(description="文档ID,来自搜索结果中的document_index字段")],
     chunk_index: Annotated[
         int | None,
@@ -138,10 +132,10 @@ async def get_document_context(
             after=after,
         )
     except Exception as e:
-        raise ModelRetry(f"获取文档上下文失败: {e!s}") from e
+        raise ToolError(f"获取文档上下文失败: {e!s}") from e
 
 
-@toolset.tool(
+@mcp.tool(
     name="get_document_entities",
     description="""
 获取指定文档关联的所有知识图谱实体。
@@ -150,25 +144,23 @@ async def get_document_context(
 """,
 )
 async def get_document_entities(
-    ctx: RunContext[ModelDeps],
     document_index: Annotated[int, Field(description="文档ID,来自搜索结果中的document_index字段")],
 ) -> Annotated[str, Field(description="返回markdown格式的实体列表")]:
     try:
         return await get_document_entities_base(document_index=document_index)
     except Exception as e:
-        raise ModelRetry(f"获取文档实体失败: {e!s}") from e
+        raise ToolError(f"获取文档实体失败: {e!s}") from e
 
 
-@toolset.tool(
+@mcp.tool(
     name="python_repl",
     description="这是一个可以执行Python代码的工具，输入Python代码并返回最后一条表达式的结果和控制台输出。"
     "为了沙盒的安全性，以及沙盒的局限性，该工具不支持任何需要使用import导入的库，除了sys, typing, asyncio",
 )
 async def python_repl(
-    ctx: RunContext[ModelDeps],
     code: Annotated[str, Field(description="要执行的Python代码")],
 ) -> Annotated[str, Field(description="返回最后一行表达式的结果和控制台输出")]:
     try:
         return await python_repl_base(code=code)
     except Exception as e:
-        raise ModelRetry(f"执行Python代码时发生错误: {e}") from e
+        raise ToolError(f"执行Python代码时发生错误: {e}") from e

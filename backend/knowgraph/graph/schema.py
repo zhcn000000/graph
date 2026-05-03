@@ -13,6 +13,8 @@ class EntityType(StrEnum):
     DYNASTY = "dynasty"
     ARTIST = "artist"
     LOCATION = "location"
+    MATERIAL = "material"
+    ARTIFACT_TYPE = "artifact_type"
 
 
 class RelationshipType(StrEnum):

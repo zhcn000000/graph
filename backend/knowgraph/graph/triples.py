@@ -142,9 +142,9 @@ class CSVRowInput(BaseModel):
                 Triple(
                     subject_uri=artifact_uri,
                     predicate_uri=get_relationship_uri(RelationshipType.MADE_OF_MATERIAL),
-                    object_uri=get_entity_uri(EntityType.ARTIFACT, self.material),
+                    object_uri=get_entity_uri(EntityType.MATERIAL, self.material),
                     subject_type=EntityType.ARTIFACT,
-                    object_type=EntityType.ARTIFACT,
+                    object_type=EntityType.MATERIAL,
                     subject_name=self.title,
                     object_name=self.material,
                     description=f"{self.title} 材质为 {self.material}",
@@ -158,9 +158,9 @@ class CSVRowInput(BaseModel):
                 Triple(
                     subject_uri=artifact_uri,
                     predicate_uri=get_relationship_uri(RelationshipType.IS_TYPE_OF),
-                    object_uri=get_entity_uri(EntityType.ARTIFACT, self.type),
+                    object_uri=get_entity_uri(EntityType.ARTIFACT_TYPE, self.type),
                     subject_type=EntityType.ARTIFACT,
-                    object_type=EntityType.ARTIFACT,
+                    object_type=EntityType.ARTIFACT_TYPE,
                     subject_name=self.title,
                     object_name=self.type,
                     description=f"{self.title} 类型为 {self.type}",
@@ -198,13 +198,15 @@ class LLMExtractor:
 - dynasty (朝代): 文物所属的历史朝代
 - artist (艺术家): 文物的创作者
 - location (地点): 博物馆所在地或文物出土地点
+- material (材料): 文物的材质，如青铜、丝绸、陶瓷等
+- artifact_type (文物类型): 文物的类型分类，如绘画、雕塑、陶瓷等
 
 ## 关系类型
 - collected_by: 文物收藏于博物馆
 - created_by: 文物由艺术家创作
 - belongs_to_dynasty: 文物属于某个朝代
-- made_of_material: 文物材质为某种材料
-- is_type_of: 文物类型为某种类型
+- made_of_material: 文物使用某种材质制作
+- is_type_of: 文物属于某种类型
 - located_at: 位置关系
 - depicts: 描述/描绘
 - related_to: 相关关系

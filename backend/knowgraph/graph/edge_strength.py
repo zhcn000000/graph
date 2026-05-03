@@ -86,6 +86,7 @@ class EdgeStrengthCalculator:
         self,
         query: str,
         edges: list[EdgeConnectionInfo] | None = None,
+        topn: int = 200,
     ) -> list[EdgeConnectionInfo]:
         if edges is None:
             edges = await self._get_all_edges()
@@ -96,7 +97,7 @@ class EdgeStrengthCalculator:
         edge_docs = [_construct_edge_document(e) for e in edges]
         documents = [Document(content=doc) for doc in edge_docs]
 
-        reranked = await arerank_documents(query, documents, topn=None, skip_sorting=True)
+        reranked = await arerank_documents(query, documents, topn=topn, skip_sorting=True)
 
         for edge, reranked_doc in zip(edges, reranked, strict=True):
             edge.connection_strength = reranked_doc.query_score

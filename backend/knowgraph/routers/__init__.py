@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from knowgraph.mcp.tools import mcp
+from knowgraph.tools.mcp import mcp
 
 from .chat import router as chat_router
 from .rag import router as rag_router
