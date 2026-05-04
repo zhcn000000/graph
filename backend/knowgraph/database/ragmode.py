@@ -179,10 +179,11 @@ class RAGMode:
             entity_uris |= set(doc.entities)
 
             for chunk_idx, chunk_content in enumerate(sub_chunks):
+                chunk_vector = vectors[chunk_idx] if chunk_idx < len(vectors) else vectors[-1]
                 insert_values.append({
                     "file_id": file_id,
                     "content": chunk_content,
-                    "vector": vectors,
+                    "vector": chunk_vector,
                     "bmvector": bmvector,
                     "entities": list(entity_uris),
                     "meta": doc.metadata,
@@ -654,6 +655,9 @@ class RAGMode:
             "relationships": [],
         }
 
+        seen_path_nodes: set[str] = set()
+        seen_relationships: set[tuple[str, str, str | None]] = set()
+
         for gsr in graph_entities:
             context["entities"].append(
                 {
@@ -664,12 +668,32 @@ class RAGMode:
                 },
             )
             if gsr.path:
-                for node_uri, data in gsr.path.nodes(data=True):
+                for node_key, data in gsr.path.nodes(data=True):
+                    node_uri = str(data.get("uri", node_key))
+                    if node_uri in seen_path_nodes:
+                        continue
+                    seen_path_nodes.add(node_uri)
                     context["paths"].append(
                         {
                             "uri": node_uri,
                             "name": data.get("name"),
                             "type": data.get("entity_type"),
+                        },
+                    )
+
+                for u, v, data in gsr.path.edges(data=True):
+                    start_uri = str(gsr.path.nodes[u].get("uri", u))
+                    end_uri = str(gsr.path.nodes[v].get("uri", v))
+                    rel = data.get("label")
+                    rel_key = (start_uri, end_uri, rel)
+                    if rel_key in seen_relationships:
+                        continue
+                    seen_relationships.add(rel_key)
+                    context["relationships"].append(
+                        {
+                            "start_uri": start_uri,
+                            "end_uri": end_uri,
+                            "relationship": rel,
                         },
                     )
 
@@ -684,7 +708,7 @@ class RAGMode:
         for _, row in df.iterrows():
             try:
                 row_dict = row.to_dict()
-                row_input = CSVRowInput(**{k: v for k, v in row_dict.items() if pd.notna(v)})
+                row_input = CSVRowInput(**{str(k): v for k, v in row_dict.items() if pd.notna(v)})
             except Exception as e:
                 warnings.warn(f"Skipping invalid CSV row: {e}", UserWarning, stacklevel=2)
                 continue

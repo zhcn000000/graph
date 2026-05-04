@@ -309,7 +309,7 @@ class ExpressionBuilder(BuilderBase):  # noqa: PLW1641
 
     def exists(self, pattern: str | PatternBuilder):
         clone = deepcopy(self)
-        if isinstance(pattern, PatternBuilder):
+        if isinstance(pattern, BuilderBase):
             pattern = pattern.build()
         clone._exprs.append(f"EXISTS({pattern})")
         return clone
@@ -362,7 +362,7 @@ class CypherBuilder(BuilderBase):
 
     def match(self, pattern: str | PatternBuilder, optional: bool = False) -> Self:
         clone = deepcopy(self)
-        if isinstance(pattern, PatternBuilder):
+        if isinstance(pattern, BuilderBase):
             pattern = pattern.build()
         if optional:
             clone._clauses.append(f"OPTIONAL MATCH {pattern}")
@@ -372,14 +372,14 @@ class CypherBuilder(BuilderBase):
 
     def merge(self, pattern: str | PatternBuilder) -> Self:
         clone = deepcopy(self)
-        if isinstance(pattern, PatternBuilder):
+        if isinstance(pattern, BuilderBase):
             pattern = pattern.build()
         clone._clauses.append(f"MERGE {pattern}")
         return clone
 
     def create(self, pattern: str | PatternBuilder) -> Self:
         clone = deepcopy(self)
-        if isinstance(pattern, PatternBuilder):
+        if isinstance(pattern, BuilderBase):
             pattern = pattern.build()
         clone._clauses.append(f"CREATE {pattern}")
         return clone
@@ -399,14 +399,14 @@ class CypherBuilder(BuilderBase):
 
     def unwind(self, expr: str | ExpressionBuilder, alias: str) -> Self:
         clone = deepcopy(self)
-        if isinstance(expr, ExpressionBuilder):
+        if isinstance(expr, BuilderBase):
             expr = expr.build()
         clone._clauses.append(f"UNWIND {expr} AS {alias}")
         return clone
 
     def where(self, condition: str | ExpressionBuilder) -> Self:
         clone = deepcopy(self)
-        if isinstance(condition, ExpressionBuilder):
+        if isinstance(condition, BuilderBase):
             condition = condition.build()
         clone._clauses.append(f"WHERE {condition}")
         return clone
@@ -434,11 +434,11 @@ class CypherBuilder(BuilderBase):
         converted_items = []
         for item in items:
             if isinstance(item, tuple):
-                item_0 = item[0].build() if isinstance(item[0], ExpressionBuilder) else item[0]
-                item_1 = item[1].build() if isinstance(item[1], ExpressionBuilder) else item[1]
+                item_0 = item[0].build() if isinstance(item[0], BuilderBase) else item[0]
+                item_1 = item[1].build() if isinstance(item[1], BuilderBase) else item[1]
                 converted_items.append(f"{item_0} AS {item_1}")
             else:
-                item_0 = item.build() if isinstance(item, ExpressionBuilder) else item
+                item_0 = item.build() if isinstance(item, BuilderBase) else item
                 converted_items.append(item_0)
         clone._clauses.append(f"RETURN {', '.join(converted_items)}")
         return clone
