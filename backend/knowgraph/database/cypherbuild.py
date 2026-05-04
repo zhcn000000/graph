@@ -127,8 +127,10 @@ class PatternBuilder:
     def build(self) -> str:
         return "".join(self._patterns)
 
-    def __str__(self) -> str:
-        return self.build()
+    def apply(self, pattern: PatternBuilder):
+        clone = deepcopy(self)
+        clone._patterns.extend(pattern._patterns)
+        return clone
 
     def __rshift__(self, other):
         return self.rel(other, direction="->")
@@ -139,10 +141,8 @@ class PatternBuilder:
     def __sub__(self, other):
         return self.rel(other, direction="--")
 
-    def apply(self, pattern: PatternBuilder):
-        clone = deepcopy(self)
-        clone._patterns.extend(pattern._patterns)
-        return clone
+    __str__ = build
+    __call__ = build
 
 
 class ExpressionBuilder:  # noqa: PLW1641
@@ -152,116 +152,89 @@ class ExpressionBuilder:  # noqa: PLW1641
         self._exprs = []
 
     def expr(self, value):
-        self._exprs.append(_quote_value(value))
-        return self
+        clone = deepcopy(self)
+        clone._exprs = [_quote_value(value)]
+        return clone
 
     def raw(self, value: str):
-        self._exprs.append(value)
+        clone = deepcopy(self)
+        clone._exprs.append(value)
+        return clone
 
-    def __add__(self, other):
+    def add_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("+ " + _quote_value(other))
         return clone
 
-    add_ = __add__
-
-    def __sub__(self, other):
+    def sub_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("- " + _quote_value(other))
         return clone
 
-    sub_ = __sub__
-
-    def __mul__(self, other):
+    def mul_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("* " + _quote_value(other))
         return clone
 
-    mul_ = __mul__
-
-    def __eq__(self, other):  # pyright: ignore
+    def eq_(self, other):  # pyright: ignore
         clone = deepcopy(self)
         clone._exprs.append("= " + _quote_value(other))
         return clone
 
-    eq_ = __eq__
-
-    def __ne__(self, other):  # pyright: ignore
+    def ne_(self, other):  # pyright: ignore
         clone = deepcopy(self)
         clone._exprs.append("<> " + _quote_value(other))
         return clone
 
-    ne_ = __ne__
-
-    def __gt__(self, other):
+    def gt_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("> " + _quote_value(other))
         return clone
 
-    gt_ = __gt__
-
-    def __ge__(self, other):
+    def ge_(self, other):
         clone = deepcopy(self)
         clone._exprs.append(">= " + _quote_value(other))
         return clone
 
-    ge_ = __ge__
-
-    def __lt__(self, other):
+    def lt_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("< " + _quote_value(other))
         return clone
 
-    lt_ = __lt__
-
-    def __le__(self, other):
+    def le_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("<= " + _quote_value(other))
         return clone
 
-    le_ = __le__
-
-    def __truediv__(self, other):
+    def truediv_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("/ " + _quote_value(other))
         return clone
 
-    div_ = __truediv__
-
-    def __mod__(self, other):
+    def mod_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("% " + _quote_value(other))
         return clone
 
-    mod_ = __mod__
-
-    def __and__(self, other):
+    def and_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("AND " + _quote_value(other))
         return clone
 
-    and_ = __and__
-
-    def __or__(self, other):
+    def or_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("OR " + _quote_value(other))
         return clone
 
-    or_ = __or__
-
-    def __xor__(self, other):
+    def xor_(self, other):
         clone = deepcopy(self)
         clone._exprs.append("XOR " + _quote_value(other))
         return clone
 
-    xor_ = __xor__
-
-    def __invert__(self):
+    def not_(self):
         clone = deepcopy(self)
         clone._exprs.insert(0, "NOT ")
         return clone
-
-    not_ = __invert__
 
     def in_(self, other):
         clone = deepcopy(self)
@@ -348,8 +321,23 @@ class ExpressionBuilder:  # noqa: PLW1641
         clone._exprs.append(f"{name}({_quote_value(args)[1:-1]})")
         return clone
 
-    def __str__(self):
-        return self.build()
+    __str__ = build
+    __call__ = build
+    __add__ = add_
+    __sub__ = sub_
+    __mul__ = mul_
+    __truediv__ = truediv_
+    __mod__ = mod_
+    __eq__ = eq_  # pyright: ignore
+    __ne__ = ne_  # pyright: ignore
+    __gt__ = gt_
+    __ge__ = ge_
+    __lt__ = lt_
+    __le__ = le_
+    __and__ = and_
+    __or__ = or_
+    __xor__ = xor_
+    __invert__ = not_
 
 
 class CypherBuilder:
@@ -470,8 +458,8 @@ class CypherBuilder:
         clone._params.update(cypher.params)
         return clone
 
-    def __str__(self) -> str:
-        return self.build()
+    __str__ = build
+    __call__ = build
 
 
 def match(pattern: str | PatternBuilder) -> CypherBuilder:
