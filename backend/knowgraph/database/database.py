@@ -111,7 +111,7 @@ class DatabaseManager:
                         )
                     else:
                         cursor.execute(
-                            t"SET search_path TO '{schema!s}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
+                            t"SET search_path TO '{schema:i}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
                         )
                 yield conn
                 conn.commit()
@@ -144,7 +144,7 @@ class DatabaseManager:
                         )
                     else:
                         await cursor.execute(
-                            t"SET search_path TO '{schema!s}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
+                            t"SET search_path TO '{schema:i}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
                         )
                 yield conn
                 await conn.commit()
