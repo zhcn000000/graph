@@ -486,7 +486,8 @@ def node(variable: str, label: str | None = None, props: dict[str, Any] | None =
     return PatternBuilder().node(variable, label, props)
 
 
-function = FunctionBuilder()
+def func(name: str | None = None) -> FunctionBuilder:
+    return FunctionBuilder().func(name)
 
 
 def expr(value: str | FunctionBuilder) -> ExpressionBuilder:

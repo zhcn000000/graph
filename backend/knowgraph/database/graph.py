@@ -9,7 +9,7 @@ from knowgraph.database.cypherbuild import (
     CypherBuilder,
     build_cypher_stmt,
     expr,
-    function,
+    func,
     match,
     merge,
     node,
@@ -492,16 +492,16 @@ class AgeGraphManager:  # noqa: PLR0904
         params = {}
 
         if subject_name:
-            conditions.append(expr(function.startNode("r").name).contains("$subject_name"))
+            conditions.append(expr(func().startNode("r").name).contains("$subject_name"))
             params["subject_name"] = subject_name
         if predicate:
-            conditions.append(expr(function.type("r")) == ("$predicate"))
+            conditions.append(expr(func().type("r")) == ("$predicate"))
             params["predicate"] = predicate
         if object_name:
-            conditions.append(expr(function.endNode("r").name).contains("$object_name"))
+            conditions.append(expr(func().endNode("r").name).contains("$object_name"))
             params["object_name"] = object_name
         if description:
-            conditions.append(expr(function.r.description).contains("$description"))
+            conditions.append(expr(func().r.description).contains("$description"))
             params["description"] = description
 
         if conditions:
@@ -540,13 +540,13 @@ class AgeGraphManager:  # noqa: PLR0904
         sub1 = (
             unwind("$names", "name")
             .match(edge_pattern)
-            .where(expr(function.startNode("r").name).contains(function.name))
+            .where(expr(func().startNode("r").name).contains(func().name))
             .return_(*return_cols)
         )
         sub2 = (
             unwind("$names", "name")
             .match(edge_pattern)
-            .where(expr(function.endNode("r").name).contains(function.name))
+            .where(expr(func().endNode("r").name).contains(func().name))
             .return_(*return_cols)
         )
 
