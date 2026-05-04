@@ -7,7 +7,6 @@ from networkx import DiGraph
 
 from knowgraph.database.cypherbuild import (
     CypherBuilder,
-    assign,
     build_cypher_stmt,
     expr,
     function,
@@ -89,7 +88,7 @@ class AgeGraphManager:  # noqa: PLR0904
 
         cypher = (
             merge(node("v", label, {"uri": "$uri"}))
-            .set_("v += $props")
+            .set_("v+=$props")
             .return_(
                 ("id(v)", "id"),
                 ("labels(v)", "labels"),
@@ -170,7 +169,7 @@ class AgeGraphManager:  # noqa: PLR0904
             .merge(
                 node("s").rel("r", relationship_type, {"uri": "$predicate_uri"}, direction="->").node("e"),
             )
-            .set_(assign("r", edge_props))
+            .set_(r={key: f"${value}" for key, value in edge_props.items()})
             .return_(("id(r)", "id"), ("r.uri", "uri"), ("type(r)", "relationship_type"))
         )
 
@@ -392,7 +391,7 @@ class AgeGraphManager:  # noqa: PLR0904
             nodes_by_label.setdefault(label, []).append(props)
 
         for label, nodes in nodes_by_label.items():
-            cypher = unwind("$nodes", "node").merge(node("v", label, {"uri": "node.uri"})).set_("v += node")
+            cypher = unwind("$nodes", "node").merge(node("v", label, {"uri": "node.uri"})).set_("v+=node")
             await self.aexecute_cypher(cypher, read_only=False, params={"nodes": nodes})
 
         edges_by_type: dict[str, list[dict[str, Any]]] = {}
@@ -426,7 +425,7 @@ class AgeGraphManager:  # noqa: PLR0904
                 .merge(
                     node("s").rel("r", rel_type, {"uri": "edge.p.uri"}, direction="->").node("e"),
                 )
-                .set_("r += edge.p")
+                .set_("r+=edge.p")
             )
             await self.aexecute_cypher(cypher, read_only=False, params={"edges": edges})
 

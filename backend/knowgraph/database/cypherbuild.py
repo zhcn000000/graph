@@ -71,7 +71,8 @@ class BuilderBase(ABC):
         """Build the final string representation."""
         raise NotImplementedError
 
-    __str__ = build
+    def __str__(self) -> str:
+        return self.build()
 
 
 class PatternBuilder(BuilderBase):
@@ -147,14 +148,16 @@ class FunctionBuilder(BuilderBase):
         self._name = None
         self._props: list[str] = []
 
-    def __getattr__(self, name) -> Self:
+    def func(self, name) -> Self:
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(f"{type(self).__name__} object has no attribute '{name}'")
         clone = deepcopy(self)
         if clone._name:
             clone._props.append(clone._name)
         clone._name = name
         return clone
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Self:
+    def call(self, *args: Any, **kwargs: Any) -> Self:
         clone = deepcopy(self)
         all_args = [_quote_value(arg) for arg in args]
         for k, v in kwargs.items():
@@ -175,6 +178,9 @@ class FunctionBuilder(BuilderBase):
         for prop in self._props:
             result += f".{prop}"
         return result.removeprefix(".")
+
+    __getattr__ = func
+    __call__ = call
 
 
 class ExpressionBuilder(BuilderBase):  # noqa: PLW1641
@@ -371,9 +377,16 @@ class CypherBuilder(BuilderBase):
         clone._clauses.append(f"CREATE {pattern}")
         return clone
 
-    def set_(self, *items: str) -> Self:
+    def set_(self, *args, **kwargs) -> Self:
         clone = deepcopy(self)
-        clone._clauses.append(f"SET {', '.join(items)}")
+        set_args = ""
+        if args:
+            set_args = ", ".join(args)
+        if kwargs:
+            if not set_args.endswith(", "):
+                set_args += ", "
+            set_args += ", ".join(f"{_quote_key(k)} = {_quote_value(v)}" for k, v in kwargs.items())
+        clone._clauses.append(f"SET {set_args}")
         return clone
 
     def delete(self, *variables: str, detach: bool = False) -> Self:
@@ -452,8 +465,6 @@ class CypherBuilder(BuilderBase):
         clone._clauses.extend(cypher._clauses)
         return clone
 
-    __str__ = build
-
 
 def match(pattern: str | PatternBuilder) -> CypherBuilder:
     return CypherBuilder().match(pattern)
@@ -473,14 +484,6 @@ def create(pattern: str | PatternBuilder) -> CypherBuilder:
 
 def node(variable: str, label: str | None = None, props: dict[str, Any] | None = None) -> PatternBuilder:
     return PatternBuilder().node(variable, label, props)
-
-
-def ref(name: str) -> str:
-    return f"${name}"
-
-
-def assign(prefix: str, props: dict[str, Any]) -> str:
-    return ", ".join(f"{prefix}.{_quote_key(k)} = {ref(k)}" for k in props)
 
 
 function = FunctionBuilder()
