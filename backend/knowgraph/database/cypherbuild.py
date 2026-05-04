@@ -487,6 +487,8 @@ def node(variable: str, label: str | None = None, props: dict[str, Any] | None =
 
 
 def func(name: str | None = None) -> FunctionBuilder:
+    if name is None:
+        return FunctionBuilder()
     return FunctionBuilder().func(name)
 
 
