@@ -1,4 +1,5 @@
 import math
+from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import Any, Literal, Self
 
@@ -20,6 +21,8 @@ def _quote_value(value: Any) -> str:
             return str(value)
         return str(value)
     if isinstance(value, str):
+        if _is_var_ref(value):
+            return value
         escaped = value.replace("\\", "\\\\").replace("'", "\\'")
         return f"'{escaped}'"
     if isinstance(value, (list, tuple)):
@@ -28,11 +31,7 @@ def _quote_value(value: Any) -> str:
     if isinstance(value, dict):
         pairs = ", ".join(f"{_quote_key(k)}: {_quote_value(v)}" for k, v in value.items())
         return f"{{{pairs}}}"
-    if isinstance(value, PatternBuilder):
-        return value.build()
-    if isinstance(value, ExpressionBuilder):
-        return value.build()
-    if isinstance(value, CypherBuilder):
+    if isinstance(value, BuilderBase):
         return value.build()
     return _quote_value(str(value))
 
@@ -76,7 +75,18 @@ def _embed(cypher: str, params: dict[str, Any]) -> str:
     return cypher
 
 
-class PatternBuilder:
+class BuilderBase(ABC):
+    """Base class for builders, providing common utilities."""
+
+    @abstractmethod
+    def build(self) -> str:
+        """Build the final string representation."""
+        raise NotImplementedError
+
+    __str__ = build
+
+
+class PatternBuilder(BuilderBase):
     """Helper for building graph patterns (nodes, edges, paths) with proper quoting."""
 
     def __init__(self):
@@ -133,27 +143,61 @@ class PatternBuilder:
         return clone
 
     def __rshift__(self, other):
-        return self.rel(other, direction="->")
+        return self.rel(label=other, direction="->")
 
     def __lshift__(self, other):
-        return self.rel(other, direction="<-")
+        return self.rel(label=other, direction="<-")
 
     def __sub__(self, other):
-        return self.rel(other, direction="--")
-
-    __str__ = build
-    __call__ = build
+        return self.rel(label=other, direction="--")
 
 
-class ExpressionBuilder:  # noqa: PLW1641
+class FunctionBuilder(BuilderBase):
+    """Helper for building Cypher function calls with proper quoting."""
+
+    def __init__(self) -> None:
+        self._name = None
+        self._props: list[str] = []
+
+    def __getattr__(self, name) -> Self:
+        clone = deepcopy(self)
+        if clone._name:
+            clone._props.append(clone._name)
+        clone._name = name
+        return clone
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Self:
+        clone = deepcopy(self)
+        all_args = [_quote_value(arg) for arg in args]
+        for k, v in kwargs.items():
+            all_args.append(f"{_quote_key(k)}: {_quote_value(v)}")
+        args_str = ", ".join(all_args)
+        if not clone._name:
+            raise ValueError("Function name is missing; use function.<name>(...).")
+        clone._props.append(f"{clone._name}({args_str})")
+        clone._name = None
+        return clone
+
+    def build(self) -> str:
+        if self._name:
+            self._props.append(self._name)
+            self._name = None
+
+        result = ""
+        for prop in self._props:
+            result += f".{prop}"
+        return result.removeprefix(".")
+
+
+class ExpressionBuilder(BuilderBase):  # noqa: PLW1641
     """Helper for building Cypher expressions with proper quoting and operator support."""
 
     def __init__(self) -> None:
         self._exprs = []
 
-    def expr(self, value):
+    def expr(self, value: str | FunctionBuilder) -> Self:
         clone = deepcopy(self)
-        clone._exprs = [_quote_value(value)]
+        clone._exprs = [str(value)]
         return clone
 
     def raw(self, value: str):
@@ -221,6 +265,11 @@ class ExpressionBuilder:  # noqa: PLW1641
     def is_not(self, other):
         return self.op("IS NOT", other)
 
+    def as_(self, alias: str):
+        clone = deepcopy(self)
+        clone._exprs.append(f"AS {alias}")
+        return clone
+
     def not_(self):
         clone = deepcopy(self)
         clone._exprs.insert(0, "NOT")
@@ -228,27 +277,35 @@ class ExpressionBuilder:  # noqa: PLW1641
 
     def __iadd__(self, other):
         self._exprs.append("+ " + _quote_value(other))
+        return self
 
     def __isub__(self, other):
         self._exprs.append("- " + _quote_value(other))
+        return self
 
     def __imul__(self, other):
         self._exprs.append("* " + _quote_value(other))
+        return self
 
     def __itruediv__(self, other):
         self._exprs.append("/ " + _quote_value(other))
+        return self
 
     def __imod__(self, other):
         self._exprs.append("% " + _quote_value(other))
+        return self
 
     def __iand__(self, other):
         self._exprs.append("AND " + _quote_value(other))
+        return self
 
     def __ior__(self, other):
         self._exprs.append("OR " + _quote_value(other))
+        return self
 
     def __ixor__(self, other):
         self._exprs.append("XOR " + _quote_value(other))
+        return self
 
     def exists(self, pattern: str | PatternBuilder):
         clone = deepcopy(self)
@@ -258,24 +315,16 @@ class ExpressionBuilder:  # noqa: PLW1641
         return clone
 
     def contains(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("CONTAINS " + _quote_value(other))
-        return clone
+        return self.op("CONTAINS", other)
 
     def startwith(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("STARTS WITH " + _quote_value(other))
-        return clone
+        return self.op("STARTS WITH", other)
 
     def endwith(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("ENDS WITH " + _quote_value(other))
-        return clone
+        return self.op("ENDS WITH", other)
 
     def regex(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("=~ " + _quote_value(other))
-        return clone
+        return self.op("=~", other)
 
     def build(self) -> str:
         return " ".join(self._exprs)
@@ -285,13 +334,6 @@ class ExpressionBuilder:  # noqa: PLW1641
         clone._exprs.extend(expression._exprs)
         return clone
 
-    def func(self, name: str, **args):
-        clone = deepcopy(self)
-        clone._exprs.append(f"{name}({_quote_value(args)[1:-1]})")
-        return clone
-
-    __str__ = build
-    __call__ = build
     __add__ = add_
     __sub__ = sub_
     __mul__ = mul_
@@ -311,7 +353,7 @@ class ExpressionBuilder:  # noqa: PLW1641
     __ifloordiv__ = __itruediv__
 
 
-class CypherBuilder:
+class CypherBuilder(BuilderBase):
     """Fluent builder for constructing Cypher queries (Apache AGE compatible)."""
 
     def __init__(self):
@@ -355,13 +397,17 @@ class CypherBuilder:
             clone._clauses.append(f"DELETE {', '.join(variables)}")
         return clone
 
-    def unwind(self, expr: str, alias: str) -> Self:
+    def unwind(self, expr: str | ExpressionBuilder, alias: str) -> Self:
         clone = deepcopy(self)
+        if isinstance(expr, ExpressionBuilder):
+            expr = expr.build()
         clone._clauses.append(f"UNWIND {expr} AS {alias}")
         return clone
 
-    def where(self, condition: str) -> Self:
+    def where(self, condition: str | ExpressionBuilder) -> Self:
         clone = deepcopy(self)
+        if isinstance(condition, ExpressionBuilder):
+            condition = condition.build()
         clone._clauses.append(f"WHERE {condition}")
         return clone
 
@@ -381,14 +427,19 @@ class CypherBuilder:
         clone._clauses.append(f"WITH {', '.join(converted_items)}")
         return clone
 
-    def return_(self, *items: str | tuple[str, str]) -> Self:
+    def return_(
+        self, *items: str | ExpressionBuilder | tuple[str | ExpressionBuilder, str | ExpressionBuilder]
+    ) -> Self:
         clone = deepcopy(self)
         converted_items = []
         for item in items:
             if isinstance(item, tuple):
-                converted_items.append(f"{item[0]} AS {item[1]}")
+                item_0 = item[0].build() if isinstance(item[0], ExpressionBuilder) else item[0]
+                item_1 = item[1].build() if isinstance(item[1], ExpressionBuilder) else item[1]
+                converted_items.append(f"{item_0} AS {item_1}")
             else:
-                converted_items.append(item)
+                item_0 = item.build() if isinstance(item, ExpressionBuilder) else item
+                converted_items.append(item_0)
         clone._clauses.append(f"RETURN {', '.join(converted_items)}")
         return clone
 
@@ -415,8 +466,6 @@ class CypherBuilder:
     def params(self) -> dict[str, Any]:
         return dict(self._params)
 
-    # -- Build --
-
     def build(self) -> str:
         cypher = " ".join(self._clauses)
         if self._params:
@@ -430,7 +479,6 @@ class CypherBuilder:
         return clone
 
     __str__ = build
-    __call__ = build
 
 
 def match(pattern: str | PatternBuilder) -> CypherBuilder:
@@ -441,7 +489,7 @@ def merge(pattern: str | PatternBuilder) -> CypherBuilder:
     return CypherBuilder().merge(pattern)
 
 
-def unwind(expr: str, alias: str) -> CypherBuilder:
+def unwind(expr: str | ExpressionBuilder, alias: str) -> CypherBuilder:
     return CypherBuilder().unwind(expr, alias)
 
 
@@ -461,6 +509,13 @@ def assign(prefix: str, props: dict[str, Any]) -> str:
     return ", ".join(f"{prefix}.{_quote_key(k)} = {ref(k)}" for k in props)
 
 
+function = FunctionBuilder()
+
+
+def expr(value: str | FunctionBuilder) -> ExpressionBuilder:
+    return ExpressionBuilder().expr(value)
+
+
 def build_cypher_stmt(
     graph_name: str,
     cypher: str | CypherBuilder,
@@ -474,7 +529,10 @@ def build_cypher_stmt(
             if isinstance(col, tuple):
                 builded_columns.append(f"{col[0]} {col[1]}")
             else:
-                builded_columns.append(f"{col} agtype")
+                if " " in col:
+                    builded_columns.append(col)
+                else:
+                    builded_columns.append(f"{col} agtype")
         col_parts: list[Composable] = []
         for raw_col in builded_columns:
             col = raw_col.strip()

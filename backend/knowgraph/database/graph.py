@@ -5,7 +5,17 @@ from typing import Any
 from age.models import Edge, Path, Vertex
 from networkx import DiGraph
 
-from knowgraph.database.cypherbuild import CypherBuilder, assign, build_cypher_stmt, expr, match, merge, node, unwind
+from knowgraph.database.cypherbuild import (
+    CypherBuilder,
+    assign,
+    build_cypher_stmt,
+    expr,
+    function,
+    match,
+    merge,
+    node,
+    unwind,
+)
 from knowgraph.database.database import DatabaseManager
 from knowgraph.utils.environments import POSTGRES_DB
 
@@ -282,7 +292,7 @@ class AgeGraphManager:  # noqa: PLR0904
         cypher = (
             unwind("$uris", "uri")
             .match(f"path = {path_pattern}")
-            .return_("nodes(path) AS nodes", "relationships(path) AS edges")
+            .return_(("nodes(path)", "nodes"), ("relationships(path)", "edges"))
             .param(uris=uris)
         )
         return await self.ato_networkx(cypher)
@@ -300,7 +310,7 @@ class AgeGraphManager:  # noqa: PLR0904
         )
         cypher = (
             match(f"path = shortestPath({path_pattern})")
-            .where(expr("size(relationships(path))") <= max_hops)
+            .where(expr(function.size(function.relationships("path"))) <= max_hops)
             .return_(("nodes(path)", "nodes"), ("relationships(path)", "edges"))
             .param(start_uri=start_uri, end_uri=end_uri)
         )
@@ -494,26 +504,26 @@ class AgeGraphManager:  # noqa: PLR0904
         description: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        conditions: list[str] = []
+        conditions: list = []
         builder = match(node("s").rel("r", direction="->").node("o"))
 
         if subject_name:
-            conditions.append(expr("startNode(r).name").contains("subject_name"))
-            builder.param(subject_name=subject_name)
+            conditions.append(expr(function.startNode("r").name).contains("$subject_name"))
+            builder = builder.param(subject_name=subject_name)
         if predicate:
-            conditions.append(expr("type(r)") == ("predicate"))
-            builder.param(predicate=predicate)
+            conditions.append(expr(function.type("r")) == ("$predicate"))
+            builder = builder.param(predicate=predicate)
         if object_name:
-            conditions.append(expr("endNode(r).name").contains("object_name"))
-            builder.param(object_name=object_name)
+            conditions.append(expr(function.endNode("r").name).contains("$object_name"))
+            builder = builder.param(object_name=object_name)
         if description:
-            conditions.append(expr("r.description").contains("description"))
-            builder.param(description=description)
+            conditions.append(expr("r.description").contains("$description"))
+            builder = builder.param(description=description)
 
         if conditions:
-            builder.where(reduce(operator.and_, conditions))
+            builder = builder.where(reduce(operator.and_, conditions))
 
-        builder.return_(
+        builder = builder.return_(
             ("r.uri", "predicate_uri"),
             ("type(r)", "relationship_type"),
             ("startNode(r).uri", "start_node_uri"),
@@ -546,13 +556,13 @@ class AgeGraphManager:  # noqa: PLR0904
         sub1 = (
             unwind("$names", "name")
             .match(edge_pattern)
-            .where(expr("startNode(r).name").contains("name"))
+            .where(expr(function.startNode("r").name).contains("name"))
             .return_(*return_cols)
         )
         sub2 = (
             unwind("$names", "name")
             .match(edge_pattern)
-            .where(expr("endNode(r).name").contains("name"))
+            .where(expr(function.endNode("r").name).contains("name"))
             .return_(*return_cols)
         )
 
