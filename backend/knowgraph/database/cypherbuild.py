@@ -534,5 +534,5 @@ def build_cypher_stmt(
     if isinstance(cypher, CypherBuilder):
         cypher = cypher.build()
 
-    final = t"SELECT * FROM cypher({graph_name:s}, {cypher:s},{Jsonb(params):s}) AS (" + cols + t")"
+    final = t"SELECT * FROM cypher({graph_name:s}, {cypher:s},{Jsonb(params):s}) AS ({cols:q})"
     return final
