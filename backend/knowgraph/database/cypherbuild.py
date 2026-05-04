@@ -4,6 +4,8 @@ from copy import deepcopy
 from string.templatelib import Template
 from typing import Any, Literal, Self
 
+from psycopg.types.json import Jsonb
+
 
 def _quote_value(value: Any) -> str:
     if value is None:
@@ -532,5 +534,5 @@ def build_cypher_stmt(
     if isinstance(cypher, CypherBuilder):
         cypher = cypher.build()
 
-    final = t"SELECT * FROM cypher({graph_name:l}, {cypher:l},{params:s}) AS (" + cols + t")"
+    final = t"SELECT * FROM cypher({graph_name:s}, {cypher:s},{Jsonb(params):s}) AS (" + cols + t")"
     return final
