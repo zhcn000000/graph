@@ -1,10 +1,8 @@
 import math
 from abc import ABC, abstractmethod
 from copy import deepcopy
+from string.templatelib import Template
 from typing import Any, Literal, Self
-
-from psycopg.sql import SQL, Composable, Identifier
-from psycopg.sql import Literal as SQLiteral
 
 
 def _quote_value(value: Any) -> str:
@@ -63,16 +61,6 @@ def _format_props(props: dict[str, Any] | None) -> str:
         else:
             parts.append(f"{key}: {_quote_value(v)}")
     return "{" + ", ".join(parts) + "}"
-
-
-def _embed(cypher: str, params: dict[str, Any]) -> str:
-    param_keys = list(params.keys())
-    param_keys.sort(key=len, reverse=True)
-    for key in param_keys:
-        placeholder = f"${key}"
-        replacement = _quote_value(params[key])
-        cypher = cypher.replace(placeholder, replacement)
-    return cypher
 
 
 class BuilderBase(ABC):
@@ -358,7 +346,6 @@ class CypherBuilder(BuilderBase):
 
     def __init__(self):
         self._clauses: list[str] = []
-        self._params: dict[str, Any] = {}
 
     def match(self, pattern: str | PatternBuilder, optional: bool = False) -> Self:
         clone = deepcopy(self)
@@ -448,7 +435,6 @@ class CypherBuilder(BuilderBase):
         clone = deepcopy(self)
         clone._clauses.append(keyword)
         clone._clauses.extend(other._clauses)
-        clone._params.update(other._params)
         return clone
 
     def raw(self, clause: str) -> Self:
@@ -457,25 +443,13 @@ class CypherBuilder(BuilderBase):
         clone._clauses.append(clause)
         return clone
 
-    def param(self, **kwargs: Any) -> Self:
-        clone = deepcopy(self)
-        clone._params.update(kwargs)
-        return clone
-
-    @property
-    def params(self) -> dict[str, Any]:
-        return dict(self._params)
-
     def build(self) -> str:
         cypher = " ".join(self._clauses)
-        if self._params:
-            cypher = _embed(cypher, self._params)
         return cypher
 
     def apply(self, cypher: CypherBuilder):
         clone = deepcopy(self)
         clone._clauses.extend(cypher._clauses)
-        clone._params.update(cypher.params)
         return clone
 
     __str__ = build
@@ -521,7 +495,7 @@ def build_cypher_stmt(
     cypher: str | CypherBuilder,
     columns: list[str | tuple[str, str]] | None = None,
     params: dict[str, Any] | None = None,
-) -> Composable:
+) -> Template:
     """Build the ``SELECT * FROM cypher(...) AS (columns)`` SQL wrapper."""
     if columns:
         builded_columns: list[str] = []
@@ -533,26 +507,24 @@ def build_cypher_stmt(
                     builded_columns.append(col)
                 else:
                     builded_columns.append(f"{col} agtype")
-        col_parts: list[Composable] = []
+        col_parts: list[Template] = []
         for raw_col in builded_columns:
             col = raw_col.strip()
             if not col:
                 continue
             if " " in col:
                 name, type_name = col.split(" ", 1)
-                col_parts.append(SQL("{} {}").format(Identifier(name), Identifier(type_name)))
+                col_parts.append(t"{name:i} {type_name:i}")
             else:
-                col_parts.append(SQL("{} agtype").format(Identifier(col)))
-        cols: Composable = SQL(", ").join(col_parts)
+                col_parts.append(t"{col:i} agtype")
+        cols = col_parts[0]
+        for col in col_parts[1:]:
+            cols += t", " + col
+
     else:
-        cols = SQL("result agtype")
+        cols = t"result agtype"
     if isinstance(cypher, CypherBuilder):
-        if params:
-            cypher = cypher.param(**params)
         cypher = cypher.build()
 
-    return SQL("SELECT * FROM cypher({graphName}, {cypher}) AS ({columns})").format(
-        graphName=SQLiteral(graph_name),
-        cypher=SQLiteral(cypher),
-        columns=cols,
-    )
+    final = t"SELECT * FROM cypher({graph_name:l}, {cypher:l},{params:s}) AS (" + cols + t")"
+    return final

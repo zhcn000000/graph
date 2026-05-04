@@ -38,7 +38,7 @@ class AgeGraphManager:  # noqa: PLR0904
         stmt = build_cypher_stmt(self.graph_name, cypher, columns, params)
 
         async with self.__db.acursor(read_only=read_only, autocommit=read_only) as cur:
-            result = await cur.execute(stmt)  # type: ignore
+            result = await cur.execute(stmt)
             rows = await result.fetchall()
             if not result.description:
                 return []
@@ -97,9 +97,12 @@ class AgeGraphManager:  # noqa: PLR0904
                 ("v.name", "name"),
                 ("v.entity_type", "entity_type"),
             )
-            .param(uri=properties["uri"], props={k: v for k, v in properties.items() if k != "uri"})
         )
-        results = await self.aexecute_cypher(cypher, read_only=False)
+        results = await self.aexecute_cypher(
+            cypher,
+            read_only=False,
+            params={"uri": properties["uri"], "props": {k: v for k, v in properties.items() if k != "uri"}},
+        )
         if results:
             row = results[0]
             return {
@@ -117,19 +120,15 @@ class AgeGraphManager:  # noqa: PLR0904
         uri: str,
         label: str | None = None,
     ) -> dict[str, Any] | None:
-        cypher = (
-            match(node("v", label, {"uri": "$uri"}))
-            .return_(
-                ("id(v)", "id"),
-                ("labels(v)", "labels"),
-                ("v.uri", "uri"),
-                ("v.name", "name"),
-                ("v.entity_type", "entity_type"),
-                ("v.description", "description"),
-            )
-            .param(uri=uri)
+        cypher = match(node("v", label, {"uri": "$uri"})).return_(
+            ("id(v)", "id"),
+            ("labels(v)", "labels"),
+            ("v.uri", "uri"),
+            ("v.name", "name"),
+            ("v.entity_type", "entity_type"),
+            ("v.description", "description"),
         )
-        results = await self.aexecute_cypher(cypher)
+        results = await self.aexecute_cypher(cypher, params={"uri": uri})
         if results:
             row = results[0]
             return {
@@ -144,12 +143,9 @@ class AgeGraphManager:  # noqa: PLR0904
 
     async def adelete_vertex(self, uri: str, label: str | None = None) -> bool:
         cypher = (
-            match(node("v", label, {"uri": "$uri"}))
-            .delete("v", detach=True)
-            .return_(("count(*)", "deleted_count"))
-            .param(uri=uri)
+            match(node("v", label, {"uri": "$uri"})).delete("v", detach=True).return_(("count(*)", "deleted_count"))
         )
-        results = await self.aexecute_cypher(cypher, read_only=False)
+        results = await self.aexecute_cypher(cypher, read_only=False, params={"uri": uri})
         if results and results[0].get("deleted_count", 0) > 0:
             return True
         return False
@@ -176,10 +172,13 @@ class AgeGraphManager:  # noqa: PLR0904
             )
             .set_(assign("r", edge_props))
             .return_(("id(r)", "id"), ("r.uri", "uri"), ("type(r)", "relationship_type"))
-            .param(start_uri=start_uri, end_uri=end_uri, predicate_uri=predicate_uri, **edge_props)
         )
 
-        results = await self.aexecute_cypher(cypher, read_only=False)
+        results = await self.aexecute_cypher(
+            cypher,
+            read_only=False,
+            params={"start_uri": start_uri, "end_uri": end_uri, "predicate_uri": predicate_uri, **edge_props},
+        )
         if results:
             row = results[0]
             return {
@@ -199,22 +198,18 @@ class AgeGraphManager:  # noqa: PLR0904
         end_uri: str,
         relationship_type: str | None = None,
     ) -> dict[str, Any] | None:
-        cypher = (
-            match(
-                node("s", props={"uri": "$start_uri"})
-                .rel("r", relationship_type, direction="->")
-                .node("e", props={"uri": "$end_uri"}),
-            )
-            .return_(
-                ("id(r)", "id"),
-                ("r.uri", "uri"),
-                ("type(r)", "relationship_type"),
-                ("s.uri", "start_uri"),
-                ("e.uri", "end_uri"),
-            )
-            .param(start_uri=start_uri, end_uri=end_uri)
+        cypher = match(
+            node("s", props={"uri": "$start_uri"})
+            .rel("r", relationship_type, direction="->")
+            .node("e", props={"uri": "$end_uri"}),
+        ).return_(
+            ("id(r)", "id"),
+            ("r.uri", "uri"),
+            ("type(r)", "relationship_type"),
+            ("s.uri", "start_uri"),
+            ("e.uri", "end_uri"),
         )
-        results = await self.aexecute_cypher(cypher)
+        results = await self.aexecute_cypher(cypher, params={"start_uri": start_uri, "end_uri": end_uri})
         if results:
             row = results[0]
             return {
@@ -241,9 +236,10 @@ class AgeGraphManager:  # noqa: PLR0904
             )
             .delete("r")
             .return_("count(*) as deleted_count")
-            .param(start_uri=start_uri, end_uri=end_uri)
         )
-        results = await self.aexecute_cypher(cypher, read_only=False)
+        results = await self.aexecute_cypher(
+            cypher, read_only=False, params={"start_uri": start_uri, "end_uri": end_uri}
+        )
         if results and results[0].get("deleted_count", 0) > 0:
             return True
         return False
@@ -264,12 +260,8 @@ class AgeGraphManager:  # noqa: PLR0904
         path_pattern = (
             node("start", props={"uri": "$uri"}).rel("", length=f"1..{max_hops}", direction=rel_dir).node("end")
         )
-        cypher = (
-            match(f"path = {path_pattern}")
-            .return_("nodes(path) as nodes", "relationships(path) as edges")
-            .param(uri=start_uri)
-        )
-        return await self.ato_networkx(cypher)
+        cypher = match(f"path = {path_pattern}").return_("nodes(path) as nodes", "relationships(path) as edges")
+        return await self.ato_networkx(cypher, params={"uri": start_uri})
 
     async def atraverse_multi(
         self,
@@ -293,9 +285,8 @@ class AgeGraphManager:  # noqa: PLR0904
             unwind("$uris", "uri")
             .match(f"path = {path_pattern}")
             .return_(("nodes(path)", "nodes"), ("relationships(path)", "edges"))
-            .param(uris=uris)
         )
-        return await self.ato_networkx(cypher)
+        return await self.ato_networkx(cypher, params={"uris": uris})
 
     async def afind_paths(
         self,
@@ -305,16 +296,13 @@ class AgeGraphManager:  # noqa: PLR0904
     ) -> DiGraph:
         path_pattern = (
             node("start", props={"uri": "$start_uri"})
-            .rel("", length="*", direction="->")
+            .rel("", length=f"1..{max_hops}", direction="->")
             .node("end", props={"uri": "$end_uri"})
         )
-        cypher = (
-            match(f"path = shortestPath({path_pattern})")
-            .where(expr(function.size(function.relationships("path"))) <= max_hops)
-            .return_(("nodes(path)", "nodes"), ("relationships(path)", "edges"))
-            .param(start_uri=start_uri, end_uri=end_uri)
+        cypher = match(f"path = shortestPath({path_pattern})").return_(
+            ("nodes(path)", "nodes"), ("relationships(path)", "edges")
         )
-        return await self.ato_networkx(cypher)
+        return await self.ato_networkx(cypher, params={"start_uri": start_uri, "end_uri": end_uri})
 
     async def aexpand_context(
         self,
@@ -330,8 +318,10 @@ class AgeGraphManager:  # noqa: PLR0904
             "paths": [],
         }
 
-        for node_key, data in graph.nodes(data=True):
-            node_uri = data.get("uri", node_key)
+        for _, data in graph.nodes(data=True):
+            node_uri = data.get("uri")
+            if node_uri is None:
+                continue
             if node_uri != entity_uri:
                 context["connected_entities"].append(
                     {
@@ -402,13 +392,8 @@ class AgeGraphManager:  # noqa: PLR0904
             nodes_by_label.setdefault(label, []).append(props)
 
         for label, nodes in nodes_by_label.items():
-            cypher = (
-                unwind("$nodes", "node")
-                .merge(node("v", label, {"uri": "node.uri"}))
-                .set_("v += node")
-                .param(nodes=nodes)
-            )
-            await self.aexecute_cypher(cypher, read_only=False)
+            cypher = unwind("$nodes", "node").merge(node("v", label, {"uri": "node.uri"})).set_("v += node")
+            await self.aexecute_cypher(cypher, read_only=False, params={"nodes": nodes})
 
         edges_by_type: dict[str, list[dict[str, Any]]] = {}
         for u, v, data in graph.edges(data=True):
@@ -442,9 +427,8 @@ class AgeGraphManager:  # noqa: PLR0904
                     node("s").rel("r", rel_type, {"uri": "edge.p.uri"}, direction="->").node("e"),
                 )
                 .set_("r += edge.p")
-                .param(edges=edges)
             )
-            await self.aexecute_cypher(cypher, read_only=False)
+            await self.aexecute_cypher(cypher, read_only=False, params={"edges": edges})
 
         return True
 
@@ -506,19 +490,20 @@ class AgeGraphManager:  # noqa: PLR0904
     ) -> list[dict[str, Any]]:
         conditions: list = []
         builder = match(node("s").rel("r", direction="->").node("o"))
+        params = {}
 
         if subject_name:
             conditions.append(expr(function.startNode("r").name).contains("$subject_name"))
-            builder = builder.param(subject_name=subject_name)
+            params["subject_name"] = subject_name
         if predicate:
             conditions.append(expr(function.type("r")) == ("$predicate"))
-            builder = builder.param(predicate=predicate)
+            params["predicate"] = predicate
         if object_name:
             conditions.append(expr(function.endNode("r").name).contains("$object_name"))
-            builder = builder.param(object_name=object_name)
+            params["object_name"] = object_name
         if description:
-            conditions.append(expr("r.description").contains("$description"))
-            builder = builder.param(description=description)
+            conditions.append(expr(function.r.description).contains("$description"))
+            params["description"] = description
 
         if conditions:
             builder = builder.where(reduce(operator.and_, conditions))
@@ -534,7 +519,7 @@ class AgeGraphManager:  # noqa: PLR0904
             ("r.connection_strength", "connection_strength"),
         ).limit(limit)
 
-        return await self.aexecute_cypher(builder)
+        return await self.aexecute_cypher(builder, params=params)
 
     async def aquery_edge_connections_by_entity_names(
         self,
@@ -556,17 +541,17 @@ class AgeGraphManager:  # noqa: PLR0904
         sub1 = (
             unwind("$names", "name")
             .match(edge_pattern)
-            .where(expr(function.startNode("r").name).contains("name"))
+            .where(expr(function.startNode("r").name).contains(function.name))
             .return_(*return_cols)
         )
         sub2 = (
             unwind("$names", "name")
             .match(edge_pattern)
-            .where(expr(function.endNode("r").name).contains("name"))
+            .where(expr(function.endNode("r").name).contains(function.name))
             .return_(*return_cols)
         )
 
-        return await self.aexecute_cypher(sub1.union(sub2, union_all=True).param(names=names))
+        return await self.aexecute_cypher(sub1.union(sub2, union_all=True), params={"names": names})
 
     async def aget_vertices_by_uris(self, uris: list[str]) -> list[dict[str, Any]]:
         cypher = (
@@ -578,6 +563,5 @@ class AgeGraphManager:  # noqa: PLR0904
                 ("v.name", "name"),
                 ("v.entity_type", "entity_type"),
             )
-            .param(uris=uris)
         )
-        return await self.aexecute_cypher(cypher)
+        return await self.aexecute_cypher(cypher, params={"uris": uris})

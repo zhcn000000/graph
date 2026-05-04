@@ -103,6 +103,8 @@ class RAGMode:
                     triple.subject.uri,
                     triple.object.uri,
                     label=triple.predicate.value,
+                    uri=f"cidoc:relationship/{triple.predicate.value}",
+                    description=triple.description,
                 )
                 entity_uris.add(triple.subject.uri)
                 entity_uris.add(triple.object.uri)
@@ -179,11 +181,10 @@ class RAGMode:
             entity_uris |= set(doc.entities)
 
             for chunk_idx, chunk_content in enumerate(sub_chunks):
-                chunk_vector = vectors[chunk_idx] if chunk_idx < len(vectors) else vectors[-1]
                 insert_values.append({
                     "file_id": file_id,
                     "content": chunk_content,
-                    "vector": chunk_vector,
+                    "vector": vectors,
                     "bmvector": bmvector,
                     "entities": list(entity_uris),
                     "meta": doc.metadata,
@@ -554,7 +555,7 @@ class RAGMode:
             ]
 
             documents = await arerank_documents("\n".join(queries), documents)
-            return documents[:k], graph_entities
+            return documents[offset : offset + k], graph_entities
 
     async def aget_by_ids(self, ids: list[str] | None = None) -> list[Document]:
         if not ids:
@@ -976,14 +977,17 @@ class RAGMode:
                     all_entities.update(row[0])
 
             entity_details: list[dict] = []
-            for uri in all_entities:
-                vertex = await self.graph_manager.aget_vertex(uri)
-                if vertex:
-                    entity_details.append({
-                        "uri": uri,
-                        "name": vertex.get("name", uri),
-                        "entity_type": vertex.get("entity_type", ""),
-                    })
+            if all_entities:
+                vertices = await self.graph_manager.aget_vertices_by_uris(list(all_entities))
+                vertex_map_batch = {v["uri"]: v for v in vertices}
+                for uri in all_entities:
+                    vertex = vertex_map_batch.get(uri)
+                    if vertex:
+                        entity_details.append({
+                            "uri": uri,
+                            "name": vertex.get("name", uri),
+                            "entity_type": vertex.get("entity_type", ""),
+                        })
 
         return {
             "document_index": document_index,
