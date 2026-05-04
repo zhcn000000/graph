@@ -8,7 +8,7 @@ from psycopg.sql import Literal as SQLiteral
 
 def _quote_value(value: Any) -> str:
     if value is None:
-        return "null"
+        return "NULL"
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
@@ -161,100 +161,69 @@ class ExpressionBuilder:  # noqa: PLW1641
         clone._exprs.append(value)
         return clone
 
-    def add_(self, other):
+    def op(self, operator: str, other):
         clone = deepcopy(self)
-        clone._exprs.append("+ " + _quote_value(other))
+        clone._exprs.append(operator)
+        if isinstance(other, ExpressionBuilder):
+            clone._exprs.extend(other._exprs)
+        else:
+            clone._exprs.append(_quote_value(other))
         return clone
+
+    def add_(self, other):
+        return self.op("+", other)
 
     def sub_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("- " + _quote_value(other))
-        return clone
+        return self.op("-", other)
 
     def mul_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("* " + _quote_value(other))
-        return clone
+        return self.op("*", other)
 
     def eq_(self, other):  # pyright: ignore
-        clone = deepcopy(self)
-        clone._exprs.append("= " + _quote_value(other))
-        return clone
+        return self.op("=", other)
 
     def ne_(self, other):  # pyright: ignore
-        clone = deepcopy(self)
-        clone._exprs.append("<> " + _quote_value(other))
-        return clone
+        return self.op("<>", other)
 
     def gt_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("> " + _quote_value(other))
-        return clone
+        return self.op(">", other)
 
     def ge_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append(">= " + _quote_value(other))
-        return clone
+        return self.op(">=", other)
 
     def lt_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("< " + _quote_value(other))
-        return clone
+        return self.op("<", other)
 
     def le_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("<= " + _quote_value(other))
-        return clone
+        return self.op("<=", other)
 
-    def truediv_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("/ " + _quote_value(other))
-        return clone
+    def div_(self, other):
+        return self.op("/", other)
 
     def mod_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("% " + _quote_value(other))
-        return clone
+        return self.op("%", other)
 
     def and_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("AND " + _quote_value(other))
-        return clone
+        return self.op("AND", other)
 
     def or_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("OR " + _quote_value(other))
-        return clone
+        return self.op("OR", other)
 
     def xor_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("XOR " + _quote_value(other))
-        return clone
+        return self.op("XOR", other)
+
+    def in_(self, other):
+        return self.op("IN", other)
+
+    def is_(self, other):
+        return self.op("IS", other)
+
+    def is_not(self, other):
+        return self.op("IS NOT", other)
 
     def not_(self):
         clone = deepcopy(self)
-        clone._exprs.insert(0, "NOT ")
-        return clone
-
-    def in_(self, other):
-        clone = deepcopy(self)
-        clone._exprs.append("IN " + _quote_value(other))
-        return clone
-
-    def is_(self, other):
-        clone = deepcopy(self)
-        if other is None:
-            clone._exprs.append("IS NULL")
-        else:
-            clone._exprs.append("IS " + _quote_value(other))
-        return clone
-
-    def is_not(self, other):
-        clone = deepcopy(self)
-        if other is None:
-            clone._exprs.append("IS NOT NULL")
-        else:
-            clone._exprs.append("IS NOT " + _quote_value(other))
+        clone._exprs.insert(0, "NOT")
         return clone
 
     def __iadd__(self, other):
@@ -326,7 +295,8 @@ class ExpressionBuilder:  # noqa: PLW1641
     __add__ = add_
     __sub__ = sub_
     __mul__ = mul_
-    __truediv__ = truediv_
+    __truediv__ = div_
+    __floordiv__ = div_
     __mod__ = mod_
     __eq__ = eq_  # pyright: ignore
     __ne__ = ne_  # pyright: ignore
@@ -338,6 +308,7 @@ class ExpressionBuilder:  # noqa: PLW1641
     __or__ = or_
     __xor__ = xor_
     __invert__ = not_
+    __ifloordiv__ = __itruediv__
 
 
 class CypherBuilder:
