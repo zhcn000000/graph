@@ -1,7 +1,8 @@
 import time
+from collections.abc import Sequence
 from typing import Any
 
-from scrapy.crawler import AsyncCrawlerRunner
+from scrapy.crawler import AsyncCrawlerProcess
 from scrapy.utils.log import configure_logging
 
 from knowgraph.spider.config import MUSEUM_CONFIGS
@@ -50,7 +51,7 @@ class ScrapyCrawler:
         t0 = time.monotonic()
 
         configure_logging({"LOG_LEVEL": "WARNING"})
-        runner = AsyncCrawlerRunner(self._settings)
+        runner = AsyncCrawlerProcess(self._settings)
         stats_collector: dict[str, int] = {}
 
         await runner.crawl(
@@ -66,11 +67,17 @@ class ScrapyCrawler:
         result.elapsed = time.monotonic() - t0
         return result
 
-    async def acrawl_museums(self, configs: list[MuseumConfig] | None = None) -> list[CrawlResult]:
+    async def acrawl_museums(self, configs: Sequence[MuseumConfig | str] | None = None) -> list[CrawlResult]:
         if configs is None:
             configs = list(MUSEUM_CONFIGS.values())
-        results: list[CrawlResult] = []
+        filter_configs = []
         for config in configs:
+            if isinstance(config, str):
+                filter_configs.append(MUSEUM_CONFIGS[config])
+            else:
+                filter_configs.append(config)
+        results: list[CrawlResult] = []
+        for config in filter_configs:
             result = await self.acrawl_museum(config)
             results.append(result)
         return results

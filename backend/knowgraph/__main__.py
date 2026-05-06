@@ -42,9 +42,9 @@ async def initdb() -> None:
 
 @cmd.command()
 @runnify
-async def spider() -> None:
+async def spider(museum: list[str]) -> None:
     crawler = ScrapyCrawler()
-    await crawler.acrawl_museums()
+    await crawler.acrawl_museums(museum)
 
 
 def main():

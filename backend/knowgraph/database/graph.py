@@ -18,7 +18,7 @@ from knowgraph.database.cypherbuild import (
 from knowgraph.database.database import DatabaseManager
 from knowgraph.utils.environments import POSTGRES_DB
 
-GRAPH_LABEL = "artifact_graph"
+GRAPH_LABEL = "graph"
 
 
 class AgeGraphManager:  # noqa: PLR0904
@@ -62,19 +62,19 @@ class AgeGraphManager:  # noqa: PLR0904
 
     async def acreate_graph(self) -> bool:
         async with self.__db.acursor() as cur:
-            result = await cur.execute("SELECT * FROM ag_graph WHERE graph_name = %s", (self.graph_name,))
+            result = await cur.execute(t"SELECT * FROM ag_catalog.ag_graph WHERE name = {self.graph_name:s}")
             exists = await result.fetchone()
             if not exists:
-                await cur.execute("SELECT create_graph(%s);", (self.graph_name,))
+                await cur.execute(t"SELECT create_graph({self.graph_name:s});")
                 return True
             return False
 
     async def adrop_graph(self) -> bool:
         async with self.__db.acursor() as cur:
-            result = await cur.execute("SELECT * FROM ag_graph WHERE graph_name = %s", (self.graph_name,))
+            result = await cur.execute(t"SELECT * FROM ag_catalog.ag_graph WHERE name = {self.graph_name:s}")
             exists = await result.fetchone()
             if exists:
-                await cur.execute("SELECT drop_graph(%s, true);", (self.graph_name,))
+                await cur.execute(t"SELECT drop_graph({self.graph_name:s});")
                 return True
             return False
 

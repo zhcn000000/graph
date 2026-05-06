@@ -31,19 +31,19 @@ if not env_file.exists():
 
 class EnvironmentSettings(BaseSettings):
     LLM_HOST: str = "127.0.0.1"
-    LLM_PORT: int = 44000
+    LLM_PORT: int = 20000
     LLM_PROTOCOL: str = "http"
     FASTAPI_HOST: str = "127.0.0.1"
-    FASTAPI_PORT: int = 44001
+    FASTAPI_PORT: int = 40001
     POSTGRES_HOST: str = "127.0.0.1"
-    POSTGRES_PORT: int = 44002
+    POSTGRES_PORT: int = 40002
     POSTGRES_USER: str = "postgres"
-    POSTGRES_DB: str = "knowgraph"
+    POSTGRES_DB: str = "data"
     POSTGRES_DSN: PostgresDsn | None = None
     POSTGRES_PASSWORD: SecretStr = SecretStr("postgres")
     RAG_DATA_ROOT: Path = find_project_directory() / "data"
     RAG_UUID_SEED: UUID = UUID("11fa063e-b366-41a9-ac97-439b0a561846")
-    RAG_RELEASE_MODE: bool = False
+    RAG_RELEASE_MODE: bool = True
     RAG_TMP_DIR: Path = Path(gettempdir()) / "knowgraph_tmp"
     RAG_TOKEN_EXPIRES_IN: int = 3600 * 6
     SSL_KEY_PATH: Path | None = None

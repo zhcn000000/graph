@@ -4,7 +4,6 @@ from datetime import date
 from typing import Any
 
 from bs4 import BeautifulSoup
-from scrapy import Request
 from scrapy.spiders import SitemapSpider
 
 from ..database.artifact import ArtifactStore
@@ -42,16 +41,9 @@ class ArtifactSitemapSpider(SitemapSpider):
     def _get_config(self) -> MuseumConfig | None:
         return getattr(self, "_museum_config", None)
 
-    def start_requests(self):
-        config = self._get_config()
-        if config:
-            robots_url = f"{config.website.rstrip('/')}/robots.txt"
-            yield Request(
-                robots_url,
-                dont_filter=True,
-            )
-        else:
-            yield from super().start_requests()
+    async def start(self):
+        async for req in super().start():
+            yield req
 
     def closed(self, reason: str) -> None:
         self.stats_collector.update(self.stats)

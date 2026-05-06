@@ -1,11 +1,12 @@
 from datetime import date
+from functools import cache
 
 from ..database.artifact import ArtifactStore
 
 
 class ArtifactPipeline:
-    async def process_item(self, item: dict, spider) -> dict:
-        store: ArtifactStore | None = getattr(spider, "artifact_store", None)
+    async def process_item(self, item: dict) -> dict:
+        store = self.get_store()
         if store is None:
             return item
 
@@ -26,3 +27,8 @@ class ArtifactPipeline:
             crawl_date=item.get("crawl_date", date.today()),
         )
         return item
+
+    @staticmethod
+    @cache
+    def get_store():
+        return ArtifactStore()
