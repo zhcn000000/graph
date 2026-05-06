@@ -21,4 +21,4 @@ RUN --mount=type=cache,target=/var/cache/apt/ \
 COPY ./vchord_bm25.control /usr/share/postgresql/18/extension/
 COPY ./vchord_bm25--0.2.2--0.3.0.sql /usr/share/postgresql/18/extension/
 VOLUME /var/lib/postgresql/18/docker
-CMD ["postgres","-c","shared_preload_libraries=vchord,vchord_bm25,vector,age","-c","listen_addresses=0.0.0.0,::"]
+CMD ["postgres","-c","shared_preload_libraries=vchord,vchord_bm25,vector,age","-c","listen_addresses=0.0.0.0,::","-c","search_path='\"user\",public,ag_catalog,bm25_catalog'"]

@@ -1,0 +1,19 @@
+﻿services:
+  database:
+    image: localhost/postgres-age:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - db-volume:/var/lib/postgresql/18/docker
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_PORT: 5432
+    ports:
+      - "40002:5432"
+volumes:
+  db-volume:
+    driver: local
