@@ -4,13 +4,11 @@ from typing import cast
 
 import httpx
 
-from knowgraph.utils.environments import LLM_HOST, LLM_PORT, LLM_PROTOCOL
-
 from .models import Document
 
-MODEL_URL = f"{LLM_PROTOCOL}://{LLM_HOST}:{LLM_PORT}"
-EMBEDDING_UID = "qwen3-embedding"
-RERANKER_UID = "qwen3-reranker"
+MODEL_URL = "https://api.siliconflow.cn"
+EMBEDDING_UID = "BAAI/bge-m3"
+RERANKER_UID = "BAAI/bge-reranker-v2-m3"
 API_KEY = None
 
 

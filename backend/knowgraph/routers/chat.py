@@ -37,7 +37,6 @@ from pydantic_ai import (
 from pydantic_ai.direct import model_request
 from starlette.responses import StreamingResponse
 
-from knowgraph.chat.chat_model import get_model
 from knowgraph.chat.model import agent
 from knowgraph.chat.struct import ModelDeps
 from knowgraph.database.history import HistoryStore
@@ -217,20 +216,12 @@ async def api_chat(
     deps = ModelDeps()
     files: list[Any] = []
     messages: Sequence[UserContent] = [request.text] + files
-    model = get_model(request.model)
     model_settings = ModelSettings(
         max_tokens=131072,
         temperature=1.0 if request.thinking else 0.7,
         top_p=0.95 if request.thinking else 0.8,
         presence_penalty=1.5,
-        extra_body={
-            "chat_template_kwargs": {
-                "enable_thinking": request.thinking,
-            },
-            "min_p": 0.0,
-            "top_k": 20,
-            "repetition_penalty": 1.0,
-        },
+        extra_body={"thinking": {"type": "enabled"}},
     )
 
     async def event_stream_handler(
@@ -346,7 +337,6 @@ async def api_chat(
     async def stream_generator() -> AsyncIterator[str]:
         async with agent.iter(
             user_prompt=messages,
-            model=model,
             deps=deps,
             message_history=message_history,
             model_settings=model_settings,
@@ -445,7 +435,8 @@ async def api_history(
 async def api_generate_session_title(
     request: ChatTitleRequest,
 ) -> ChatTitleResponse:
-    model = get_model("qwen3.5")
+    model = agent.model
+    assert model is not None, "Agent's model is not defined"
     response = await model_request(
         model=model,
         messages=[

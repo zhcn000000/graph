@@ -1,15 +1,16 @@
 from datetime import UTC, datetime
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.deepseek import DeepSeekProvider
 
 from knowgraph.utils.templete import FIRST_INPUT_TEMPLATE
 
-from .chat_model import get_model
 from .struct import ModelDeps
 from .tools import toolset as rag_toolset
 
 agent: Agent[ModelDeps, str] = Agent(
-    model=get_model(),
+    model=OpenAIChatModel(model_name="deepseek-v4-flash", provider=DeepSeekProvider()),
     deps_type=ModelDeps,
     toolsets=[rag_toolset],
     instructions=FIRST_INPUT_TEMPLATE,

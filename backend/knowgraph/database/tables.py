@@ -29,7 +29,7 @@ if TYPE_CHECKING:
         return fn
 
 
-VECTOR_DIM = 4096
+VECTOR_DIM = 1024
 
 
 class SessionTable(SQLModel, table=True):

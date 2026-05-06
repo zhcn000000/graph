@@ -30,9 +30,6 @@ if not env_file.exists():
 
 
 class EnvironmentSettings(BaseSettings):
-    LLM_HOST: str = "127.0.0.1"
-    LLM_PORT: int = 20000
-    LLM_PROTOCOL: str = "http"
     FASTAPI_HOST: str = "127.0.0.1"
     FASTAPI_PORT: int = 40001
     POSTGRES_HOST: str = "127.0.0.1"
@@ -71,10 +68,6 @@ class EnvironmentSettings(BaseSettings):
 
 
 settings = EnvironmentSettings()
-
-LLM_PORT = settings.LLM_PORT
-LLM_HOST = settings.LLM_HOST
-LLM_PROTOCOL = settings.LLM_PROTOCOL
 
 FASTAPI_PORT = settings.FASTAPI_PORT
 FASTAPI_HOST = settings.FASTAPI_HOST

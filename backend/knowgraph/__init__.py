@@ -1,4 +1,4 @@
-from knowgraph.chat import ModelDeps, agent, get_model, rag_toolset
+from knowgraph.chat import ModelDeps, agent, rag_toolset
 from knowgraph.database import (
     DatabaseManager,
     HistoryStore,

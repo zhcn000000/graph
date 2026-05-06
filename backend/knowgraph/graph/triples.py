@@ -2,13 +2,13 @@ import json
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 import pandas as pd
 from pydantic import BaseModel
-from pydantic_ai import Agent
+from pydantic_ai import ModelSettings
 
-from ..chat.chat_model import get_model
+from ..chat.model import agent
 from ..chat.struct import ModelDeps
 from ..documents.models import Document
 from .schema import (
@@ -238,33 +238,24 @@ class LLMExtractor:
 
 只输出JSON，不要包含其他文字。"""
 
-    def __init__(self, model_name: str | None = None):
-        self.model = get_model(model_name)
-        self._agent = self._create_agent()
-
-    def _create_agent(self) -> Agent[ModelDeps, list[ExtractedTriple]]:
-        from pydantic_ai import Agent
-
-        return cast(
-            "Agent[ModelDeps, list[ExtractedTriple]]",
-            Agent(
-                model=self.model,
-                deps_type=ModelDeps,
-                output_type=list[ExtractedTriple],
-                instructions=self.SYSTEM_PROMPT,
-                output_retries=3,
-            ),
-        )
-
     async def aextract_from_csv_row(self, row: CSVRowInput) -> list[ExtractedTriple]:
         record_str = json.dumps(row.model_dump(), ensure_ascii=False, indent=2)
         user_prompt = self.USER_PROMPT_TEMPLATE.format(record=record_str)
-        result = await self._agent.run(user_prompt, deps=ModelDeps())
-        return result.output
+        return await self._run_agent_with_prompt(user_prompt)
 
     async def aextract_from_document(self, doc: Document) -> list[ExtractedTriple]:
         user_prompt = self.USER_PROMPT_TEMPLATE.format(record=doc.content)
-        result = await self._agent.run(user_prompt, deps=ModelDeps())
+        return await self._run_agent_with_prompt(user_prompt)
+
+    async def _run_agent_with_prompt(self, prompt: str) -> list[ExtractedTriple]:
+        result = await agent.run(
+            prompt,
+            deps=ModelDeps(),
+            model_settings=ModelSettings(
+                extra_body={"thinking": {"type": "disabled"}},
+            ),
+            output_type=list[ExtractedTriple],
+        )
         return result.output
 
     async def aextract_from_csv(self, csv_path: str) -> list[ExtractedTriple]:
