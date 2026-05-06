@@ -18,7 +18,6 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
     "CONCURRENT_REQUESTS": 8,
     "CONCURRENT_REQUESTS_PER_DOMAIN": 4,
     "CONCURRENT_ITEMS": 100,
-    "USER_AGENT": "Chrome/139.0.2171.99 Safari/537.36",
     "LOG_LEVEL": "WARNING",
     "COOKIES_ENABLED": False,
     "TELNETCONSOLE_ENABLED": False,
@@ -30,11 +29,15 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
         "Accept-Language": "en-US,en;q=0.9,zh;q=0.8",
     },
     "ITEM_PIPELINES": {
-        "knowgraph.spider.pipeline.ArtifactPipeline": 300,
+        "knowgraph.spider.pipeline.ArtifactPipeline": 600,
     },
     "SPIDER_MIDDLEWARES": {},
-    "DOWNLOADER_MIDDLEWARES": {},
+    "DOWNLOADER_MIDDLEWARES": {
+        "knowgraph.spider.download.DownloadMiddleware": 600,
+        "scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware": None,
+    },
     "EXTENSIONS": {},
+    "USER_AGENT": "",
 }
 
 

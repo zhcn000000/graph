@@ -1,5 +1,4 @@
 import logging
-import sys
 
 import uvicorn
 import uvloop
@@ -51,14 +50,6 @@ def main():
     traceback.install()
     uvloop.install()
     logging.captureWarnings(True)
-
-    def handle_exception(exc_type, exc_value, exc_traceback):
-        if issubclass(exc_type, KeyboardInterrupt):
-            sys.__excepthook__(exc_type, exc_value, exc_traceback)
-            return
-        logging.exception("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
-
-    sys.excepthook = handle_exception
 
     logging.basicConfig(
         handlers=[RichHandler(rich_tracebacks=True)],
