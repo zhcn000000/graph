@@ -1,88 +1,95 @@
-from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
 
-from knowgraph.database.ragmode import RAGMode
+from knowgraph.database.document import DocumentStore
 from knowgraph.documents.models import Document
+
+TEST_DB_NAME = "test_data"
 
 
 class TestAaddDocuments:
-    """Test the core document insertion method: chunk, embed, tokenize, store."""
+    """Test the core document insertion method: chunk, embed, tokenize, store.
+
+    These tests mock database sessions since they exercise non-DB logic
+    (chunking, embedding, entity extraction) directly.
+    """
 
     @pytest.fixture
-    def rag_mode(self, mock_graph_manager: MagicMock) -> RAGMode:
-        rag = RAGMode()
-        rag._graph_manager = mock_graph_manager
-        return rag
+    def doc_store(self, mock_pool_manager, mock_graph_manager) -> DocumentStore:
+        store = DocumentStore()
+        store._graph_manager = mock_graph_manager
+        return store
 
     @pytest.fixture
-    def mock_source_row(self, source_id: UUID) -> tuple:
+    def mock_source_row(self, source_id: UUID):
         return (source_id, "sample_artifact.md")
 
     @pytest.fixture
-    def mock_doc_row(self, mock_uuid_list: list[UUID]) -> tuple:
+    def mock_doc_row(self, mock_uuid_list: list[UUID]):
         return (mock_uuid_list[0],)
 
     async def test_aadd_documents_success(
         self,
-        rag_mode: RAGMode,
+        doc_store: DocumentStore,
         sample_documents: list[Document],
         mock_source_row: tuple,
         mock_doc_row: tuple,
+        mocker: pytest.MockFixture,
     ):
         """Documents with matching sources should be inserted with chunking, vectors, tokens."""
-        session = MagicMock()
-        session.execute = AsyncMock()
-        session.commit = AsyncMock()
+        session = mocker.MagicMock()
+        session.execute = mocker.AsyncMock()
+        session.commit = mocker.AsyncMock()
 
         session.execute.side_effect = [
-            MagicMock(fetchall=lambda: [mock_source_row]),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [mock_doc_row]),
+            mocker.MagicMock(fetchall=lambda: [mock_source_row]),
+            mocker.MagicMock(scalar=lambda: 0),
+            mocker.MagicMock(fetchall=lambda: [mock_doc_row]),
         ]
 
-        with patch.object(rag_mode._RAGMode__db, "asession") as mock_asession:
-            mock_asession.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_asession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_asession = mocker.patch.object(doc_store._DocumentStore__db, "asession")
+        mock_asession.return_value.__aenter__ = mocker.AsyncMock(return_value=session)
+        mock_asession.return_value.__aexit__ = mocker.AsyncMock(return_value=None)
 
-            result = await rag_mode.aadd_documents(sample_documents)
+        result = await doc_store.aadd_documents(sample_documents)
 
         assert len(result) > 0
         assert session.execute.call_count >= 3
 
     async def test_aadd_documents_no_matching_source(
         self,
-        rag_mode: RAGMode,
+        doc_store: DocumentStore,
+        mocker: pytest.MockFixture,
     ):
         """Documents without matching Source entries should be skipped with a warning."""
         doc = Document(content="test content", name="nonexistent_source")
-        session = MagicMock()
-        session.execute = AsyncMock()
-        session.execute.return_value = MagicMock(fetchall=lambda: [])
+        session = mocker.MagicMock()
+        session.execute = mocker.AsyncMock()
+        session.execute.return_value = mocker.MagicMock(fetchall=lambda: [])
 
-        with (
-            patch.object(rag_mode._RAGMode__db, "asession") as mock_asession,
-            patch("knowgraph.database.ragmode.warnings.warn") as mock_warn,
-        ):
-            mock_asession.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_asession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_asession = mocker.patch.object(doc_store._DocumentStore__db, "asession")
+        mock_asession.return_value.__aenter__ = mocker.AsyncMock(return_value=session)
+        mock_asession.return_value.__aexit__ = mocker.AsyncMock(return_value=None)
 
-            result = await rag_mode.aadd_documents([doc])
+        mock_warn = mocker.patch("knowgraph.database.document.warnings.warn")
+
+        result = await doc_store.aadd_documents([doc])
 
         assert result == []
         mock_warn.assert_called()
 
-    async def test_aadd_documents_empty_list(self, rag_mode: RAGMode):
+    async def test_aadd_documents_empty_list(self, doc_store: DocumentStore):
         """Empty document list should return empty results."""
-        result = await rag_mode.aadd_documents([])
+        result = await doc_store.aadd_documents([])
         assert result == []
 
     async def test_aadd_documents_removes_duplicate_chunks(
         self,
-        rag_mode: RAGMode,
+        doc_store: DocumentStore,
         mock_source_row: tuple,
         mock_doc_row: tuple,
+        mocker: pytest.MockFixture,
     ):
         """Duplicate chunk content should be deduplicated."""
         doc = Document(
@@ -90,14 +97,14 @@ class TestAaddDocuments:
             name="sample_artifact.md",
         )
 
-        session = MagicMock()
-        session.execute = AsyncMock()
-        session.commit = AsyncMock()
+        session = mocker.MagicMock()
+        session.execute = mocker.AsyncMock()
+        session.commit = mocker.AsyncMock()
 
         session.execute.side_effect = [
-            MagicMock(fetchall=lambda: [mock_source_row]),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [mock_doc_row]),
+            mocker.MagicMock(fetchall=lambda: [mock_source_row]),
+            mocker.MagicMock(scalar=lambda: 0),
+            mocker.MagicMock(fetchall=lambda: [mock_doc_row]),
         ]
 
         async def dup_split(content: str, chunk_size=512, chunk_overlap=32):
@@ -105,51 +112,50 @@ class TestAaddDocuments:
             yield "重复内容"
             yield "重复内容"
 
-        with (
-            patch.object(rag_mode._RAGMode__db, "asession") as mock_asession,
-            patch("knowgraph.database.ragmode.asplit_content", dup_split),
-        ):
-            mock_asession.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_asession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_asession = mocker.patch.object(doc_store._DocumentStore__db, "asession")
+        mock_asession.return_value.__aenter__ = mocker.AsyncMock(return_value=session)
+        mock_asession.return_value.__aexit__ = mocker.AsyncMock(return_value=None)
 
-            result = await rag_mode.aadd_documents([doc])
+        mocker.patch("knowgraph.database.document.asplit_content", dup_split)
+
+        result = await doc_store.aadd_documents([doc])
 
         assert result is not None
 
     async def test_aadd_documents_with_extraction_contents(
         self,
-        rag_mode: RAGMode,
+        doc_store: DocumentStore,
         sample_documents: list[Document],
         mock_source_row: tuple,
         mock_doc_row: tuple,
+        mocker: pytest.MockFixture,
     ):
         """When extraction_contents is provided, LLM extraction uses it instead of doc.content."""
-        session = MagicMock()
-        session.execute = AsyncMock()
-        session.commit = AsyncMock()
+        session = mocker.MagicMock()
+        session.execute = mocker.AsyncMock()
+        session.commit = mocker.AsyncMock()
 
         session.execute.side_effect = [
-            MagicMock(fetchall=lambda: [mock_source_row]),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [mock_doc_row]),
+            mocker.MagicMock(fetchall=lambda: [mock_source_row]),
+            mocker.MagicMock(scalar=lambda: 0),
+            mocker.MagicMock(fetchall=lambda: [mock_doc_row]),
         ]
 
+        mock_asession = mocker.patch.object(doc_store._DocumentStore__db, "asession")
+        mock_asession.return_value.__aenter__ = mocker.AsyncMock(return_value=session)
+        mock_asession.return_value.__aexit__ = mocker.AsyncMock(return_value=None)
+
         extraction_contents = ["extract from this instead"]
-
-        with patch.object(rag_mode._RAGMode__db, "asession") as mock_asession:
-            mock_asession.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_asession.return_value.__aexit__ = AsyncMock(return_value=None)
-
-            result = await rag_mode.aadd_documents(sample_documents, extraction_contents=extraction_contents)
+        result = await doc_store.aadd_documents(sample_documents, extraction_contents=extraction_contents)
 
         assert len(result) > 0
 
     async def test_aadd_documents_with_predefined_entities(
         self,
-        rag_mode: RAGMode,
-        sample_documents: list[Document],
+        doc_store: DocumentStore,
         mock_source_row: tuple,
         mock_doc_row: tuple,
+        mocker: pytest.MockFixture,
     ):
         """Documents with pre-populated entities should include them in insert."""
         doc = Document(
@@ -158,111 +164,98 @@ class TestAaddDocuments:
             entities=["cidoc:artifact/test_entity", "cidoc:museum/test_museum"],
         )
 
-        session = MagicMock()
-        session.execute = AsyncMock()
-        session.commit = AsyncMock()
+        session = mocker.MagicMock()
+        session.execute = mocker.AsyncMock()
+        session.commit = mocker.AsyncMock()
 
         session.execute.side_effect = [
-            MagicMock(fetchall=lambda: [mock_source_row]),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [mock_doc_row]),
+            mocker.MagicMock(fetchall=lambda: [mock_source_row]),
+            mocker.MagicMock(scalar=lambda: 0),
+            mocker.MagicMock(fetchall=lambda: [mock_doc_row]),
         ]
 
-        with patch.object(rag_mode._RAGMode__db, "asession") as mock_asession:
-            mock_asession.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_asession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_asession = mocker.patch.object(doc_store._DocumentStore__db, "asession")
+        mock_asession.return_value.__aenter__ = mocker.AsyncMock(return_value=session)
+        mock_asession.return_value.__aexit__ = mocker.AsyncMock(return_value=None)
 
-            result = await rag_mode.aadd_documents([doc])
+        result = await doc_store.aadd_documents([doc])
 
         assert len(result) > 0
 
 
 class TestAloadFromCSV:
-    """Test CSV ingestion: read -> extract triples -> insert sources -> add documents."""
+    """CSV ingestion integration tests: uses real database with mocked external services."""
 
     @pytest.fixture
-    def rag_mode(self, mock_graph_manager: MagicMock) -> RAGMode:
-        rag = RAGMode()
-        rag._graph_manager = mock_graph_manager
-        return rag
+    def doc_store(self, mock_graph_manager) -> DocumentStore:
+        store = DocumentStore(dbname=TEST_DB_NAME)
+        store._graph_manager = mock_graph_manager
+        return store
 
-    async def test_aload_from_csv_success(self, rag_mode: RAGMode, source_id: UUID, mock_uuid_list: list[UUID]):
-        """CSV ingestion should create graph nodes, sources, and chunked documents."""
-        session = MagicMock()
-        session.execute = AsyncMock()
-        session.commit = AsyncMock()
+    @pytest.mark.dependency(depends=["setup_test_database"], scope="session")
+    async def test_aload_from_csv_integration(
+        self,
+        doc_store: DocumentStore,
+        clean_tables: None,
+        mocker: pytest.MockFixture,
+    ):
+        """CSV ingestion should create graph nodes, sources, and chunked documents in real DB."""
+        file_ids = await doc_store.aload_from_csv("/fake/path/artifacts.csv")
 
-        src_store_mock = MagicMock()
-        src_store_mock.ainsert_source = AsyncMock(return_value=source_id)
-        src_store_mock.aget_id_by_names = AsyncMock(return_value=[source_id])
+        assert len(file_ids) > 0
 
-        doc_session = MagicMock()
-        doc_session.execute = AsyncMock()
-        doc_session.commit = AsyncMock()
+        from sqlalchemy import func, select
+        from sqlmodel import col
 
-        source_row = (source_id, "青铜鼎")
-        doc_row = (mock_uuid_list[0],)
+        from knowgraph.database.database import DatabaseManager
+        from knowgraph.database.tables import DocumentTable, Source
 
-        doc_session.execute.side_effect = [
-            MagicMock(fetchall=lambda: [source_row]),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [doc_row]),
-        ]
+        db = DatabaseManager(TEST_DB_NAME)
+        async with db.asession() as session:
+            stmt = select(Source.name).where(Source.id.in_(file_ids))
+            result = await session.execute(stmt)
+            source_names = {row[0] for row in result.fetchall()}
+            assert "青铜鼎" in source_names
 
-        with (
-            patch.object(rag_mode, "_RAGMode__source", src_store_mock),
-            patch.object(rag_mode._RAGMode__db, "asession") as mock_asession,
-        ):
-            source_session = MagicMock()
-            source_session.execute = AsyncMock()
-            source_session.commit = AsyncMock()
-            source_session.__aenter__ = AsyncMock(return_value=source_session)
-            source_session.__aexit__ = AsyncMock(return_value=None)
+            stmt = select(func.count(col(DocumentTable.id))).where(
+                col(DocumentTable.file_id).in_(file_ids),
+            )
+            result = await session.execute(stmt)
+            count = result.scalar()
+            assert count > 0
 
-            doc_session_ctx2 = MagicMock()
-            doc_session_ctx2.__aenter__ = AsyncMock(return_value=doc_session)
-            doc_session_ctx2.__aexit__ = AsyncMock(return_value=None)
-
-            mock_asession.side_effect = [source_session, doc_session_ctx2, doc_session_ctx2]
-
-            result = await rag_mode.aload_from_csv("/fake/path/artifacts.csv")
-
-        assert isinstance(result, list)
-
-    async def test_aload_from_csv_empty_dataframe(self, rag_mode: RAGMode):
+    @pytest.mark.dependency(depends=["setup_test_database"], scope="session")
+    async def test_aload_from_csv_empty(
+        self,
+        doc_store: DocumentStore,
+        clean_tables: None,
+        mocker: pytest.MockFixture,
+    ):
         """Empty CSV should return empty results."""
         import pandas as pd
 
-        session = MagicMock()
-        session.execute = AsyncMock()
-        session.commit = AsyncMock()
-        session.__aenter__ = AsyncMock(return_value=session)
-        session.__aexit__ = AsyncMock(return_value=None)
-
-        with (
-            patch.object(rag_mode._RAGMode__db, "asession", return_value=session),
-            patch("knowgraph.database.ragmode.pd.read_csv", return_value=pd.DataFrame()),
-        ):
-            result = await rag_mode.aload_from_csv("/empty.csv")
+        mocker.patch(
+            "knowgraph.database.document.pd.read_csv",
+            return_value=pd.DataFrame(),
+        )
+        result = await doc_store.aload_from_csv("/empty.csv")
 
         assert result == []
 
 
 class TestAlingestArtifacts:
-    """Test spider artifact ingestion: query -> convert -> insert sources -> add documents."""
+    """Artifact ingestion integration tests: uses real database with mocked external services."""
 
     @pytest.fixture
-    def rag_mode(self, mock_graph_manager: MagicMock) -> RAGMode:
-        rag = RAGMode()
-        rag._graph_manager = mock_graph_manager
-        return rag
+    def doc_store(self, mock_graph_manager) -> DocumentStore:
+        store = DocumentStore(dbname=TEST_DB_NAME)
+        store._graph_manager = mock_graph_manager
+        return store
 
     @pytest.fixture
-    def mock_artifact_row(self):
+    def mock_artifact_row(self, mocker: pytest.MockFixture):
         """Creates a mock ArtifactRawTable row."""
-        from unittest.mock import MagicMock
-
-        row = MagicMock()
+        row = mocker.MagicMock()
         row.id = UUID("00000000-0000-0000-0000-000000000001")
         row.object_id = "OBJ-001"
         row.title = "青铜鼎"
@@ -280,73 +273,51 @@ class TestAlingestArtifacts:
         row.crawl_date = None
         return row
 
-    async def test_alingest_artifacts_success(
+    @pytest.mark.dependency(depends=["setup_test_database"], scope="session")
+    async def test_alingest_artifacts_integration(
         self,
-        rag_mode: RAGMode,
+        doc_store: DocumentStore,
+        clean_tables: None,
         mock_artifact_row,
-        source_id: UUID,
-        mock_uuid_list: list[UUID],
+        mocker: pytest.MockFixture,
     ):
         """Artifact ingestion should convert crawled data to documents with triples."""
-        session = MagicMock()
-        session.execute = AsyncMock()
-        session.commit = AsyncMock()
+        session = mocker.MagicMock()
+        session.execute = mocker.AsyncMock()
+        session.commit = mocker.AsyncMock()
 
-        source_row = (source_id, "青铜鼎")
-        doc_row = (mock_uuid_list[0],)
-
-        mock_result = MagicMock()
-        mock_result.scalars = MagicMock(return_value=MagicMock(all=lambda: [mock_artifact_row]))
-
-        doc_session = MagicMock()
-        doc_session.execute = AsyncMock()
-        doc_session.execute.side_effect = [
-            MagicMock(fetchall=lambda: [source_row]),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [doc_row]),
-        ]
-        doc_session.commit = AsyncMock()
-
-        with (
-            patch.object(rag_mode._RAGMode__db, "asession") as mock_asession,
-            patch.object(rag_mode, "_RAGMode__source", MagicMock()),
-        ):
-            artifact_session = MagicMock()
-            artifact_session.execute = AsyncMock(return_value=mock_result)
-            artifact_session.__aenter__ = AsyncMock(return_value=artifact_session)
-            artifact_session.__aexit__ = AsyncMock(return_value=None)
-
-            source_session = MagicMock()
-            source_session.execute = AsyncMock()
-            source_session.commit = AsyncMock()
-            source_session.__aenter__ = AsyncMock(return_value=source_session)
-            source_session.__aexit__ = AsyncMock(return_value=None)
-
-            doc_session_ctx = MagicMock()
-            doc_session_ctx.__aenter__ = AsyncMock(return_value=doc_session)
-            doc_session_ctx.__aexit__ = AsyncMock(return_value=None)
-
-            mock_asession.side_effect = lambda: artifact_session
-
-            result = await rag_mode.alingest_artifacts(museum="Metropolitan Museum of Art", limit=10)
-
-        assert isinstance(result, list)
-
-    async def test_alingest_artifacts_empty_result(self, rag_mode: RAGMode):
-        """No artifacts found should return empty results."""
-        session = MagicMock()
-        session.execute = AsyncMock()
-        session.commit = AsyncMock()
-
-        mock_result = MagicMock()
-        mock_result.scalars = MagicMock(return_value=MagicMock(all=lambda: []))
+        mock_result = mocker.MagicMock()
+        mock_result.scalars = mocker.MagicMock(return_value=mocker.MagicMock(all=lambda: [mock_artifact_row]))
         session.execute.return_value = mock_result
 
-        async def mock_asession():
-            yield session
+        mock_asession = mocker.patch.object(doc_store._DocumentStore__db, "asession")
+        mock_asession.return_value.__aenter__ = mocker.AsyncMock(return_value=session)
+        mock_asession.return_value.__aexit__ = mocker.AsyncMock(return_value=None)
 
-        with patch.object(rag_mode._RAGMode__db, "asession", mock_asession):
-            result = await rag_mode.alingest_artifacts()
+        result = await doc_store.alingest_artifacts(museum="Metropolitan Museum of Art", limit=10)
+
+        assert len(result) > 0
+
+    @pytest.mark.dependency(depends=["setup_test_database"], scope="session")
+    async def test_alingest_artifacts_empty_result(
+        self,
+        doc_store: DocumentStore,
+        clean_tables: None,
+        mocker: pytest.MockFixture,
+    ):
+        """No artifacts found should return empty results."""
+        session = mocker.MagicMock()
+        session.execute = mocker.AsyncMock()
+
+        mock_result = mocker.MagicMock()
+        mock_result.scalars = mocker.MagicMock(return_value=mocker.MagicMock(all=lambda: []))
+        session.execute.return_value = mock_result
+
+        mock_asession = mocker.patch.object(doc_store._DocumentStore__db, "asession")
+        mock_asession.return_value.__aenter__ = mocker.AsyncMock(return_value=session)
+        mock_asession.return_value.__aexit__ = mocker.AsyncMock(return_value=None)
+
+        result = await doc_store.alingest_artifacts()
 
         assert result == []
 
@@ -355,114 +326,119 @@ class TestAinsertDocument:
     """Test the single document insertion flow (converter integration path)."""
 
     @pytest.fixture
-    def rag_mode(self, mock_graph_manager: MagicMock) -> RAGMode:
-        rag = RAGMode()
-        rag._graph_manager = mock_graph_manager
-        return rag
+    def doc_store(self, mock_pool_manager, mock_graph_manager) -> DocumentStore:
+        store = DocumentStore()
+        store._graph_manager = mock_graph_manager
+        return store
 
     async def test_ainsert_document_new_source(
         self,
-        rag_mode: RAGMode,
+        doc_store: DocumentStore,
         source_id: UUID,
         mock_uuid_list: list[UUID],
+        mocker: pytest.MockFixture,
     ):
         """Inserting a new document should create source, chunk content, and store."""
-        src_store_mock = MagicMock()
-        src_store_mock.ainsert_source = AsyncMock(return_value=source_id)
+        src_store_mock = mocker.MagicMock()
+        src_store_mock.ainsert_source = mocker.AsyncMock(return_value=source_id)
 
         source_row = (source_id, "research_notes.md")
         doc_row = (mock_uuid_list[0],)
 
-        doc_session = MagicMock()
-        doc_session.execute = AsyncMock()
+        doc_session = mocker.MagicMock()
+        doc_session.execute = mocker.AsyncMock()
         doc_session.execute.side_effect = [
-            MagicMock(fetchall=lambda: [source_row]),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [doc_row]),
+            mocker.MagicMock(fetchall=lambda: [source_row]),
+            mocker.MagicMock(scalar=lambda: 0),
+            mocker.MagicMock(fetchall=lambda: [doc_row]),
         ]
-        doc_session.commit = AsyncMock()
+        doc_session.commit = mocker.AsyncMock()
 
-        doc_session_ctx = MagicMock()
-        doc_session_ctx.__aenter__ = AsyncMock(return_value=doc_session)
-        doc_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        doc_session_ctx = mocker.MagicMock()
+        doc_session_ctx.__aenter__ = mocker.AsyncMock(return_value=doc_session)
+        doc_session_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
 
-        with (
-            patch.object(rag_mode, "_RAGMode__source", src_store_mock),
-            patch.object(rag_mode._RAGMode__db, "asession", return_value=doc_session_ctx),
-        ):
-            result = await rag_mode.ainsert_document(
-                name="research_notes.md",
-                content="青铜器历史悠久，工艺精湛。大都会博物馆收藏丰富。",
-                link="file:///data/research_notes.md",
-            )
+        mocker.patch.object(doc_store, "_DocumentStore__source", src_store_mock)
+        mocker.patch.object(doc_store._DocumentStore__db, "asession", return_value=doc_session_ctx)
+
+        result = await doc_store.ainsert_document(
+            name="research_notes.md",
+            content="青铜器历史悠久，工艺精湛。大都会博物馆收藏丰富。",
+            link="file:///data/research_notes.md",
+        )
 
         assert result == source_id
 
     async def test_ainsert_document_existing_source(
         self,
-        rag_mode: RAGMode,
+        doc_store: DocumentStore,
         source_id: UUID,
         mock_uuid_list: list[UUID],
+        mocker: pytest.MockFixture,
     ):
         """Inserting with existing source name should reuse the source."""
-        src_store_mock = MagicMock()
-        src_store_mock.ainsert_source = AsyncMock(return_value=None)
-        src_store_mock.aget_id_by_names = AsyncMock(return_value=[source_id])
+        src_store_mock = mocker.MagicMock()
+        src_store_mock.ainsert_source = mocker.AsyncMock(return_value=None)
+        src_store_mock.aget_id_by_names = mocker.AsyncMock(return_value=[source_id])
 
         source_row = (source_id, "existing.md")
         doc_row = (mock_uuid_list[0],)
 
-        doc_session = MagicMock()
-        doc_session.execute = AsyncMock()
+        doc_session = mocker.MagicMock()
+        doc_session.execute = mocker.AsyncMock()
         doc_session.execute.side_effect = [
-            MagicMock(fetchall=lambda: [source_row]),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [doc_row]),
+            mocker.MagicMock(fetchall=lambda: [source_row]),
+            mocker.MagicMock(scalar=lambda: 0),
+            mocker.MagicMock(fetchall=lambda: [doc_row]),
         ]
-        doc_session.commit = AsyncMock()
+        doc_session.commit = mocker.AsyncMock()
 
-        doc_session_ctx = MagicMock()
-        doc_session_ctx.__aenter__ = AsyncMock(return_value=doc_session)
-        doc_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        doc_session_ctx = mocker.MagicMock()
+        doc_session_ctx.__aenter__ = mocker.AsyncMock(return_value=doc_session)
+        doc_session_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
 
-        with (
-            patch.object(rag_mode, "_RAGMode__source", src_store_mock),
-            patch.object(rag_mode._RAGMode__db, "asession", return_value=doc_session_ctx),
-        ):
-            result = await rag_mode.ainsert_document(
-                name="existing.md",
-                content="updated content",
-                link="file:///data/existing.md",
-            )
+        mocker.patch.object(doc_store, "_DocumentStore__source", src_store_mock)
+        mocker.patch.object(doc_store._DocumentStore__db, "asession", return_value=doc_session_ctx)
+
+        result = await doc_store.ainsert_document(
+            name="existing.md",
+            content="updated content",
+            link="file:///data/existing.md",
+        )
 
         assert result == source_id
 
-    async def test_ainsert_document_no_link(self, rag_mode: RAGMode, source_id: UUID, mock_uuid_list: list[UUID]):
+    async def test_ainsert_document_no_link(
+        self,
+        doc_store: DocumentStore,
+        source_id: UUID,
+        mock_uuid_list: list[UUID],
+        mocker: pytest.MockFixture,
+    ):
         """Inserting a document without a link should work."""
-        src_store_mock = MagicMock()
-        src_store_mock.ainsert_source = AsyncMock(return_value=source_id)
+        src_store_mock = mocker.MagicMock()
+        src_store_mock.ainsert_source = mocker.AsyncMock(return_value=source_id)
 
         source_row = (source_id, "notes.md")
         doc_row = (mock_uuid_list[0],)
 
-        doc_session = MagicMock()
-        doc_session.execute = AsyncMock()
+        doc_session = mocker.MagicMock()
+        doc_session.execute = mocker.AsyncMock()
         doc_session.execute.side_effect = [
-            MagicMock(fetchall=lambda: [source_row]),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [doc_row]),
+            mocker.MagicMock(fetchall=lambda: [source_row]),
+            mocker.MagicMock(scalar=lambda: 0),
+            mocker.MagicMock(fetchall=lambda: [doc_row]),
         ]
-        doc_session.commit = AsyncMock()
+        doc_session.commit = mocker.AsyncMock()
 
-        doc_session_ctx = MagicMock()
-        doc_session_ctx.__aenter__ = AsyncMock(return_value=doc_session)
-        doc_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        doc_session_ctx = mocker.MagicMock()
+        doc_session_ctx.__aenter__ = mocker.AsyncMock(return_value=doc_session)
+        doc_session_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
 
-        with (
-            patch.object(rag_mode, "_RAGMode__source", src_store_mock),
-            patch.object(rag_mode._RAGMode__db, "asession", return_value=doc_session_ctx),
-        ):
-            result = await rag_mode.ainsert_document(name="notes.md", content="plain text notes")
+        mocker.patch.object(doc_store, "_DocumentStore__source", src_store_mock)
+        mocker.patch.object(doc_store._DocumentStore__db, "asession", return_value=doc_session_ctx)
+
+        result = await doc_store.ainsert_document(name="notes.md", content="plain text notes")
 
         assert result == source_id
 
@@ -471,16 +447,17 @@ class TestIntegrationInsertionFlow:
     """End-to-end tests that chain converter output -> document insertion."""
 
     @pytest.fixture
-    def rag_mode(self, mock_graph_manager: MagicMock) -> RAGMode:
-        rag = RAGMode()
-        rag._graph_manager = mock_graph_manager
-        return rag
+    def doc_store(self, mock_pool_manager, mock_graph_manager) -> DocumentStore:
+        store = DocumentStore()
+        store._graph_manager = mock_graph_manager
+        return store
 
     async def test_converter_to_ainsert_document(
         self,
-        rag_mode: RAGMode,
+        doc_store: DocumentStore,
         source_id: UUID,
         mock_uuid_list: list[UUID],
+        mocker: pytest.MockFixture,
     ):
         """Simulate the full flow: aconvert_file -> ainsert_document."""
         from knowgraph.documents.converter import Document as ConverterDocument
@@ -490,43 +467,43 @@ class TestIntegrationInsertionFlow:
             link="file:///data/bronze.md",
         )
 
-        src_store_mock = MagicMock()
-        src_store_mock.ainsert_source = AsyncMock(return_value=source_id)
+        src_store_mock = mocker.MagicMock()
+        src_store_mock.ainsert_source = mocker.AsyncMock(return_value=source_id)
 
         source_row = (source_id, "bronze.md")
         doc_row = (mock_uuid_list[0],)
 
-        doc_session = MagicMock()
-        doc_session.execute = AsyncMock()
+        doc_session = mocker.MagicMock()
+        doc_session.execute = mocker.AsyncMock()
         doc_session.execute.side_effect = [
-            MagicMock(fetchall=lambda: [source_row]),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [doc_row]),
+            mocker.MagicMock(fetchall=lambda: [source_row]),
+            mocker.MagicMock(scalar=lambda: 0),
+            mocker.MagicMock(fetchall=lambda: [doc_row]),
         ]
-        doc_session.commit = AsyncMock()
+        doc_session.commit = mocker.AsyncMock()
 
-        doc_session_ctx = MagicMock()
-        doc_session_ctx.__aenter__ = AsyncMock(return_value=doc_session)
-        doc_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        doc_session_ctx = mocker.MagicMock()
+        doc_session_ctx.__aenter__ = mocker.AsyncMock(return_value=doc_session)
+        doc_session_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
 
-        with (
-            patch.object(rag_mode, "_RAGMode__source", src_store_mock),
-            patch.object(rag_mode._RAGMode__db, "asession", return_value=doc_session_ctx),
-        ):
-            result = await rag_mode.ainsert_document(
-                name=converted.name or "bronze.md",
-                content=converted.content,
-                link=converted.link,
-            )
+        mocker.patch.object(doc_store, "_DocumentStore__source", src_store_mock)
+        mocker.patch.object(doc_store._DocumentStore__db, "asession", return_value=doc_session_ctx)
+
+        result = await doc_store.ainsert_document(
+            name=converted.name or "bronze.md",
+            content=converted.content,
+            link=converted.link,
+        )
 
         assert result is not None
         assert result == source_id
 
     async def test_multiple_converted_documents_to_aadd(
         self,
-        rag_mode: RAGMode,
+        doc_store: DocumentStore,
         source_id: UUID,
         mock_uuid_list: list[UUID],
+        mocker: pytest.MockFixture,
     ):
         """Simulate converting multiple files then inserting all at once."""
         converted_files = [
@@ -549,20 +526,21 @@ class TestIntegrationInsertionFlow:
 
         doc_row = (mock_uuid_list[0],)
 
-        doc_session = MagicMock()
-        doc_session.execute = AsyncMock()
+        doc_session = mocker.MagicMock()
+        doc_session.execute = mocker.AsyncMock()
         doc_session.execute.side_effect = [
-            MagicMock(fetchall=lambda: source_rows),
-            MagicMock(scalar=lambda: 0),
-            MagicMock(fetchall=lambda: [doc_row]),
+            mocker.MagicMock(fetchall=lambda: source_rows),
+            mocker.MagicMock(scalar=lambda: 0),
+            mocker.MagicMock(fetchall=lambda: [doc_row]),
         ]
-        doc_session.commit = AsyncMock()
+        doc_session.commit = mocker.AsyncMock()
 
-        doc_session_ctx = MagicMock()
-        doc_session_ctx.__aenter__ = AsyncMock(return_value=doc_session)
-        doc_session_ctx.__aexit__ = AsyncMock(return_value=None)
+        doc_session_ctx = mocker.MagicMock()
+        doc_session_ctx.__aenter__ = mocker.AsyncMock(return_value=doc_session)
+        doc_session_ctx.__aexit__ = mocker.AsyncMock(return_value=None)
 
-        with patch.object(rag_mode._RAGMode__db, "asession", return_value=doc_session_ctx):
-            result = await rag_mode.aadd_documents(converted_files)
+        mocker.patch.object(doc_store._DocumentStore__db, "asession", return_value=doc_session_ctx)
+
+        result = await doc_store.aadd_documents(converted_files)
 
         assert len(result) > 0

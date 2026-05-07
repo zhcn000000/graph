@@ -17,7 +17,7 @@ class SessionDict(TypedDict):
 
 
 class HistoryStore:
-    def __init__(self, dbname: str = "data") -> None:
+    def __init__(self, dbname: str | None = None) -> None:
         self.__db = DatabaseManager(dbname)
 
     async def aadd_messages(self, messages: Sequence[ModelMessage], session_id: UUID) -> None:

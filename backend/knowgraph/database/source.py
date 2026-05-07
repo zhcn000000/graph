@@ -15,7 +15,7 @@ class PromptFileDict(TypedDict):
 
 
 class SourceStore:
-    def __init__(self, dbname: str = "data") -> None:
+    def __init__(self, dbname: str | None = None) -> None:
         self.__db = DatabaseManager(dbname)
 
     async def ainsert_source(

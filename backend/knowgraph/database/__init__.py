@@ -1,5 +1,6 @@
 from .artifact import ArtifactStore
 from .database import DatabaseManager
+from .document import DocumentStore
 from .graph import AgeGraphManager
 from .history import HistoryStore
 from .pool import ConnectionPoolManager, pool_manager
@@ -19,6 +20,7 @@ __all__ = [
     "ArtifactStore",
     "ConnectionPoolManager",
     "DatabaseManager",
+    "DocumentStore",
     "DocumentTable",
     "GraphSearchResult",
     "HistoryStore",

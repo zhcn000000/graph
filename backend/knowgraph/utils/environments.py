@@ -41,7 +41,7 @@ class EnvironmentSettings(BaseSettings):
     RAG_DATA_ROOT: Path = find_project_directory() / "data"
     RAG_UUID_SEED: UUID = UUID("11fa063e-b366-41a9-ac97-439b0a561846")
     RAG_RELEASE_MODE: bool = True
-    RAG_TMP_DIR: Path = Path(gettempdir()) / "knowgraph_tmp"
+    RAG_TMP_DIR: Path = Path(gettempdir()) / RAG_UUID_SEED.hex
     RAG_TOKEN_EXPIRES_IN: int = 3600 * 6
     SSL_KEY_PATH: Path | None = None
     SSL_CERT_PATH: Path | None = None

@@ -3,7 +3,11 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from knowgraph.database.document import DocumentStore
 from knowgraph.database.ragmode import RAGMode
+
+# All search tests use mocked database connections (mock_pool_manager)
+pytestmark = pytest.mark.usefixtures("mock_pool_manager")
 
 
 class TestRRFFusion:
@@ -129,10 +133,10 @@ class TestRRFFusion:
 
 class TestDeleteDocuments:
     @pytest.fixture
-    def rag_mode(self) -> RAGMode:
-        return RAGMode()
+    def doc_store(self) -> DocumentStore:
+        return DocumentStore()
 
-    async def test_adelete_documents_success(self, rag_mode: RAGMode, mock_uuid_list: list[UUID]):
+    async def test_adelete_documents_success(self, doc_store: DocumentStore, mock_uuid_list: list[UUID]):
         """Deleting documents by ID should succeed."""
         session = MagicMock()
         session.execute = AsyncMock()
@@ -145,28 +149,28 @@ class TestDeleteDocuments:
         session_ctx.__aenter__ = AsyncMock(return_value=session)
         session_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(rag_mode._RAGMode__db, "asession", return_value=session_ctx):
-            result = await rag_mode.adelete_documents(mock_uuid_list[:2])
+        with patch.object(doc_store._DocumentStore__db, "asession", return_value=session_ctx):
+            result = await doc_store.adelete_documents(mock_uuid_list[:2])
 
         assert result is True
 
-    async def test_adelete_documents_empty(self, rag_mode: RAGMode):
+    async def test_adelete_documents_empty(self, doc_store: DocumentStore):
         """Deleting with no IDs should return False."""
-        result = await rag_mode.adelete_documents([])
+        result = await doc_store.adelete_documents([])
         assert result is False
 
-    async def test_adelete_documents_none(self, rag_mode: RAGMode):
+    async def test_adelete_documents_none(self, doc_store: DocumentStore):
         """Deleting with None should return False."""
-        result = await rag_mode.adelete_documents(None)
+        result = await doc_store.adelete_documents(None)
         assert result is False
 
 
 class TestRemoveDocuments:
     @pytest.fixture
-    def rag_mode(self) -> RAGMode:
-        return RAGMode()
+    def doc_store(self) -> DocumentStore:
+        return DocumentStore()
 
-    async def test_aremove_documents_success(self, rag_mode: RAGMode):
+    async def test_aremove_documents_success(self, doc_store: DocumentStore):
         """Removing documents by file_id should succeed."""
         session = MagicMock()
         session.execute = AsyncMock()
@@ -179,15 +183,21 @@ class TestRemoveDocuments:
         session_ctx.__aenter__ = AsyncMock(return_value=session)
         session_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        with patch.object(rag_mode._RAGMode__db, "asession", return_value=session_ctx):
+        source_mock = MagicMock()
+        source_mock.adelete_orphan_files = AsyncMock(return_value=[])
+
+        with (
+            patch.object(doc_store._DocumentStore__db, "asession", return_value=session_ctx),
+            patch.object(doc_store, "_DocumentStore__source", source_mock),
+        ):
             file_id = uuid4()
-            result = await rag_mode.aremove_documents(file_id)
+            result = await doc_store.aremove_documents(file_id)
 
         assert isinstance(result, list)
 
-    async def test_aremove_documents_empty(self, rag_mode: RAGMode):
+    async def test_aremove_documents_empty(self, doc_store: DocumentStore):
         """Removing with no IDs returns empty."""
-        result = await rag_mode.aremove_documents([])
+        result = await doc_store.aremove_documents([])
         assert result == []
 
 

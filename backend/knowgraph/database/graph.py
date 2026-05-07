@@ -16,13 +16,12 @@ from knowgraph.database.cypherbuild import (
     unwind,
 )
 from knowgraph.database.database import DatabaseManager
-from knowgraph.utils.environments import POSTGRES_DB
 
 GRAPH_LABEL = "graph"
 
 
 class AgeGraphManager:  # noqa: PLR0904
-    def __init__(self, graph_name: str = GRAPH_LABEL, dbname: str = POSTGRES_DB):
+    def __init__(self, graph_name: str = GRAPH_LABEL, dbname: str | None = None):
         self.graph_name = graph_name
         self.__db = DatabaseManager(dbname)
 

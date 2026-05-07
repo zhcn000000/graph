@@ -10,25 +10,33 @@ from sqlalchemy.schema import CreateSchema, CreateTable, DropSchema, DropTable
 from sqlalchemy_utils.functions.database import create_database, database_exists, drop_database
 from sqlmodel import SQLModel
 
+from knowgraph.utils.environments import POSTGRES_DB
+
 from .pool import pool_manager
 
 
 class DatabaseManager:
-    def __init__(self, dbname: str = "data") -> None:
+    def __init__(self, dbname: str | None = None) -> None:
+        if dbname is None:
+            dbname = POSTGRES_DB
         assert isinstance(dbname, str), "Database name must be a string."
         self.dbname = dbname
         self._engine: Engine | None = None
         self._async_engine: AsyncEngine | None = None
 
     @staticmethod
-    def create_db(dbname: str = "data") -> None:
+    def create_db(dbname: str | None = None) -> None:
+        if dbname is None:
+            dbname = POSTGRES_DB
         url = pool_manager.url
         url = url.set(database=dbname)
         if not database_exists(url):
             create_database(url)
 
     @staticmethod
-    def drop_db(dbname: str = "data") -> None:
+    def drop_db(dbname: str | None = None) -> None:
+        if dbname is None:
+            dbname = POSTGRES_DB
         url = pool_manager.url
         url = url.set(database=dbname)
         if input(

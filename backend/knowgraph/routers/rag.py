@@ -6,6 +6,7 @@ from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
 
 from knowgraph.database import RAGMode
+from knowgraph.database.document import DocumentStore
 from knowgraph.database.graph import AgeGraphManager
 
 router = APIRouter()
@@ -289,8 +290,8 @@ async def api_upload_document(file: UploadFile) -> DocumentUploadResponse:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
-        rag_mode = RAGMode()
-        doc_ids = await rag_mode.aload_from_document(tmp_path)
+        doc_store = DocumentStore()
+        doc_ids = await doc_store.aload_from_document(tmp_path)
         pathlib.Path(tmp_path).unlink()  # noqa: ASYNC240
         return DocumentUploadResponse(
             success=True,
@@ -304,8 +305,8 @@ async def api_upload_document(file: UploadFile) -> DocumentUploadResponse:
 @router.post("/documents/load-csv", response_model=CSVLoadResponse)
 async def api_load_csv(csv_path: str) -> CSVLoadResponse:
     try:
-        rag_mode = RAGMode()
-        file_ids = await rag_mode.aload_from_csv(csv_path)
+        doc_store = DocumentStore()
+        file_ids = await doc_store.aload_from_csv(csv_path)
         return CSVLoadResponse(
             success=True,
             status="CSV 文档加载成功",
@@ -318,8 +319,8 @@ async def api_load_csv(csv_path: str) -> CSVLoadResponse:
 @router.post("/documents/ingest-artifacts", response_model=ArtifactIngestResponse)
 async def api_ingest_artifacts(museum: str | None = None, limit: int | None = None) -> ArtifactIngestResponse:
     try:
-        rag_mode = RAGMode()
-        file_ids = await rag_mode.alingest_artifacts(museum=museum, limit=limit)
+        doc_store = DocumentStore()
+        file_ids = await doc_store.alingest_artifacts(museum=museum, limit=limit)
         return ArtifactIngestResponse(
             success=True,
             status="文物数据提取成功",

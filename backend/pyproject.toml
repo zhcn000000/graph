@@ -42,6 +42,7 @@ dependencies = [
   "cymple>=0.12.0",
   "curl-cffi>=0.15.0",
   "markitdown>=0.1.5",
+
 ]
 
 [project.scripts]
@@ -57,6 +58,8 @@ dev = [
   "ty>=0.0.32",
   "pytest>=8.4.2",
   "pytest-asyncio>=1.2.0",
+  "pytest-mock>=3.15.1",
+  "pytest-dependency>=0.6.1",
   "ipython>=9.8.0",
 ]
 
@@ -104,12 +107,7 @@ select = [
   "FURB",
   "PTH",
 ]
-ignore = [
-  "PLR",
-  "PLC0415",
-  "PLW0603",
-  "PLW3201"
-]
+ignore = ["PLR", "PLC0415", "PLW0603", "PLW3201"]
 fixable = ["ALL"]
 
 [tool.ruff.format]
@@ -129,6 +127,7 @@ python = ".venv/bin/python"
 
 [tool.ty.src]
 include = ["knowgraph"]
+
 [tool.ty.rules]
 division-by-zero = "error"
 possibly-unresolved-reference = "warn"
