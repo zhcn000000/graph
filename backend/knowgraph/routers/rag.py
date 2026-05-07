@@ -1,7 +1,8 @@
+import pathlib
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
 
 from knowgraph.database import RAGMode
@@ -255,3 +256,74 @@ async def api_entity_paths(request: PathQueryRequest) -> GraphOperationResponse:
         return GraphOperationResponse(success=True, status="实体路径查询成功", data={"paths": paths})
     except Exception as e:
         return GraphOperationResponse(success=False, status=f"查询实体路径失败: {e!s}")
+
+
+# ── Document Ingestion ──
+
+
+class DocumentUploadResponse(BaseModel):
+    success: bool
+    status: str
+    doc_ids: list[str]
+
+
+class CSVLoadResponse(BaseModel):
+    success: bool
+    status: str
+    file_ids: list[str]
+
+
+class ArtifactIngestResponse(BaseModel):
+    success: bool
+    status: str
+    file_ids: list[str]
+
+
+@router.post("/documents/upload", response_model=DocumentUploadResponse)
+async def api_upload_document(file: UploadFile) -> DocumentUploadResponse:
+    try:
+        import os
+        import tempfile
+
+        suffix = os.path.splitext(file.filename or "")[1]  # noqa: PTH122
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+        rag_mode = RAGMode()
+        doc_ids = await rag_mode.aload_from_document(tmp_path)
+        pathlib.Path(tmp_path).unlink()  # noqa: ASYNC240
+        return DocumentUploadResponse(
+            success=True,
+            status="文档上传成功",
+            doc_ids=[str(d) for d in doc_ids],
+        )
+    except Exception as e:
+        return DocumentUploadResponse(success=False, status=f"文档上传失败: {e!s}", doc_ids=[])
+
+
+@router.post("/documents/load-csv", response_model=CSVLoadResponse)
+async def api_load_csv(csv_path: str) -> CSVLoadResponse:
+    try:
+        rag_mode = RAGMode()
+        file_ids = await rag_mode.aload_from_csv(csv_path)
+        return CSVLoadResponse(
+            success=True,
+            status="CSV 文档加载成功",
+            file_ids=[str(f) for f in file_ids],
+        )
+    except Exception as e:
+        return CSVLoadResponse(success=False, status=f"CSV 文档加载失败: {e!s}", file_ids=[])
+
+
+@router.post("/documents/ingest-artifacts", response_model=ArtifactIngestResponse)
+async def api_ingest_artifacts(museum: str | None = None, limit: int | None = None) -> ArtifactIngestResponse:
+    try:
+        rag_mode = RAGMode()
+        file_ids = await rag_mode.alingest_artifacts(museum=museum, limit=limit)
+        return ArtifactIngestResponse(
+            success=True,
+            status="文物数据提取成功",
+            file_ids=[str(f) for f in file_ids],
+        )
+    except Exception as e:
+        return ArtifactIngestResponse(success=False, status=f"文物数据提取失败: {e!s}", file_ids=[])

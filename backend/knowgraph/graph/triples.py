@@ -8,8 +8,6 @@ import pandas as pd
 from pydantic import BaseModel
 from pydantic_ai import ModelSettings
 
-from ..chat.model import agent
-from ..chat.struct import ModelDeps
 from ..documents.models import Document
 from .schema import (
     EntityType,
@@ -248,6 +246,9 @@ class LLMExtractor:
         return await self._run_agent_with_prompt(user_prompt)
 
     async def _run_agent_with_prompt(self, prompt: str) -> list[ExtractedTriple]:
+        from ..chat.model import agent
+        from ..chat.struct import ModelDeps
+
         result = await agent.run(
             prompt,
             deps=ModelDeps(),

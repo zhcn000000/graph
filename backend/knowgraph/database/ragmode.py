@@ -1,6 +1,7 @@
 import operator
 import warnings
 from collections import Counter
+from pathlib import Path
 from typing import NamedTuple
 from uuid import UUID
 
@@ -602,6 +603,27 @@ class RAGMode:
         await self.aadd_documents([doc])
         return source_id
 
+    async def aload_from_document(self, file_path: str | Path) -> list[UUID]:
+        from knowgraph.documents.converter import aconvert_file
+
+        file_path = Path(file_path)
+        doc = await aconvert_file(file_path)
+        doc.name = file_path.stem
+        doc.link = f"file://{file_path.absolute()}"
+        doc.metadata = {"file_name": file_path.name}
+
+        source_id = await self.__source.ainsert_source(name=doc.name, link=doc.link)
+        if source_id is None:
+            existing_ids = await self.__source.aget_id_by_names([doc.name])
+            if existing_ids:
+                source_id = existing_ids[0]
+            else:
+                return []
+
+        doc_ids = await self.aadd_documents([doc])
+
+        return doc_ids
+
     async def aquery_documents(
         self,
         queries: list[str],
@@ -700,68 +722,67 @@ class RAGMode:
 
         return context
 
-    async def aload_from_csv(self, csv_path: str) -> list[UUID]:
-        structured_graph = DiGraph()
-        documents: list[Document] = []
-        source_infos: list[dict] = []
-        extraction_contents: list[str | None] = []
-        df = pd.read_csv(csv_path)
-        for _, row in df.iterrows():
-            try:
-                row_dict = row.to_dict()
-                row_input = CSVRowInput(**{str(k): v for k, v in row_dict.items() if pd.notna(v)})
-            except Exception as e:
-                warnings.warn(f"Skipping invalid CSV row: {e}", UserWarning, stacklevel=2)
-                continue
-
-            triples = row_input.to_artifact_triples()
-            for triple in triples:
-                structured_graph.add_node(
-                    triple.subject_uri,
-                    label=triple.subject_type.value.capitalize(),
-                    name=triple.subject_name,
-                    entity_type=triple.subject_type.value,
-                )
-                structured_graph.add_node(
-                    triple.object_uri,
-                    label=triple.object_type.value.capitalize(),
-                    name=triple.object_name,
-                    entity_type=triple.object_type.value,
-                )
-                rel_type = triple.predicate_uri.rsplit("/", 1)[-1]
-                structured_graph.add_edge(triple.subject_uri, triple.object_uri, label=rel_type)
-
-            structured_entities: list[str] = list({
-                uri for triple in triples for uri in (triple.subject_uri, triple.object_uri)
-            })
-
-            content_parts = [row_input.title]
-            if row_input.museum:
-                content_parts.append(row_input.museum)
-            if row_input.period:
-                content_parts.append(row_input.period)
-            if row_input.type:
-                content_parts.append(row_input.type)
-            if row_input.material:
-                content_parts.append(row_input.material)
-            if row_input.description:
-                content_parts.append(row_input.description)
-            content_str = "\n".join(content_parts)
-
-            doc = Document(
-                content=content_str,
-                name=row_input.title,
-                link=row_input.detail_url,
-                metadata=row_input.model_dump(),
-                entities=structured_entities,
+    @staticmethod
+    def _build_doc_and_source_from_row_input(
+        row_input: CSVRowInput,
+        structured_graph: DiGraph,
+    ) -> tuple[Document, str | None, dict]:
+        triples = row_input.to_artifact_triples()
+        for triple in triples:
+            structured_graph.add_node(
+                triple.subject_uri,
+                label=triple.subject_type.value.capitalize(),
+                name=triple.subject_name,
+                entity_type=triple.subject_type.value,
             )
-            documents.append(doc)
-            extraction_contents.append(row_input.description or None)
-            source_infos.append({
-                "name": row_input.title,
-                "link": row_input.detail_url,
-            })
+            structured_graph.add_node(
+                triple.object_uri,
+                label=triple.object_type.value.capitalize(),
+                name=triple.object_name,
+                entity_type=triple.object_type.value,
+            )
+            rel_type = triple.predicate_uri.rsplit("/", 1)[-1]
+            structured_graph.add_edge(triple.subject_uri, triple.object_uri, label=rel_type)
 
+        structured_entities: list[str] = list({
+            uri for triple in triples for uri in (triple.subject_uri, triple.object_uri)
+        })
+
+        content_parts = [row_input.title]
+        if row_input.museum:
+            content_parts.append(row_input.museum)
+        if row_input.period:
+            content_parts.append(row_input.period)
+        if row_input.type:
+            content_parts.append(row_input.type)
+        if row_input.material:
+            content_parts.append(row_input.material)
+        if row_input.description:
+            content_parts.append(row_input.description)
+        content_str = "\n".join(content_parts)
+
+        doc = Document(
+            content=content_str,
+            name=row_input.title,
+            link=row_input.detail_url,
+            metadata=row_input.model_dump(),
+            entities=structured_entities,
+        )
+        extraction_content = row_input.description or None
+        source_info = {
+            "name": row_input.title,
+            "link": row_input.detail_url,
+        }
+
+        return doc, extraction_content, source_info
+
+    async def _insert_artifact_batch(
+        self,
+        documents: list[Document],
+        extraction_contents: list[str | None],
+        source_infos: list[dict],
+        structured_graph: DiGraph,
+    ) -> list[UUID]:
         if not documents:
             return []
 
@@ -770,11 +791,7 @@ class RAGMode:
 
         async with self.__db.asession() as session:
             for info in source_infos:
-                stmt = (
-                    insert(Source)
-                    .values(name=info["name"], link=info["link"])
-                    .on_conflict_do_nothing(index_elements=[col(Source.name)])
-                )
+                stmt = insert(Source).values(**info).on_conflict_do_nothing(index_elements=[col(Source.name)])
                 await session.execute(stmt)
             await session.commit()
 
@@ -786,6 +803,30 @@ class RAGMode:
             file_ids = await self.__source.aget_id_by_names(source_names)
 
         return file_ids
+
+    async def aload_from_csv(self, csv_path: str) -> list[UUID]:
+        structured_graph = DiGraph()
+        documents: list[Document] = []
+        source_infos: list[dict] = []
+        extraction_contents: list[str | None] = []
+
+        df = pd.read_csv(csv_path)
+        for _, row in df.iterrows():
+            try:
+                row_dict = row.to_dict()
+                row_input = CSVRowInput(**{str(k): v for k, v in row_dict.items() if pd.notna(v)})
+            except Exception as e:
+                warnings.warn(f"Skipping invalid CSV row: {e}", UserWarning, stacklevel=2)
+                continue
+
+            doc, extraction_content, source_info = self._build_doc_and_source_from_row_input(
+                row_input, structured_graph
+            )
+            documents.append(doc)
+            extraction_contents.append(extraction_content)
+            source_infos.append(source_info)
+
+        return await self._insert_artifact_batch(documents, extraction_contents, source_infos, structured_graph)
 
     async def alingest_artifacts(
         self,
@@ -835,79 +876,15 @@ class RAGMode:
                 warnings.warn(f"Skipping artifact {artifact.id}: {e}", UserWarning, stacklevel=2)
                 continue
 
-            triples = row_input.to_artifact_triples()
-            for triple in triples:
-                structured_graph.add_node(
-                    triple.subject_uri,
-                    label=triple.subject_type.value.capitalize(),
-                    name=triple.subject_name,
-                    entity_type=triple.subject_type.value,
-                )
-                structured_graph.add_node(
-                    triple.object_uri,
-                    label=triple.object_type.value.capitalize(),
-                    name=triple.object_name,
-                    entity_type=triple.object_type.value,
-                )
-                rel_type = triple.predicate_uri.rsplit("/", 1)[-1]
-                structured_graph.add_edge(triple.subject_uri, triple.object_uri, label=rel_type)
-
-            structured_entities: list[str] = list({
-                uri for triple in triples for uri in (triple.subject_uri, triple.object_uri)
-            })
-
-            content_parts = [row_input.title]
-            if row_input.museum:
-                content_parts.append(row_input.museum)
-            if row_input.period:
-                content_parts.append(row_input.period)
-            if row_input.type:
-                content_parts.append(row_input.type)
-            if row_input.material:
-                content_parts.append(row_input.material)
-            if row_input.description:
-                content_parts.append(row_input.description)
-            content_str = "\n".join(content_parts)
-
-            doc = Document(
-                content=content_str,
-                name=row_input.title,
-                link=row_input.detail_url,
-                metadata=row_input.model_dump(),
-                entities=structured_entities,
+            doc, extraction_content, source_info = self._build_doc_and_source_from_row_input(
+                row_input, structured_graph
             )
+            source_info["artifact_id"] = artifact.id
             documents.append(doc)
-            extraction_contents.append(row_input.description or None)
-            source_infos.append({
-                "name": row_input.title,
-                "link": row_input.detail_url,
-                "artifact_id": artifact.id,
-            })
+            extraction_contents.append(extraction_content)
+            source_infos.append(source_info)
 
-        if not documents:
-            return []
-
-        if structured_graph.number_of_nodes() > 0:
-            await self.graph_manager.afrom_networkx(structured_graph)
-
-        async with self.__db.asession() as session:
-            for info in source_infos:
-                stmt = (
-                    insert(Source)
-                    .values(name=info["name"], link=info["link"], artifact_id=info["artifact_id"])
-                    .on_conflict_do_nothing(index_elements=[col(Source.name)])
-                )
-                await session.execute(stmt)
-            await session.commit()
-
-        await self.aadd_documents(documents, extraction_contents=extraction_contents)
-
-        source_names = list({d.name for d in documents if d.name})
-        file_ids: list[UUID] = []
-        if source_names:
-            file_ids = await self.__source.aget_id_by_names(source_names)
-
-        return file_ids
+        return await self._insert_artifact_batch(documents, extraction_contents, source_infos, structured_graph)
 
     async def aget_document_context(
         self,

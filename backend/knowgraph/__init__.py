@@ -23,7 +23,6 @@ __all__ = [
     "asplit_content",
     "atokenize_content",
     "chat_router",
-    "get_model",
     "rag_router",
     "rag_toolset",
 ]

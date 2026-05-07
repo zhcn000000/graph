@@ -41,6 +41,7 @@ dependencies = [
   "shapely>=2.1.2",
   "cymple>=0.12.0",
   "curl-cffi>=0.15.0",
+  "markitdown>=0.1.5",
 ]
 
 [project.scripts]
@@ -78,7 +79,7 @@ apache-age-python = { path = "wheel/apache_age_python-0.0.8-py3-none-any.whl" }
 line-length = 120
 indent-width = 4
 target-version = "py314"
-exclude = ["tests",".venv"]
+exclude = [".venv"]
 fix = true
 
 [tool.ruff.analyze]
@@ -128,8 +129,6 @@ python = ".venv/bin/python"
 
 [tool.ty.src]
 include = ["knowgraph"]
-exclude = ["tests"]
-
 [tool.ty.rules]
 division-by-zero = "error"
 possibly-unresolved-reference = "warn"
