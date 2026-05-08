@@ -1,67 +1,29 @@
 import logging
-import os
 from collections.abc import AsyncIterator
 
-import httpx
-import orjson
+import spacy
 from asyncer import asyncify
-from stanza import Document as StanzaDocument
-from stanza import Pipeline
-
-from knowgraph.utils.environments import find_project_directory, settings
+from spacy.language import Language
 
 from .tokenizer import get_tokenizer
 
-GH_PROXY = "https://gh-proxy.org/"
-HF_ENDPOINT = os.environ.get("HF_ENDPOINT", "https://hf-mirror.com")
-os.environ["HF_ENDPOINT"] = HF_ENDPOINT
-os.environ["HUGGINGFACE_HUB_CACHE"] = str(settings.DATA_ROOT / "huggingface")
-
-_nlp: Pipeline | None = None
-
-
-async def download_stanza_resource() -> None:
-    async with httpx.AsyncClient() as client:
-        resource_url = (
-            GH_PROXY
-            + "https://raw.githubusercontent.com/stanfordnlp/stanza-resources/refs/heads/main/resources_1.11.0.json"
-        )
-        response = await client.get(resource_url)
-        content = response.json()
-        content["url"] = (
-            "https://hf-mirror.com/stanfordnlp/stanza-{lang}/resolve/v{resources_version}/models/{filename}"
-        )
-        model_dir = settings.DATA_ROOT / "stanza"
-        model_dir.mkdir(parents=True, exist_ok=True)
-        (model_dir / "resources.json").write_bytes(orjson.dumps(content))
+_nlp: Language | None = None
 
 
 async def asplit_content(content: str, chunk_size: int = 512, chunk_overlap: int = 32) -> AsyncIterator[str]:
     global _nlp
     if _nlp is None:
-        logging.info(f"Initializing Stanza pipeline...{settings.DATA_ROOT / 'stanza'}")
-        model_dir = settings.DATA_ROOT / "stanza"
-        project_root = find_project_directory()
-        resource_json = project_root / "resources.json"
-        if not model_dir.exists() or not resource_json.exists():
-            await download_stanza_resource()
-
-        _nlp = Pipeline(
-            lang="zh-hans",
-            processors="tokenize",
-            tokenize_no_ssplit=False,
-            dir=str(model_dir),
-            download_method=2,
-        )
+        logging.info("Initializing spaCy pipeline...")
+        _nlp = spacy.load("zh_core_web_trf")
 
     try:
         assert _nlp is not None
-        doc: StanzaDocument = await asyncify(_nlp)(content)
+        doc = await asyncify(_nlp)(content)
     except Exception:
         yield content
         return
 
-    sentences = [sent.text for sent in doc.sentences]
+    sentences = [sent.text for sent in doc.sents]
     if not sentences:
         return
 
