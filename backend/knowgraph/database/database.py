@@ -34,14 +34,19 @@ class DatabaseManager:
             create_database(url)
 
     @staticmethod
-    def drop_db(dbname: str | None = None) -> None:
+    def drop_db(dbname: str | None = None, force: bool = False) -> None:
         if dbname is None:
             dbname = POSTGRES_DB
         url = pool_manager.url
         url = url.set(database=dbname)
-        if input(
-            f"Are you sure you want to drop the database '{dbname}'? This action cannot be undone. (y/n): ",
-        ).lower() == "y" and database_exists(url):
+        if (
+            force
+            or input(
+                f"Are you sure you want to drop the database '{dbname}'? This action cannot be undone. (y/n): ",
+            ).lower()
+            == "y"
+            and database_exists(url)
+        ):
             drop_database(url)
 
     def engine(self) -> Engine:

@@ -267,8 +267,11 @@ def mock_graph_manager(mocker: MockerFixture):
 
 
 @pytest.fixture(autouse=True)
-def mock_embedding(mocker: MockerFixture) -> Generator:
+def mock_embedding(request: pytest.FixtureRequest, mocker: MockerFixture) -> Generator:
     """Auto-mock embedding API to prevent network calls."""
+    if request.node.get_closest_marker("real_services"):
+        yield None
+        return
     fake_embedding = [[0.1] * 1024]
     mock_embed = mocker.AsyncMock(return_value=fake_embedding)
 
@@ -279,8 +282,11 @@ def mock_embedding(mocker: MockerFixture) -> Generator:
 
 
 @pytest.fixture(autouse=True)
-def mock_rerank(mocker: MockerFixture) -> Generator:
+def mock_rerank(request: pytest.FixtureRequest, mocker: MockerFixture) -> Generator:
     """Auto-mock rerank API to prevent network calls."""
+    if request.node.get_closest_marker("real_services"):
+        yield None
+        return
 
     async def _mock_rerank(query: str, documents, topn=None, skip_sorting=False):
         if not documents:
@@ -301,8 +307,11 @@ def mock_rerank(mocker: MockerFixture) -> Generator:
 
 
 @pytest.fixture(autouse=True)
-def mock_tokenizer(mocker: MockerFixture) -> Generator:
+def mock_tokenizer(request: pytest.FixtureRequest, mocker: MockerFixture) -> Generator:
     """Auto-mock tokenizer to prevent HuggingFace model download."""
+    if request.node.get_closest_marker("real_services"):
+        yield None
+        return
 
     def _mock_tokenize(content: str) -> Counter[int]:
         return Counter({hash(c) % 10000: 1 for c in content if c.strip()})
@@ -316,8 +325,11 @@ def mock_tokenizer(mocker: MockerFixture) -> Generator:
 
 
 @pytest.fixture(autouse=True)
-def mock_splitter(mocker: MockerFixture, sample_chunks: list[str]) -> Generator:
+def mock_splitter(request: pytest.FixtureRequest, mocker: MockerFixture, sample_chunks: list[str]) -> Generator:
     """Auto-mock splitter to prevent Stanza NLP model download."""
+    if request.node.get_closest_marker("real_services"):
+        yield None
+        return
 
     async def _mock_split(content: str, chunk_size: int = 512, chunk_overlap: int = 32):
         for chunk in sample_chunks:
