@@ -101,7 +101,23 @@ class TestRRFFusion:
         assert result == []
 
 
-@pytest.mark.usefixtures("setup_test_database")
+ARTIFACT_SEARCH_CONTENT = (
+    "中国古代青铜器历史悠久。商周时期的青铜器制作工艺精湛，造型优美。"
+    "饕餮纹和云雷纹是青铜器上常见的纹饰。"
+    "大都会博物馆收藏了大量中国青铜器，其中以商代青铜鼎最为著名。"
+)
+
+PORCELAIN_SEARCH_CONTENT = (
+    "景德镇青花瓷闻名于世。明朝青花瓷工艺达到顶峰，蓝色釉料独特。"
+    "元代青花瓷使用进口钴料，发色浓郁。清代青花瓷色彩更加丰富多变。"
+)
+
+PAINTING_SEARCH_CONTENT = (
+    "清代宫廷绘画以工笔重彩为主。题材包括山水、人物、花鸟。北京故宫博物院收藏了大量清代宫廷绘画精品。"
+)
+
+
+@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
 class TestInsertAndSearch:
     """Insert real documents then search using real embedding + reranking APIs."""
 
@@ -118,8 +134,7 @@ class TestInsertAndSearch:
         """Insert a document and verify vector search finds it."""
         source_id = await doc_store.ainsert_document(
             name="bronze_art.md",
-            content="中国古代青铜器历史悠久。商周时期的青铜器制作工艺精湛，造型优美。"
-            "饕餮纹和云雷纹是青铜器上常见的纹饰。",
+            content=ARTIFACT_SEARCH_CONTENT,
         )
         assert source_id is not None
 
@@ -137,11 +152,11 @@ class TestInsertAndSearch:
         """Multiple documents should be findable by hybrid search."""
         await doc_store.ainsert_document(
             name="porcelain.md",
-            content="景德镇青花瓷闻名于世。明朝青花瓷工艺达到顶峰，蓝色釉料独特。",
+            content=PORCELAIN_SEARCH_CONTENT,
         )
         await doc_store.ainsert_document(
             name="painting.md",
-            content="清代宫廷绘画以工笔重彩为主。题材包括山水、人物、花鸟。",
+            content=PAINTING_SEARCH_CONTENT,
         )
 
         results, _ = await rag_mode.ahyprid_search(
@@ -167,8 +182,8 @@ class TestInsertAndSearch:
     async def test_aquery_documents(self, doc_store, rag_mode):
         """aquery_documents should return structured search results."""
         await doc_store.ainsert_document(
-            name="bronze.md",
-            content="商代青铜鼎高50cm，用于祭祀仪式。饕餮纹是其标志性纹饰。",
+            name="bronze_ritual.md",
+            content="商代青铜鼎高50cm，用于祭祀仪式。饕餮纹是其标志性纹饰。西周青铜器铭文记载了大量历史事件。",
         )
 
         results = await rag_mode.aquery_documents(
@@ -184,8 +199,8 @@ class TestInsertAndSearch:
     async def test_search_with_graph(self, doc_store, rag_mode):
         """Search with graph boosting enabled should work."""
         await doc_store.ainsert_document(
-            name="museum_art.md",
-            content="大都会博物馆收藏了大量中国青铜器。其中商代青铜鼎最为著名。",
+            name="museum_collection.md",
+            content=ARTIFACT_SEARCH_CONTENT,
         )
 
         results, graph_entities = await rag_mode.ahyprid_search(
@@ -197,7 +212,7 @@ class TestInsertAndSearch:
         assert len(results) > 0
 
 
-@pytest.mark.usefixtures("setup_test_database")
+@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
 class TestGetAndDelete:
     @pytest.fixture
     def doc_store(self):
@@ -212,7 +227,7 @@ class TestGetAndDelete:
         """aget_by_ids should return documents for given IDs."""
         source_id = await doc_store.ainsert_document(
             name="get_by_id_test.md",
-            content="测试获取文档内容。",
+            content="测试获取文档内容。青铜鼎是商代重要祭祀礼器。",
         )
         assert source_id is not None
 
@@ -231,7 +246,7 @@ class TestGetAndDelete:
 
         documents = await rag_mode.aget_by_ids([doc_id_str])
         assert len(documents) == 1
-        assert "测试获取文档内容" in documents[0].content
+        assert "青铜鼎" in documents[0].content
 
     @pytest.mark.usefixtures("clean_tables")
     async def test_aget_by_ids_empty(self, rag_mode):
@@ -248,7 +263,7 @@ class TestGetAndDelete:
         """Delete documents by ID and verify removal."""
         source_id = await doc_store.ainsert_document(
             name="delete_test.md",
-            content="待删除的文档内容。",
+            content="待删除的文档内容。青花瓷是景德镇的代表性瓷器。",
         )
         assert source_id is not None
 
@@ -287,7 +302,7 @@ class TestGetAndDelete:
         """Remove documents by file_id."""
         source_id = await doc_store.ainsert_document(
             name="remove_test.md",
-            content="待移除的文档内容。",
+            content="待移除的文档内容。清代绘画以山水花鸟为主题。",
         )
         assert source_id is not None
 
@@ -301,7 +316,7 @@ class TestGetAndDelete:
         assert result == []
 
 
-@pytest.mark.usefixtures("setup_test_database")
+@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
 class TestGraphContext:
     @pytest.fixture
     def doc_store(self):
@@ -316,7 +331,7 @@ class TestGraphContext:
         """Graph context query should return entities/paths/relationships."""
         await doc_store.ainsert_document(
             name="graph_context.md",
-            content="大都会博物馆收藏的商代青铜鼎是重要文物。",
+            content="大都会博物馆收藏的商代青铜鼎是重要文物。青铜鼎是青铜器的典型代表，纹饰精美。",
         )
 
         context = await rag_mode.aquery_graph_context(
@@ -365,7 +380,7 @@ class TestGraphContext:
         """aget_document_entities should return entities associated with document."""
         await doc_store.ainsert_document(
             name="entities_context.md",
-            content="景德镇青花瓷工艺精湛。大都会博物馆收藏了大量中国瓷器。",
+            content="景德镇青花瓷工艺精湛。大都会博物馆收藏了大量中国瓷器。青花瓷以其蓝色釉料闻名于世。",
         )
 
         db = DatabaseManager(TEST_DB_NAME)

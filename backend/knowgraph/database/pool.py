@@ -1,3 +1,4 @@
+import logging
 from contextlib import suppress
 from time import sleep
 
@@ -15,7 +16,7 @@ from psycopg.types.hstore import register_hstore
 from psycopg.types.json import set_json_dumps, set_json_loads
 from psycopg.types.shapely import register_shapely
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
-from sqlalchemy import URL, Engine, NullPool, create_engine
+from sqlalchemy import URL, Engine, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from knowgraph.utils.environments import settings
@@ -177,6 +178,7 @@ class ConnectionPoolManager:
                 async with conn.cursor() as cursor:
                     await cursor.execute("SET search_path TO public,bm25_catalog,tokenizer_catalog;")
 
+            logging.debug(f"Creating new connection pool for database: {conninfo}")
             self._apools[dbname] = AsyncConnectionPool(
                 conninfo,
                 name=dbname,
@@ -198,12 +200,11 @@ class ConnectionPoolManager:
         if dbname is None:
             dbname = self.dbname
         url = self.url.set(database=dbname)
-        pool = self.pool(dbname=dbname)
         if dbname not in self._engines:
             self._engines[dbname] = create_engine(
                 url=url,
-                creator=pool.getconn,
-                poolclass=NullPool,
+                # creator=self.pool(dbname=dbname).getconn,
+                # poolclass=NullPool,
             )
         return self._engines[dbname]
 
@@ -211,12 +212,11 @@ class ConnectionPoolManager:
         if dbname is None:
             dbname = self.dbname
         url = self.url.set(database=dbname)
-        pool = await self.apool(dbname=dbname)
         if dbname not in self._aengines:
             self._aengines[dbname] = create_async_engine(
                 url=url,
-                async_creator=pool.getconn,
-                poolclass=NullPool,
+                # async_creator=(await self.apool(dbname=dbname)).getconn,
+                # poolclass=NullPool,
             )
         return self._aengines[dbname]
 

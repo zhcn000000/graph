@@ -4,7 +4,7 @@ from .database import DatabaseManager
 from .graph import AgeGraphManager
 
 
-async def init_db(alter_system: bool = True, dbname: str | None = None) -> bool:
+async def init_db(alter_system: bool = False, dbname: str | None = None) -> bool:
     status = DatabaseManager.create_db(dbname)
     db = DatabaseManager(dbname=dbname)
     async with db.acursor(autocommit=True) as cur:

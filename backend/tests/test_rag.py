@@ -11,7 +11,7 @@ from knowgraph.documents.models import Document
 TEST_DB_NAME = "test_data"
 
 
-@pytest.mark.usefixtures("setup_test_database")
+@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
 class TestAaddDocuments:
     @pytest.fixture
     def doc_store(self):
@@ -25,20 +25,30 @@ class TestAaddDocuments:
     @pytest.mark.usefixtures("clean_tables")
     async def test_aadd_documents_no_matching_source(self, doc_store):
         """Document without matching Source should be skipped."""
-        doc = Document(content="test content", name="nonexistent_source")
+        doc = Document(
+            content="商代青铜器是重要的考古发现。饕餮纹和云雷纹是常见纹饰。",
+            name="nonexistent_source.md",
+        )
         result = await doc_store.aadd_documents([doc])
         assert result == []
 
     @pytest.mark.usefixtures("clean_tables")
-    async def test_aadd_documents_with_predefined_entities(self, doc_store):
+    async def test_aadd_documents_with_predefined_entities(
+        self,
+        doc_store,
+        sample_documents: list[Document],
+    ):
         """Documents with pre-populated entities should store them."""
+        doc_name = sample_documents[0].name
+        assert doc_name is not None
+
         source_store = SourceStore(dbname=TEST_DB_NAME)
-        source_id = await source_store.ainsert_source(name="entities_test.md")
+        source_id = await source_store.ainsert_source(name=doc_name)
         assert source_id is not None
 
         doc = Document(
-            content="商代青铜鼎是重要的祭祀器物。",
-            name="entities_test.md",
+            content=sample_documents[0].content,
+            name=doc_name,
             entities=["cidoc:artifact/custom_entity"],
         )
         result = await doc_store.aadd_documents([doc])
@@ -57,27 +67,37 @@ class TestAaddDocuments:
             assert "cidoc:artifact/custom_entity" in all_entities
 
 
-@pytest.mark.usefixtures("setup_test_database")
+@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
 class TestIntegrationFlow:
     @pytest.fixture
     def doc_store(self):
         return DocumentStore(dbname=TEST_DB_NAME)
 
     @pytest.mark.usefixtures("clean_tables")
-    async def test_multiple_documents_inserted_together(self, doc_store):
+    async def test_multiple_documents_inserted_together(
+        self,
+        doc_store,
+        sample_documents: list[Document],
+    ):
         """Insert multiple documents via aadd_documents with pre-created sources."""
         source_store = SourceStore(dbname=TEST_DB_NAME)
-        for name in ("doc_a.md", "doc_b.md"):
-            await source_store.ainsert_source(name=name)
+        for doc in sample_documents:
+            assert doc.name is not None
+            await source_store.ainsert_source(name=doc.name)
+
+        name_a = sample_documents[0].name
+        name_b = sample_documents[1].name
+        assert name_a is not None
+        assert name_b is not None
 
         docs = [
             Document(
-                content="青铜器是中国古代文明的瑰宝。",
-                name="doc_a.md",
+                content=sample_documents[0].content,
+                name=name_a,
             ),
             Document(
-                content="青花瓷以其独特的蓝色釉料闻名于世。",
-                name="doc_b.md",
+                content=sample_documents[1].content,
+                name=name_b,
             ),
         ]
 
@@ -85,11 +105,12 @@ class TestIntegrationFlow:
         assert len(result) > 0
 
         db = DatabaseManager(TEST_DB_NAME)
+        source_names = [name_a, name_b]
         async with db.asession() as session:
             cnt_stmt = select(func.count(col(DocumentTable.id))).where(
                 col(DocumentTable.file_id).in_(
-                    select(col(Source.id)).where(col(Source.name).in_(["doc_a.md", "doc_b.md"])),
+                    select(col(Source.id)).where(col(Source.name).in_(source_names)),
                 ),
             )
             result = await session.execute(cnt_stmt)
-            assert result.scalar() >= 2
+            assert (result.scalar() or 0) >= 2

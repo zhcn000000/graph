@@ -1,6 +1,8 @@
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic_ai.models.test import TestModel
 
 from knowgraph.documents.models import Document
 from knowgraph.graph.schema import (
@@ -9,6 +11,7 @@ from knowgraph.graph.schema import (
     ExtractedTriple,
     RelationshipType,
 )
+from knowgraph.graph.triples import CSVRowInput, LLMExtractor
 from knowgraph.utils.environments import settings
 
 TEST_CSV_ROWS = [
@@ -142,6 +145,36 @@ def sample_entities() -> list[ExtractedTriple]:
             description="青铜鼎类型为青铜器",
         ),
     ]
+
+
+@pytest.fixture
+def sample_entities_from_csv() -> list[ExtractedTriple]:
+    triples: list[ExtractedTriple] = []
+    for row_dict in TEST_CSV_ROWS:
+        clean_row = {k: v for k, v in row_dict.items() if v is not None}
+        csv_input = CSVRowInput(**clean_row)
+        for t in csv_input.to_artifact_triples():
+            triples.append(
+                ExtractedTriple(
+                    subject=ExtractedEntity(name=t.subject_name, entity_type=t.subject_type),
+                    predicate=RelationshipType(t.predicate_uri.rsplit("/", 1)[-1]),
+                    object=ExtractedEntity(name=t.object_name, entity_type=t.object_type),
+                    description=t.description,
+                )
+            )
+    return triples
+
+
+@pytest.fixture(autouse=True)
+def mock_llm_extractor(sample_entities: list[ExtractedTriple]):
+    mock = AsyncMock(return_value=sample_entities)
+    with patch.object(LLMExtractor, "_run_agent_with_prompt", mock):
+        yield
+
+
+@pytest.fixture
+def test_model(sample_entities: list[ExtractedTriple]) -> TestModel:
+    return TestModel(custom_output_args=sample_entities)
 
 
 @pytest.fixture

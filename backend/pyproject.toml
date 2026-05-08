@@ -137,6 +137,5 @@ unsupported-dynamic-base = "warn"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-markers = [
-    "real_services: mark test to use real embedding/rerank/tokenizer/splitter services instead of mocks",
-]
+log_cli = true
+log_cli_level = "DEBUG"
