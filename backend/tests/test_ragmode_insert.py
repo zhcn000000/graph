@@ -1,6 +1,7 @@
 from uuid import UUID
 
 import pytest
+from pytest_mock import MockerFixture
 
 from knowgraph.database.document import DocumentStore
 from knowgraph.documents.models import Document
@@ -35,7 +36,7 @@ class TestAaddDocuments:
         sample_documents: list[Document],
         mock_source_row: tuple,
         mock_doc_row: tuple,
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Documents with matching sources should be inserted with chunking, vectors, tokens."""
         session = mocker.MagicMock()
@@ -60,7 +61,7 @@ class TestAaddDocuments:
     async def test_aadd_documents_no_matching_source(
         self,
         doc_store: DocumentStore,
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Documents without matching Source entries should be skipped with a warning."""
         doc = Document(content="test content", name="nonexistent_source")
@@ -89,7 +90,7 @@ class TestAaddDocuments:
         doc_store: DocumentStore,
         mock_source_row: tuple,
         mock_doc_row: tuple,
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Duplicate chunk content should be deduplicated."""
         doc = Document(
@@ -128,7 +129,7 @@ class TestAaddDocuments:
         sample_documents: list[Document],
         mock_source_row: tuple,
         mock_doc_row: tuple,
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """When extraction_contents is provided, LLM extraction uses it instead of doc.content."""
         session = mocker.MagicMock()
@@ -155,7 +156,7 @@ class TestAaddDocuments:
         doc_store: DocumentStore,
         mock_source_row: tuple,
         mock_doc_row: tuple,
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Documents with pre-populated entities should include them in insert."""
         doc = Document(
@@ -197,7 +198,7 @@ class TestAloadFromCSV:
         self,
         doc_store: DocumentStore,
         clean_tables: None,
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """CSV ingestion should create graph nodes, sources, and chunked documents in real DB."""
         file_ids = await doc_store.aload_from_csv("/fake/path/artifacts.csv")
@@ -212,7 +213,7 @@ class TestAloadFromCSV:
 
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:
-            stmt = select(Source.name).where(Source.id.in_(file_ids))
+            stmt = select(col(Source.name)).where(col(Source.id).in_(file_ids))
             result = await session.execute(stmt)
             source_names = {row[0] for row in result.fetchall()}
             assert "青铜鼎" in source_names
@@ -229,7 +230,7 @@ class TestAloadFromCSV:
         self,
         doc_store: DocumentStore,
         clean_tables: None,
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Empty CSV should return empty results."""
         import pandas as pd
@@ -253,7 +254,7 @@ class TestAlingestArtifacts:
         return store
 
     @pytest.fixture
-    def mock_artifact_row(self, mocker: pytest.MockFixture):
+    def mock_artifact_row(self, mocker: MockerFixture):
         """Creates a mock ArtifactRawTable row."""
         row = mocker.MagicMock()
         row.id = UUID("00000000-0000-0000-0000-000000000001")
@@ -279,7 +280,7 @@ class TestAlingestArtifacts:
         doc_store: DocumentStore,
         clean_tables: None,
         mock_artifact_row,
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Artifact ingestion should convert crawled data to documents with triples."""
         session = mocker.MagicMock()
@@ -303,7 +304,7 @@ class TestAlingestArtifacts:
         self,
         doc_store: DocumentStore,
         clean_tables: None,
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """No artifacts found should return empty results."""
         session = mocker.MagicMock()
@@ -336,7 +337,7 @@ class TestAinsertDocument:
         doc_store: DocumentStore,
         source_id: UUID,
         mock_uuid_list: list[UUID],
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Inserting a new document should create source, chunk content, and store."""
         src_store_mock = mocker.MagicMock()
@@ -374,7 +375,7 @@ class TestAinsertDocument:
         doc_store: DocumentStore,
         source_id: UUID,
         mock_uuid_list: list[UUID],
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Inserting with existing source name should reuse the source."""
         src_store_mock = mocker.MagicMock()
@@ -413,7 +414,7 @@ class TestAinsertDocument:
         doc_store: DocumentStore,
         source_id: UUID,
         mock_uuid_list: list[UUID],
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Inserting a document without a link should work."""
         src_store_mock = mocker.MagicMock()
@@ -457,7 +458,7 @@ class TestIntegrationInsertionFlow:
         doc_store: DocumentStore,
         source_id: UUID,
         mock_uuid_list: list[UUID],
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Simulate the full flow: aconvert_file -> ainsert_document."""
         from knowgraph.documents.converter import Document as ConverterDocument
@@ -503,7 +504,7 @@ class TestIntegrationInsertionFlow:
         doc_store: DocumentStore,
         source_id: UUID,
         mock_uuid_list: list[UUID],
-        mocker: pytest.MockFixture,
+        mocker: MockerFixture,
     ):
         """Simulate converting multiple files then inserting all at once."""
         converted_files = [

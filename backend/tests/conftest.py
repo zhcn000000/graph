@@ -1,5 +1,7 @@
 import os
 
+from pytest_mock import MockerFixture
+
 # Set test database name BEFORE any knowgraph module imports
 os.environ["POSTGRES_DB"] = "test_data"
 
@@ -157,7 +159,7 @@ def source_id() -> UUID:
 
 
 @pytest.fixture
-def mock_db_session(mocker: pytest.MockFixture):
+def mock_db_session(mocker: MockerFixture):
     """Creates a mock SQLAlchemy async session using pytest-mock."""
     session = mocker.MagicMock()
     session.execute = mocker.AsyncMock()
@@ -176,7 +178,7 @@ def mock_db_session(mocker: pytest.MockFixture):
 
 
 @pytest.fixture
-def mock_scalar_result(mocker: pytest.MockFixture):
+def mock_scalar_result(mocker: MockerFixture):
     result = mocker.MagicMock()
     result.scalar = mocker.MagicMock(return_value=1)
     result.scalars = mocker.MagicMock()
@@ -238,7 +240,7 @@ def real_graph_manager():
 
 
 @pytest.fixture
-def mock_pool_manager(mocker: pytest.MockFixture):
+def mock_pool_manager(mocker: MockerFixture):
     """Mock ConnectionPoolManager to prevent real DB connections in unit tests."""
     mock_pool = mocker.MagicMock()
     mock_pool.aengine = mocker.AsyncMock()
@@ -248,7 +250,7 @@ def mock_pool_manager(mocker: pytest.MockFixture):
 
 
 @pytest.fixture
-def mock_graph_manager(mocker: pytest.MockFixture):
+def mock_graph_manager(mocker: MockerFixture):
     """Creates a mock AgeGraphManager using pytest-mock."""
     mock = mocker.MagicMock()
     mock.afrom_networkx = mocker.AsyncMock(return_value=True)
@@ -265,7 +267,7 @@ def mock_graph_manager(mocker: pytest.MockFixture):
 
 
 @pytest.fixture(autouse=True)
-def mock_embedding(mocker: pytest.MockFixture) -> Generator:
+def mock_embedding(mocker: MockerFixture) -> Generator:
     """Auto-mock embedding API to prevent network calls."""
     fake_embedding = [[0.1] * 1024]
     mock_embed = mocker.AsyncMock(return_value=fake_embedding)
@@ -277,7 +279,7 @@ def mock_embedding(mocker: pytest.MockFixture) -> Generator:
 
 
 @pytest.fixture(autouse=True)
-def mock_rerank(mocker: pytest.MockFixture) -> Generator:
+def mock_rerank(mocker: MockerFixture) -> Generator:
     """Auto-mock rerank API to prevent network calls."""
 
     async def _mock_rerank(query: str, documents, topn=None, skip_sorting=False):
@@ -299,7 +301,7 @@ def mock_rerank(mocker: pytest.MockFixture) -> Generator:
 
 
 @pytest.fixture(autouse=True)
-def mock_tokenizer(mocker: pytest.MockFixture) -> Generator:
+def mock_tokenizer(mocker: MockerFixture) -> Generator:
     """Auto-mock tokenizer to prevent HuggingFace model download."""
 
     def _mock_tokenize(content: str) -> Counter[int]:
@@ -314,7 +316,7 @@ def mock_tokenizer(mocker: pytest.MockFixture) -> Generator:
 
 
 @pytest.fixture(autouse=True)
-def mock_splitter(mocker: pytest.MockFixture, sample_chunks: list[str]) -> Generator:
+def mock_splitter(mocker: MockerFixture, sample_chunks: list[str]) -> Generator:
     """Auto-mock splitter to prevent Stanza NLP model download."""
 
     async def _mock_split(content: str, chunk_size: int = 512, chunk_overlap: int = 32):
@@ -329,7 +331,7 @@ def mock_splitter(mocker: pytest.MockFixture, sample_chunks: list[str]) -> Gener
 
 
 @pytest.fixture(autouse=True)
-def mock_llm_extractor(mocker: pytest.MockFixture, sample_entities: list[ExtractedTriple]) -> Generator:
+def mock_llm_extractor(mocker: MockerFixture, sample_entities: list[ExtractedTriple]) -> Generator:
     """Auto-mock LLM extractor to prevent AI model calls."""
     mock_ext = mocker.AsyncMock(return_value=sample_entities)
     mocker.patch("knowgraph.graph.triples.LLMExtractor.aextract_from_document", mock_ext)
@@ -339,7 +341,7 @@ def mock_llm_extractor(mocker: pytest.MockFixture, sample_entities: list[Extract
 
 
 @pytest.fixture(autouse=True)
-def mock_pandas_read_csv(mocker: pytest.MockFixture) -> Generator:
+def mock_pandas_read_csv(mocker: MockerFixture) -> Generator:
     """Auto-mock pandas read_csv to prevent file I/O."""
     import pandas as pd
 

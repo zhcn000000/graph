@@ -1,3 +1,4 @@
+import os
 from collections.abc import Sequence
 from copy import deepcopy
 from typing import cast
@@ -9,7 +10,7 @@ from .models import Document
 MODEL_URL = "https://api.siliconflow.cn"
 EMBEDDING_UID = "BAAI/bge-m3"
 RERANKER_UID = "BAAI/bge-reranker-v2-m3"
-API_KEY = None
+API_KEY = os.environ.get("SILICONFLOW_API_KEY")
 
 
 async def aembed_documents(documents: Sequence[Document | str]) -> list[list[float]]:
