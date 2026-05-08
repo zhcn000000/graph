@@ -18,12 +18,7 @@ from psycopg_pool import AsyncConnectionPool, ConnectionPool
 from sqlalchemy import URL, Engine, NullPool, create_engine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from knowgraph.utils.environments import (
-    POSTGRES_HOST,
-    POSTGRES_PASSWORD,
-    POSTGRES_PORT,
-    POSTGRES_USER,
-)
+from knowgraph.utils.environments import settings
 
 from .types import BM25Dumper, BM25Loader
 
@@ -99,15 +94,17 @@ class ConnectionPoolManager:
     _aengines: dict[str, AsyncEngine] = {}
 
     def __init__(self, min_size: int = 1, max_size: int = 20, timeout: int = 5) -> None:
-        self.user = POSTGRES_USER
-        self.password = POSTGRES_PASSWORD
-        self.host = POSTGRES_HOST
-        self.port = POSTGRES_PORT
+        self.user = settings.POSTGRES_USER
+        self.password = settings.POSTGRES_PASSWORD
+        self.host = settings.POSTGRES_HOST
+        self.port = settings.POSTGRES_PORT
+        self.dbname = settings.POSTGRES_DB
         self.conninfo = make_conninfo(
             user=self.user,
-            password=self.password,
+            password=self.password.get_secret_value(),
             host=self.host,
             port=self.port,
+            dbname=self.dbname,
             connect_timeout=timeout,
         )
         self.max_size = max_size
@@ -115,12 +112,15 @@ class ConnectionPoolManager:
         self.url = URL.create(
             drivername="postgresql+psycopg",
             username=self.user,
-            password=self.password,
+            password=self.password.get_secret_value(),
             host=self.host,
             port=self.port,
+            database=self.dbname,
         )
 
-    def pool(self, dbname: str = "postgres") -> ConnectionPool:
+    def pool(self, dbname: str | None = None) -> ConnectionPool:
+        if dbname is None:
+            dbname = self.dbname
         conninfo = make_conninfo(dbname=dbname, conninfo=self.conninfo)
         if dbname not in self._pools:
 
@@ -155,8 +155,10 @@ class ConnectionPoolManager:
             self._pools[dbname].open()
         return self._pools[dbname]
 
-    async def apool(self, dbname: str = "postgres") -> AsyncConnectionPool:
+    async def apool(self, dbname: str | None = None) -> AsyncConnectionPool:
         conninfo = make_conninfo(dbname=dbname, conninfo=self.conninfo)
+        if dbname is None:
+            dbname = self.dbname
         if dbname not in self._apools:
 
             async def configure_conn(conn: AsyncConnection) -> None:
@@ -192,7 +194,9 @@ class ConnectionPoolManager:
             await self._apools[dbname].open()
         return self._apools[dbname]
 
-    def engine(self, dbname: str = "postgres") -> Engine:
+    def engine(self, dbname: str | None = None) -> Engine:
+        if dbname is None:
+            dbname = self.dbname
         url = self.url.set(database=dbname)
         pool = self.pool(dbname=dbname)
         if dbname not in self._engines:
@@ -203,7 +207,9 @@ class ConnectionPoolManager:
             )
         return self._engines[dbname]
 
-    async def aengine(self, dbname: str = "postgres") -> AsyncEngine:
+    async def aengine(self, dbname: str | None = None) -> AsyncEngine:
+        if dbname is None:
+            dbname = self.dbname
         url = self.url.set(database=dbname)
         pool = await self.apool(dbname=dbname)
         if dbname not in self._aengines:

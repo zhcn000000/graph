@@ -1,12 +1,3 @@
-import os
-
-from pytest_mock import MockerFixture
-
-# Set test database name BEFORE any knowgraph module imports
-os.environ["POSTGRES_DB"] = "test_data"
-
-from collections import Counter
-from collections.abc import Generator
 from uuid import UUID, uuid4
 
 import pytest
@@ -18,6 +9,7 @@ from knowgraph.graph.schema import (
     ExtractedTriple,
     RelationshipType,
 )
+from knowgraph.utils.environments import settings
 
 TEST_CSV_ROWS = [
     {
@@ -69,6 +61,10 @@ TEST_CSV_ROWS = [
         "crawl_date": None,
     },
 ]
+
+
+TEST_DB_NAME = "test_data"
+settings.POSTGRES_DB = TEST_DB_NAME
 
 
 def make_sample_vector() -> list[list[float]]:
@@ -158,53 +154,13 @@ def source_id() -> UUID:
     return uuid4()
 
 
-@pytest.fixture
-def mock_db_session(mocker: MockerFixture):
-    """Creates a mock SQLAlchemy async session using pytest-mock."""
-    session = mocker.MagicMock()
-    session.execute = mocker.AsyncMock()
-    session.commit = mocker.AsyncMock()
-    session.rollback = mocker.AsyncMock()
-    session.in_transaction = mocker.MagicMock(return_value=True)
-    session.get = mocker.AsyncMock()
-    session.add = mocker.MagicMock()
-    session.flush = mocker.AsyncMock()
-    session.refresh = mocker.AsyncMock()
-
-    session.__aenter__ = mocker.AsyncMock(return_value=session)
-    session.__aexit__ = mocker.AsyncMock(return_value=None)
-
-    return session
-
-
-@pytest.fixture
-def mock_scalar_result(mocker: MockerFixture):
-    result = mocker.MagicMock()
-    result.scalar = mocker.MagicMock(return_value=1)
-    result.scalars = mocker.MagicMock()
-    result.fetchone = mocker.MagicMock()
-    result.fetchall = mocker.MagicMock()
-    result.rowcount = 1
-    return result
-
-
-# =============================================================================
-# Real Database Fixtures (for integration tests)
-# =============================================================================
-
-TEST_DB_NAME = "test_data"
-
-
 @pytest.fixture(scope="session")
-def setup_test_database():
+async def setup_test_database():
     """Session-scoped fixture: creates and initializes the test database once."""
-    import asyncio
 
-    from knowgraph.database.database import DatabaseManager
     from knowgraph.database.initdb import init_db
 
-    DatabaseManager.create_db(TEST_DB_NAME)
-    asyncio.run(init_db(alter_system=False))
+    await init_db(alter_system=False, dbname=TEST_DB_NAME)
 
 
 @pytest.fixture
@@ -213,152 +169,35 @@ async def clean_tables():
 
     Depends on setup_test_database to ensure the database exists.
     """
-    from sqlalchemy import delete
 
     from knowgraph.database.database import DatabaseManager
-    from knowgraph.database.tables import ArtifactRawTable, DocumentTable, Source
 
     db = DatabaseManager(TEST_DB_NAME)
-    async with db.asession() as session:
-        await session.execute(delete(DocumentTable))
-        await session.execute(delete(Source))
-        await session.execute(delete(ArtifactRawTable))
-        await session.commit()
+    await db.adrop_all()
+    await db.acreate_all()
 
 
 @pytest.fixture
-def real_graph_manager():
+async def clean_test_database():
+    """Function-scoped fixture: drops and recreates the entire test database."""
+
+    from knowgraph.database.initdb import clean_db
+
+    await clean_db(dbname=TEST_DB_NAME, force=True)
+
+
+@pytest.fixture
+async def reset_test_database():
+    """Function-scoped fixture: resets the test database by dropping and recreating it."""
+
+    from knowgraph.database.initdb import reset_db
+
+    await reset_db(dbname=TEST_DB_NAME, force=True)
+
+
+@pytest.fixture
+def graph_manager():
     """Provides a real AgeGraphManager connected to the test database."""
     from knowgraph.database.graph import AgeGraphManager
 
     return AgeGraphManager(dbname=TEST_DB_NAME)
-
-
-# =============================================================================
-# Mock Database Fixtures (for unit tests that don't use real DB)
-# =============================================================================
-
-
-@pytest.fixture
-def mock_pool_manager(mocker: MockerFixture):
-    """Mock ConnectionPoolManager to prevent real DB connections in unit tests."""
-    mock_pool = mocker.MagicMock()
-    mock_pool.aengine = mocker.AsyncMock()
-    mocker.patch("knowgraph.database.pool.pool_manager", mock_pool)
-    mocker.patch("knowgraph.database.database.pool_manager", mock_pool)
-    return mock_pool
-
-
-@pytest.fixture
-def mock_graph_manager(mocker: MockerFixture):
-    """Creates a mock AgeGraphManager using pytest-mock."""
-    mock = mocker.MagicMock()
-    mock.afrom_networkx = mocker.AsyncMock(return_value=True)
-    mock.atraverse_multi = mocker.AsyncMock(return_value=mocker.MagicMock())
-    mock.aget_vertices_by_uris = mocker.AsyncMock(return_value=[])
-    mock.aget_all_edge_connections = mocker.AsyncMock(return_value=[])
-    mock.aquery_edge_connections_by_entity_names = mocker.AsyncMock(return_value=[])
-    return mock
-
-
-# =============================================================================
-# External Service Mocks (always mocked — embedding, tokenizer, LLM, splitter)
-# =============================================================================
-
-
-@pytest.fixture(autouse=True)
-def mock_embedding(request: pytest.FixtureRequest, mocker: MockerFixture) -> Generator:
-    """Auto-mock embedding API to prevent network calls."""
-    if request.node.get_closest_marker("real_services"):
-        yield None
-        return
-    fake_embedding = [[0.1] * 1024]
-    mock_embed = mocker.AsyncMock(return_value=fake_embedding)
-
-    mocker.patch("knowgraph.documents.embedder.aembed_documents", mock_embed)
-    mocker.patch("knowgraph.database.ragmode.aembed_documents", mock_embed)
-    mocker.patch("knowgraph.database.document.aembed_documents", mock_embed)
-    yield mock_embed
-
-
-@pytest.fixture(autouse=True)
-def mock_rerank(request: pytest.FixtureRequest, mocker: MockerFixture) -> Generator:
-    """Auto-mock rerank API to prevent network calls."""
-    if request.node.get_closest_marker("real_services"):
-        yield None
-        return
-
-    async def _mock_rerank(query: str, documents, topn=None, skip_sorting=False):
-        if not documents:
-            return []
-        for doc in documents:
-            if isinstance(doc, Document):
-                doc.query_score = 0.85
-            else:
-                if hasattr(doc, "query_score"):
-                    doc.query_score = 0.85
-        return list(documents)
-
-    mock_rr = mocker.AsyncMock(side_effect=_mock_rerank)
-
-    mocker.patch("knowgraph.documents.embedder.arerank_documents", mock_rr)
-    mocker.patch("knowgraph.database.ragmode.arerank_documents", mock_rr)
-    yield mock_rr
-
-
-@pytest.fixture(autouse=True)
-def mock_tokenizer(request: pytest.FixtureRequest, mocker: MockerFixture) -> Generator:
-    """Auto-mock tokenizer to prevent HuggingFace model download."""
-    if request.node.get_closest_marker("real_services"):
-        yield None
-        return
-
-    def _mock_tokenize(content: str) -> Counter[int]:
-        return Counter({hash(c) % 10000: 1 for c in content if c.strip()})
-
-    mock_tok = mocker.AsyncMock(side_effect=_mock_tokenize)
-
-    mocker.patch("knowgraph.documents.tokenizer.atokenize_content", mock_tok)
-    mocker.patch("knowgraph.database.ragmode.atokenize_content", mock_tok)
-    mocker.patch("knowgraph.database.document.atokenize_content", mock_tok)
-    yield mock_tok
-
-
-@pytest.fixture(autouse=True)
-def mock_splitter(request: pytest.FixtureRequest, mocker: MockerFixture, sample_chunks: list[str]) -> Generator:
-    """Auto-mock splitter to prevent Stanza NLP model download."""
-    if request.node.get_closest_marker("real_services"):
-        yield None
-        return
-
-    async def _mock_split(content: str, chunk_size: int = 512, chunk_overlap: int = 32):
-        for chunk in sample_chunks:
-            yield chunk
-
-    mock_sp = mocker.MagicMock(side_effect=_mock_split)
-
-    mocker.patch("knowgraph.documents.splitter.asplit_content", mock_sp)
-    mocker.patch("knowgraph.database.document.asplit_content", mock_sp)
-    yield mock_sp
-
-
-@pytest.fixture(autouse=True)
-def mock_llm_extractor(mocker: MockerFixture, sample_entities: list[ExtractedTriple]) -> Generator:
-    """Auto-mock LLM extractor to prevent AI model calls."""
-    mock_ext = mocker.AsyncMock(return_value=sample_entities)
-    mocker.patch("knowgraph.graph.triples.LLMExtractor.aextract_from_document", mock_ext)
-    mocker.patch("knowgraph.graph.triples.LLMExtractor.aextract_from_csv_row", mock_ext)
-    mocker.patch("knowgraph.graph.triples.LLMExtractor.aextract_from_dataframe", mock_ext)
-    yield mock_ext
-
-
-@pytest.fixture(autouse=True)
-def mock_pandas_read_csv(mocker: MockerFixture) -> Generator:
-    """Auto-mock pandas read_csv to prevent file I/O."""
-    import pandas as pd
-
-    mocker.patch(
-        "knowgraph.database.document.pd.read_csv",
-        return_value=pd.DataFrame(TEST_CSV_ROWS),
-    )
-    yield

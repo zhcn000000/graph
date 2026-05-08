@@ -11,8 +11,6 @@ from knowgraph.database.tables import DocumentTable, Source
 
 TEST_DB_NAME = "test_data"
 
-pytestmark = pytest.mark.real_services
-
 
 def make_uuid_list(n: int = 5) -> list[UUID]:
     return [uuid4() for _ in range(n)]

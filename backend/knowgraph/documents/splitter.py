@@ -7,14 +7,14 @@ from asyncer import asyncify
 from stanza import Document as StanzaDocument
 from stanza import Pipeline
 
-from knowgraph.utils.environments import DATA_ROOT, find_project_directory
+from knowgraph.utils.environments import find_project_directory, settings
 
 from .tokenizer import get_tokenizer
 
 GH_PROXY = "https://gh-proxy.org/"
 HF_ENDPOINT = os.environ.get("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ["HF_ENDPOINT"] = HF_ENDPOINT
-os.environ["HUGGINGFACE_HUB_CACHE"] = str(DATA_ROOT / "huggingface")
+os.environ["HUGGINGFACE_HUB_CACHE"] = str(settings.DATA_ROOT / "huggingface")
 
 _nlp: Pipeline | None = None
 
@@ -30,7 +30,7 @@ async def download_stanza_resource() -> None:
         content["url"] = (
             "https://hf-mirror.com/stanfordnlp/stanza-{lang}/resolve/v{resources_version}/models/{filename}"
         )
-        model_dir = DATA_ROOT / "stanza"
+        model_dir = settings.DATA_ROOT / "stanza"
         model_dir.mkdir(parents=True, exist_ok=True)
         (model_dir / "resources.json").write_bytes(orjson.dumps(content))
 
@@ -38,7 +38,7 @@ async def download_stanza_resource() -> None:
 async def asplit_content(content: str, chunk_size: int = 512, chunk_overlap: int = 32) -> AsyncIterator[str]:
     global _nlp
     if _nlp is None:
-        model_dir = DATA_ROOT / "stanza"
+        model_dir = settings.DATA_ROOT / "stanza"
         project_root = find_project_directory()
         resource_json = project_root / "resources.json"
         if not model_dir.exists() or not resource_json.exists():

@@ -10,7 +10,7 @@ from sqlalchemy.schema import CreateSchema, CreateTable, DropSchema, DropTable
 from sqlalchemy_utils.functions.database import create_database, database_exists, drop_database
 from sqlmodel import SQLModel
 
-from knowgraph.utils.environments import POSTGRES_DB
+from knowgraph.utils.environments import settings
 
 from .pool import pool_manager
 
@@ -18,36 +18,43 @@ from .pool import pool_manager
 class DatabaseManager:
     def __init__(self, dbname: str | None = None) -> None:
         if dbname is None:
-            dbname = POSTGRES_DB
+            dbname = settings.POSTGRES_DB
         assert isinstance(dbname, str), "Database name must be a string."
         self.dbname = dbname
         self._engine: Engine | None = None
         self._async_engine: AsyncEngine | None = None
 
     @staticmethod
-    def create_db(dbname: str | None = None) -> None:
+    def create_db(dbname: str | None = None) -> bool:
         if dbname is None:
-            dbname = POSTGRES_DB
+            dbname = settings.POSTGRES_DB
         url = pool_manager.url
         url = url.set(database=dbname)
         if not database_exists(url):
             create_database(url)
+            if not database_exists(url):
+                raise RuntimeError(f"Failed to create database '{dbname}'.")
+            return True
+        return False
 
     @staticmethod
-    def drop_db(dbname: str | None = None, force: bool = False) -> None:
+    def drop_db(dbname: str | None = None, force: bool = False) -> bool:
         if dbname is None:
-            dbname = POSTGRES_DB
+            dbname = settings.POSTGRES_DB
         url = pool_manager.url
         url = url.set(database=dbname)
-        if (
+        if database_exists(url) and (
             force
             or input(
                 f"Are you sure you want to drop the database '{dbname}'? This action cannot be undone. (y/n): ",
             ).lower()
             == "y"
-            and database_exists(url)
         ):
             drop_database(url)
+            if database_exists(url):
+                raise RuntimeError(f"Failed to drop database '{dbname}'.")
+            return True
+        return False
 
     def engine(self) -> Engine:
         return pool_manager.engine(self.dbname)

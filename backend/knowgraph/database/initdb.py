@@ -4,9 +4,9 @@ from .database import DatabaseManager
 from .graph import AgeGraphManager
 
 
-async def init_db(alter_system: bool = True) -> None:
-    DatabaseManager.create_db()
-    db = DatabaseManager()
+async def init_db(alter_system: bool = True, dbname: str | None = None) -> bool:
+    status = DatabaseManager.create_db(dbname)
+    db = DatabaseManager(dbname=dbname)
     async with db.acursor(autocommit=True) as cur:
         await cur.execute(
             SQL("""
@@ -17,7 +17,6 @@ async def init_db(alter_system: bool = True) -> None:
         )
     await AgeGraphManager().acreate_graph()
     await db.acreate_all()
-
     if alter_system:
         async with db.aconnection(autocommit=True) as conn:
             await conn.execute(
@@ -27,3 +26,15 @@ async def init_db(alter_system: bool = True) -> None:
                 ALTER SYSTEM SET io_method = io_uring;
                 """),
             )
+    return status
+
+
+async def clean_db(dbname: str | None = None, force: bool = False) -> bool:
+    return DatabaseManager.drop_db(dbname, force)
+
+
+async def reset_db(dbname: str | None = None, force: bool = False) -> bool:
+    status = await clean_db(dbname=dbname, force=force)
+    if status:
+        return await init_db(dbname=dbname, alter_system=False)
+    return False

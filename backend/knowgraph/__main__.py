@@ -1,16 +1,17 @@
 import logging
+from typing import Annotated, Literal
 
 import uvicorn
 import uvloop
 from asyncer import runnify
 from rich import traceback
 from rich.logging import RichHandler
-from typer import Typer
+from typer import Argument, Option, Typer
 
-from knowgraph.database.initdb import init_db
+from knowgraph.database.initdb import clean_db, init_db, reset_db
 from knowgraph.routers import app
 from knowgraph.spider.runner import ScrapyCrawler
-from knowgraph.utils.environments import FASTAPI_HOST, FASTAPI_PORT, SSL_CERT_PATH, SSL_KEY_PATH
+from knowgraph.utils.environments import settings
 
 cmd = Typer(pretty_exceptions_enable=False)
 
@@ -20,14 +21,18 @@ cmd = Typer(pretty_exceptions_enable=False)
 async def run_client() -> None:
     config = uvicorn.Config(
         app,
-        host=FASTAPI_HOST,
-        port=FASTAPI_PORT,
+        host=settings.FASTAPI_HOST,
+        port=settings.FASTAPI_PORT,
         log_level="info",
         workers=5,
         log_config=None,
         access_log=True,
-        ssl_keyfile=SSL_KEY_PATH if SSL_KEY_PATH is not None and SSL_KEY_PATH.exists() else None,
-        ssl_certfile=SSL_CERT_PATH if SSL_CERT_PATH is not None and SSL_CERT_PATH.exists() else None,
+        ssl_keyfile=settings.SSL_KEY_PATH
+        if settings.SSL_KEY_PATH is not None and settings.SSL_KEY_PATH.exists()
+        else None,
+        ssl_certfile=settings.SSL_CERT_PATH
+        if settings.SSL_CERT_PATH is not None and settings.SSL_CERT_PATH.exists()
+        else None,
     )
     server = uvicorn.Server(config)
     await server.serve()
@@ -35,13 +40,21 @@ async def run_client() -> None:
 
 @cmd.command()
 @runnify
-async def initdb() -> None:
-    await init_db()
+async def database(
+    mode: Annotated[Literal["init", "reset", "clean"], Argument(help="Database operation mode")],
+    dbname: Annotated[str | None, Option("--dbname", "-d", help="Name of the database to initialize")] = None,
+) -> None:
+    if mode == "init":
+        await init_db(dbname=dbname)
+    elif mode == "reset":
+        await reset_db(dbname=dbname)
+    elif mode == "clean":
+        await clean_db(dbname=dbname)
 
 
 @cmd.command()
 @runnify
-async def spider(museum: list[str]) -> None:
+async def spider(museum: Annotated[list[str], Argument(help="List of museums to crawl")]) -> None:
     crawler = ScrapyCrawler()
     await crawler.acrawl_museums(museum)
 

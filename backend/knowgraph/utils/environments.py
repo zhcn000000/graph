@@ -1,10 +1,11 @@
 import os
 from pathlib import Path
-from tempfile import gettempdir
+from tempfile import mkdtemp
+from typing import Annotated
 from uuid import UUID
 
 from dotenv import load_dotenv
-from pydantic import PostgresDsn, SecretStr
+from pydantic import Field, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 os.environ.setdefault("USER_AGENT", "Chrome/139.0.2171.99 Safari/537.36")
@@ -38,17 +39,17 @@ class EnvironmentSettings(BaseSettings):
     POSTGRES_DB: str = "data"
     POSTGRES_DSN: PostgresDsn | None = None
     POSTGRES_PASSWORD: SecretStr = SecretStr("postgres")
-    RAG_DATA_ROOT: Path = find_project_directory() / "data"
-    RAG_UUID_SEED: UUID = UUID("11fa063e-b366-41a9-ac97-439b0a561846")
-    RAG_RELEASE_MODE: bool = True
-    RAG_TMP_DIR: Path = Path(gettempdir()) / RAG_UUID_SEED.hex
-    RAG_TOKEN_EXPIRES_IN: int = 3600 * 6
+    DATA_ROOT: Annotated[Path, Field(alias="RAG_DATA_ROOT")] = find_project_directory() / "data"
+    UUID_SEED: Annotated[UUID, Field(alias="RAG_UUID_SEED")] = UUID("11fa063e-b366-41a9-ac97-439b0a561846")
+    RELEASE_MODE: Annotated[bool, Field(alias="RAG_RELEASE_MODE")] = True
+    TMP_DIR: Annotated[Path, Field(alias="RAG_TMP_DIR")] = Path(mkdtemp())
+    TOKEN_EXPIRES_IN: Annotated[int, Field(alias="RAG_TOKEN_EXPIRES_IN")] = 3600 * 6
     SSL_KEY_PATH: Path | None = None
     SSL_CERT_PATH: Path | None = None
     model_config = SettingsConfigDict(env_ignore_empty=True, env_file=env_file, extra="ignore")
 
     def model_post_init(self, context):
-        if not self.RAG_RELEASE_MODE:
+        if not self.RELEASE_MODE:
             import warnings
 
             warnings.warn(
@@ -68,27 +69,6 @@ class EnvironmentSettings(BaseSettings):
 
 
 settings = EnvironmentSettings()
-
-FASTAPI_PORT = settings.FASTAPI_PORT
-FASTAPI_HOST = settings.FASTAPI_HOST
-
-POSTGRES_PORT = settings.POSTGRES_PORT
-POSTGRES_HOST = settings.POSTGRES_HOST
-POSTGRES_USER = settings.POSTGRES_USER
-POSTGRES_PASSWORD = settings.POSTGRES_PASSWORD.get_secret_value()
-POSTGRES_DSN = settings.POSTGRES_DSN
-POSTGRES_DB = settings.POSTGRES_DB
-
-DATA_ROOT = settings.RAG_DATA_ROOT
-
-TMP_DIR = settings.RAG_TMP_DIR
-TOKEN_EXPIRES_IN = settings.RAG_TOKEN_EXPIRES_IN
-
-UUID_SEED = settings.RAG_UUID_SEED
-
-RELEASE_MODE = settings.RAG_RELEASE_MODE
-SSL_KEY_PATH = settings.SSL_KEY_PATH
-SSL_CERT_PATH = settings.SSL_CERT_PATH
 
 if env_file is not None:
     load_dotenv(dotenv_path=env_file)

@@ -21,7 +21,6 @@ def _make_asyncify_mock():
 
 
 class TestAconvertFile:
-    @pytest.mark.asyncio
     async def test_convert_local_path(self):
         with patch("knowgraph.documents.converter.get_markitdown_converter") as mock_get:
             mock_converter = MagicMock()
@@ -35,7 +34,6 @@ class TestAconvertFile:
         assert result.content == "# Test\nContent"
         assert result.link == "file:///fake/path/test.md"
 
-    @pytest.mark.asyncio
     async def test_convert_url(self):
         with patch("knowgraph.documents.converter.get_markitdown_converter") as mock_get:
             mock_converter = MagicMock()
@@ -49,7 +47,6 @@ class TestAconvertFile:
         assert result.content == "# Web Content"
         assert result.link == "https://example.com/page"
 
-    @pytest.mark.asyncio
     async def test_convert_stream(self):
         with patch("knowgraph.documents.converter.get_markitdown_converter") as mock_get:
             mock_converter = MagicMock()
@@ -64,7 +61,6 @@ class TestAconvertFile:
         assert result.content == "# Stream Content"
         assert result.link.startswith("data:application/octet-stream;base64,")
 
-    @pytest.mark.asyncio
     async def test_convert_data_uri(self):
         with patch("knowgraph.documents.converter.get_markitdown_converter") as mock_get:
             mock_converter = MagicMock()
@@ -77,7 +73,6 @@ class TestAconvertFile:
         assert isinstance(result, Document)
         assert result.content == "# Data Content"
 
-    @pytest.mark.asyncio
     async def test_convert_file_uri(self):
         with patch("knowgraph.documents.converter.get_markitdown_converter") as mock_get:
             mock_converter = MagicMock()
@@ -90,12 +85,10 @@ class TestAconvertFile:
         assert isinstance(result, Document)
         assert result.content == "# File Content"
 
-    @pytest.mark.asyncio
     async def test_convert_unsupported_type(self):
         with pytest.raises(TypeError, match="Unsupported URI type"):
             await aconvert_file(42)
 
-    @pytest.mark.asyncio
     async def test_convert_string_no_scheme(self):
         with pytest.raises(TypeError, match="Unsupported URI type"):
             await aconvert_file("just a string without scheme")
