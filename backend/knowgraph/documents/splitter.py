@@ -1,3 +1,4 @@
+import logging
 import os
 from collections.abc import AsyncIterator
 
@@ -38,6 +39,7 @@ async def download_stanza_resource() -> None:
 async def asplit_content(content: str, chunk_size: int = 512, chunk_overlap: int = 32) -> AsyncIterator[str]:
     global _nlp
     if _nlp is None:
+        logging.info(f"Initializing Stanza pipeline...{settings.DATA_ROOT / 'stanza'}")
         model_dir = settings.DATA_ROOT / "stanza"
         project_root = find_project_directory()
         resource_json = project_root / "resources.json"
