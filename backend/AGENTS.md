@@ -254,7 +254,7 @@ knowgraph --help
 
 ## 注意事项
 
-- 使用 `from __future__ import annotations` 在模块顶部是**不必要的** (Python 3.14)
+- 使用 `from __future__ import annotations` 在模块顶部是**不必要的**,为类型加引号保护同样是**不必要的** (Python 3.14)
 - 尽量使用 sqlalchemy 的 DDL 构建器构建 stmt 执行,除非无法构建
 - 工具函数同时存在于 `chat/tools.py` (Agent FunctionToolset) 和 `tools/mcp.py` (FastMCP)
 - Spider 模块用于从博物馆网站爬取文物数据并导入图谱

@@ -16,6 +16,7 @@ from knowgraph.database.cypherbuild import (
     unwind,
 )
 from knowgraph.database.database import DatabaseManager
+from knowgraph.graph.schema import EntityType, get_entity_uri, parse_entity_uri
 
 GRAPH_LABEL = "graph"
 
@@ -46,18 +47,51 @@ class AgeGraphManager:  # noqa: PLR0904
     @staticmethod
     def digraph_to_json(graph: DiGraph) -> dict[str, list[dict[str, Any]]]:
         nodes: list[dict[str, Any]] = []
-        for node_uri, data in graph.nodes(data=True):
-            node_data: dict[str, Any] = {"uri": node_uri}
-            node_data.update(data)
+        for node_key, data in graph.nodes(data=True):
+            entity_type = data.get("entity_type")
+            name = data.get("name")
+            node_uri: str | None = None
+            if entity_type and name:
+                try:
+                    node_uri = get_entity_uri(EntityType(str(entity_type)), str(name))
+                except ValueError:
+                    node_uri = str(node_key)
+            else:
+                node_uri = str(node_key)
+            node_data: dict[str, Any] = {"uri": node_uri, "entity_type": entity_type, "name": name}
+            node_data.update({k: v for k, v in data.items() if k not in {"uri", "entity_type", "name"}})
             nodes.append(node_data)
 
         edges: list[dict[str, Any]] = []
         for u, v, data in graph.edges(data=True):
-            edge_data: dict[str, Any] = {"start_uri": u, "end_uri": v}
+            start_data = graph.nodes[u]
+            end_data = graph.nodes[v]
+            start_uri = str(AgeGraphManager._node_props_to_uri(start_data) or u)
+            end_uri = str(AgeGraphManager._node_props_to_uri(end_data) or v)
+            edge_data: dict[str, Any] = {"start_uri": start_uri, "end_uri": end_uri}
             edge_data.update(data)
             edges.append(edge_data)
 
         return {"nodes": nodes, "edges": edges}
+
+    @staticmethod
+    def _uri_to_match_params(uri: str) -> tuple[str, str] | None:
+        parsed = parse_entity_uri(uri)
+        if parsed is None:
+            return None
+        entity_type, name = parsed
+        return entity_type.value, name
+
+    @staticmethod
+    def _node_props_to_uri(data: dict[str, Any]) -> str | None:
+        entity_type = data.get("entity_type")
+        name = data.get("name")
+        if entity_type and name:
+            try:
+                return get_entity_uri(EntityType(str(entity_type)), str(name))
+            except ValueError:
+                pass
+        return None
 
     async def acreate_graph(self) -> bool:
         async with self.__db.acursor() as cur:
@@ -82,34 +116,47 @@ class AgeGraphManager:  # noqa: PLR0904
         label: str,
         properties: dict[str, Any],
     ) -> dict[str, Any] | None:
-        if "uri" not in properties:
-            return None
+        entity_type = properties.get("entity_type")
+        name = properties.get("name")
+        if not entity_type or not name:
+            uri = properties.get("uri")
+            if uri:
+                match_params = self._uri_to_match_params(uri)
+                if match_params is None:
+                    return None
+                entity_type, name = match_params
+            else:
+                return None
 
         cypher = (
-            merge(node("v", label, {"uri": "$uri"}))
+            merge(node("v", label, {"entity_type": "$entity_type", "name": "$name"}))
             .set_("v+=$props")
             .return_(
                 ("id(v)", "id"),
                 ("labels(v)", "labels"),
-                ("v.uri", "uri"),
-                ("v.name", "name"),
                 ("v.entity_type", "entity_type"),
+                ("v.name", "name"),
             )
         )
         results = await self.aexecute_cypher(
             cypher,
             read_only=False,
-            params={"uri": properties["uri"], "props": {k: v for k, v in properties.items() if k != "uri"}},
+            params={
+                "entity_type": str(entity_type),
+                "name": str(name),
+                "props": {k: v for k, v in properties.items() if k not in {"entity_type", "name", "uri"}},
+            },
         )
         if results:
             row = results[0]
+            vertex_uri = self._node_props_to_uri(row)
             return {
                 "id": row.get("id"),
                 "label": (row.get("labels") or [label])[0] if row.get("labels") else label,
-                "uri": row.get("uri"),
+                "uri": vertex_uri,
                 "name": row.get("name"),
                 "entity_type": row.get("entity_type"),
-                **{k: v for k, v in properties.items() if k not in {"id", "uri", "name", "entity_type"}},
+                **{k: v for k, v in properties.items() if k not in {"id", "entity_type", "name", "uri"}},
             }
         return None
 
@@ -118,21 +165,29 @@ class AgeGraphManager:  # noqa: PLR0904
         uri: str,
         label: str | None = None,
     ) -> dict[str, Any] | None:
-        cypher = match(node("v", label, {"uri": "$uri"})).return_(
+        match_params = self._uri_to_match_params(uri)
+        if match_params is None:
+            return None
+        entity_type, name = match_params
+
+        cypher = match(node("v", label, {"entity_type": "$entity_type", "name": "$name"})).return_(
             ("id(v)", "id"),
             ("labels(v)", "labels"),
-            ("v.uri", "uri"),
-            ("v.name", "name"),
             ("v.entity_type", "entity_type"),
+            ("v.name", "name"),
             ("v.description", "description"),
         )
-        results = await self.aexecute_cypher(cypher, params={"uri": uri})
+        results = await self.aexecute_cypher(
+            cypher,
+            params={"entity_type": entity_type, "name": name},
+        )
         if results:
             row = results[0]
+            vertex_uri = self._node_props_to_uri(row)
             return {
                 "id": row.get("id"),
                 "label": (row.get("labels") or [""])[0],
-                "uri": row.get("uri"),
+                "uri": vertex_uri,
                 "name": row.get("name"),
                 "entity_type": row.get("entity_type"),
                 "description": row.get("description"),
@@ -140,10 +195,21 @@ class AgeGraphManager:  # noqa: PLR0904
         return None
 
     async def adelete_vertex(self, uri: str, label: str | None = None) -> bool:
+        match_params = self._uri_to_match_params(uri)
+        if match_params is None:
+            return False
+        entity_type, name = match_params
+
         cypher = (
-            match(node("v", label, {"uri": "$uri"})).delete("v", detach=True).return_(("count(*)", "deleted_count"))
+            match(node("v", label, {"entity_type": "$entity_type", "name": "$name"}))
+            .delete("v", detach=True)
+            .return_(("count(*)", "deleted_count"))
         )
-        results = await self.aexecute_cypher(cypher, read_only=False, params={"uri": uri})
+        results = await self.aexecute_cypher(
+            cypher,
+            read_only=False,
+            params={"entity_type": entity_type, "name": name},
+        )
         if results and results[0].get("deleted_count", 0) > 0:
             return True
         return False
@@ -157,26 +223,37 @@ class AgeGraphManager:  # noqa: PLR0904
         start_label: str | None = None,
         end_label: str | None = None,
     ) -> dict[str, Any] | None:
+        start_match = self._uri_to_match_params(start_uri)
+        end_match = self._uri_to_match_params(end_uri)
+        if start_match is None or end_match is None:
+            return None
+        start_entity_type, start_name = start_match
+        end_entity_type, end_name = end_match
+
         predicate_uri = f"cidoc:relationship/{relationship_type}"
-        edge_props: dict[str, Any] = {"uri": predicate_uri}
+        edge_props: dict[str, Any] = {}
         if properties:
             edge_props.update(properties)
 
         cypher = (
-            match(node("s", start_label, {"uri": "$start_uri"}))
-            .match(node("e", end_label, {"uri": "$end_uri"}))
+            match(node("s", start_label, {"entity_type": "$start_entity_type", "name": "$start_name"}))
+            .match(node("e", end_label, {"entity_type": "$end_entity_type", "name": "$end_name"}))
             .merge(
-                node("s").rel("r", relationship_type, {"uri": "$predicate_uri"}, direction="->").node("e"),
+                node("s").rel("r", relationship_type, direction="->").node("e"),
             )
-            .set_(r={key: f"${value}" for key, value in edge_props.items()})
-            .return_(("id(r)", "id"), ("r.uri", "uri"), ("type(r)", "relationship_type"))
+            .set_(r={"_predicate_uri": "$predicate_uri", **{k: f"${k}" for k in edge_props}})
+            .return_(("id(r)", "id"), ("type(r)", "relationship_type"))
         )
 
-        results = await self.aexecute_cypher(
-            cypher,
-            read_only=False,
-            params={"start_uri": start_uri, "end_uri": end_uri, "predicate_uri": predicate_uri, **edge_props},
-        )
+        params: dict[str, Any] = {
+            "start_entity_type": start_entity_type,
+            "start_name": start_name,
+            "end_entity_type": end_entity_type,
+            "end_name": end_name,
+            "predicate_uri": predicate_uri,
+            **edge_props,
+        }
+        results = await self.aexecute_cypher(cypher, read_only=False, params=params)
         if results:
             row = results[0]
             return {
@@ -186,7 +263,7 @@ class AgeGraphManager:  # noqa: PLR0904
                 "start_uri": start_uri,
                 "end_uri": end_uri,
                 "relationship_type": row.get("relationship_type"),
-                **{k: v for k, v in edge_props.items() if k != "uri"},
+                **edge_props,
             }
         return None
 
@@ -196,26 +273,49 @@ class AgeGraphManager:  # noqa: PLR0904
         end_uri: str,
         relationship_type: str | None = None,
     ) -> dict[str, Any] | None:
+        start_match = self._uri_to_match_params(start_uri)
+        end_match = self._uri_to_match_params(end_uri)
+        if start_match is None or end_match is None:
+            return None
+        start_entity_type, start_name = start_match
+        end_entity_type, end_name = end_match
+
         cypher = match(
-            node("s", props={"uri": "$start_uri"})
+            node("s", props={"entity_type": "$start_entity_type", "name": "$start_name"})
             .rel("r", relationship_type, direction="->")
-            .node("e", props={"uri": "$end_uri"}),
+            .node("e", props={"entity_type": "$end_entity_type", "name": "$end_name"}),
         ).return_(
             ("id(r)", "id"),
-            ("r.uri", "uri"),
+            ("r._predicate_uri", "uri"),
             ("type(r)", "relationship_type"),
-            ("s.uri", "start_uri"),
-            ("e.uri", "end_uri"),
+            ("s.entity_type", "start_entity_type"),
+            ("s.name", "start_name"),
+            ("e.entity_type", "end_entity_type"),
+            ("e.name", "end_name"),
         )
-        results = await self.aexecute_cypher(cypher, params={"start_uri": start_uri, "end_uri": end_uri})
+        results = await self.aexecute_cypher(
+            cypher,
+            params={
+                "start_entity_type": start_entity_type,
+                "start_name": start_name,
+                "end_entity_type": end_entity_type,
+                "end_name": end_name,
+            },
+        )
         if results:
             row = results[0]
+            start_computed_uri = self._node_props_to_uri(
+                {"entity_type": row.get("start_entity_type"), "name": row.get("start_name")},
+            )
+            end_computed_uri = self._node_props_to_uri(
+                {"entity_type": row.get("end_entity_type"), "name": row.get("end_name")},
+            )
             return {
                 "id": row.get("id"),
                 "label": row.get("relationship_type"),
                 "uri": row.get("uri"),
-                "start_uri": row.get("start_uri"),
-                "end_uri": row.get("end_uri"),
+                "start_uri": start_computed_uri,
+                "end_uri": end_computed_uri,
                 "relationship_type": row.get("relationship_type"),
             }
         return None
@@ -226,17 +326,31 @@ class AgeGraphManager:  # noqa: PLR0904
         end_uri: str,
         relationship_type: str,
     ) -> bool:
+        start_match = self._uri_to_match_params(start_uri)
+        end_match = self._uri_to_match_params(end_uri)
+        if start_match is None or end_match is None:
+            return False
+        start_entity_type, start_name = start_match
+        end_entity_type, end_name = end_match
+
         cypher = (
             match(
-                node("s", props={"uri": "$start_uri"})
+                node("s", props={"entity_type": "$start_entity_type", "name": "$start_name"})
                 .rel("r", relationship_type, direction="->")
-                .node("e", props={"uri": "$end_uri"}),
+                .node("e", props={"entity_type": "$end_entity_type", "name": "$end_name"}),
             )
             .delete("r")
             .return_("count(*) as deleted_count")
         )
         results = await self.aexecute_cypher(
-            cypher, read_only=False, params={"start_uri": start_uri, "end_uri": end_uri}
+            cypher,
+            read_only=False,
+            params={
+                "start_entity_type": start_entity_type,
+                "start_name": start_name,
+                "end_entity_type": end_entity_type,
+                "end_name": end_name,
+            },
         )
         if results and results[0].get("deleted_count", 0) > 0:
             return True
@@ -248,6 +362,11 @@ class AgeGraphManager:  # noqa: PLR0904
         max_hops: int = 3,
         direction: str = "both",
     ) -> DiGraph:
+        match_params = self._uri_to_match_params(start_uri)
+        if match_params is None:
+            return DiGraph()
+        entity_type, name = match_params
+
         if direction == "outbound":
             rel_dir = "->"
         elif direction == "inbound":
@@ -256,10 +375,12 @@ class AgeGraphManager:  # noqa: PLR0904
             rel_dir = "--"
 
         path_pattern = (
-            node("start", props={"uri": "$uri"}).rel("", length=f"1..{max_hops}", direction=rel_dir).node("end")
+            node("start", props={"entity_type": "$entity_type", "name": "$name"})
+            .rel("", length=f"1..{max_hops}", direction=rel_dir)
+            .node("end")
         )
         cypher = match(f"path = {path_pattern}").return_("nodes(path) as nodes", "relationships(path) as edges")
-        return await self.ato_networkx(cypher, params={"uri": start_uri})
+        return await self.ato_networkx(cypher, params={"entity_type": entity_type, "name": name})
 
     async def atraverse_multi(
         self,
@@ -269,6 +390,16 @@ class AgeGraphManager:  # noqa: PLR0904
     ) -> DiGraph:
         if not uris:
             return DiGraph()
+
+        infos: list[dict[str, str]] = []
+        for uri in uris:
+            match_params = self._uri_to_match_params(uri)
+            if match_params is not None:
+                entity_type, name = match_params
+                infos.append({"entity_type": entity_type, "name": name})
+        if not infos:
+            return DiGraph()
+
         if direction == "outbound":
             rel_dir = "->"
         elif direction == "inbound":
@@ -277,14 +408,16 @@ class AgeGraphManager:  # noqa: PLR0904
             rel_dir = "--"
 
         path_pattern = (
-            node("start", props={"uri": "uri"}).rel("", length=f"1..{max_hops}", direction=rel_dir).node("end")
+            node("start", props={"entity_type": "info.entity_type", "name": "info.name"})
+            .rel("", length=f"1..{max_hops}", direction=rel_dir)
+            .node("end")
         )
         cypher = (
-            unwind("$uris", "uri")
+            unwind("$infos", "info")
             .match(f"path = {path_pattern}")
             .return_(("nodes(path)", "nodes"), ("relationships(path)", "edges"))
         )
-        return await self.ato_networkx(cypher, params={"uris": uris})
+        return await self.ato_networkx(cypher, params={"infos": infos})
 
     async def afind_paths(
         self,
@@ -292,15 +425,30 @@ class AgeGraphManager:  # noqa: PLR0904
         end_uri: str,
         max_hops: int = 5,
     ) -> DiGraph:
+        start_match = self._uri_to_match_params(start_uri)
+        end_match = self._uri_to_match_params(end_uri)
+        if start_match is None or end_match is None:
+            return DiGraph()
+        start_entity_type, start_name = start_match
+        end_entity_type, end_name = end_match
+
         path_pattern = (
-            node("start", props={"uri": "$start_uri"})
+            node("start", props={"entity_type": "$start_entity_type", "name": "$start_name"})
             .rel("", length=f"1..{max_hops}", direction="->")
-            .node("end", props={"uri": "$end_uri"})
+            .node("end", props={"entity_type": "$end_entity_type", "name": "$end_name"})
         )
         cypher = match(f"path = shortestPath({path_pattern})").return_(
             ("nodes(path)", "nodes"), ("relationships(path)", "edges")
         )
-        return await self.ato_networkx(cypher, params={"start_uri": start_uri, "end_uri": end_uri})
+        return await self.ato_networkx(
+            cypher,
+            params={
+                "start_entity_type": start_entity_type,
+                "start_name": start_name,
+                "end_entity_type": end_entity_type,
+                "end_name": end_name,
+            },
+        )
 
     async def aexpand_context(
         self,
@@ -316,8 +464,8 @@ class AgeGraphManager:  # noqa: PLR0904
             "paths": [],
         }
 
-        for _, data in graph.nodes(data=True):
-            node_uri = data.get("uri")
+        for node_key, data in graph.nodes(data=True):
+            node_uri = self._node_props_to_uri(data) or str(node_key)
             if node_uri is None:
                 continue
             if node_uri != entity_uri:
@@ -330,10 +478,14 @@ class AgeGraphManager:  # noqa: PLR0904
                 )
 
         for u, v, data in graph.edges(data=True):
+            start_data = graph.nodes[u]
+            end_data = graph.nodes[v]
+            start_uri = self._node_props_to_uri(start_data) or str(u)
+            end_uri = self._node_props_to_uri(end_data) or str(v)
             context["paths"].append(
                 {
-                    "start_uri": graph.nodes[u].get("uri", u),
-                    "end_uri": graph.nodes[v].get("uri", v),
+                    "start_uri": start_uri,
+                    "end_uri": end_uri,
                     "relationship": data.get("label"),
                 },
             )
@@ -350,18 +502,23 @@ class AgeGraphManager:  # noqa: PLR0904
 
         path_dict: dict[str, list[dict[str, str | None]]] = {"nodes": [], "edges": []}
         for node_key, data in graph.nodes(data=True):
+            node_uri = self._node_props_to_uri(data) or str(node_key)
             path_dict["nodes"].append(
                 {
-                    "uri": data.get("uri", node_key),
+                    "uri": node_uri,
                     "name": data.get("name"),
                     "type": data.get("entity_type"),
                 },
             )
         for u, v, data in graph.edges(data=True):
+            start_data = graph.nodes[u]
+            end_data = graph.nodes[v]
+            start_uri = self._node_props_to_uri(start_data) or str(u)
+            end_uri = self._node_props_to_uri(end_data) or str(v)
             path_dict["edges"].append(
                 {
-                    "start_uri": graph.nodes[u].get("uri", u),
-                    "end_uri": graph.nodes[v].get("uri", v),
+                    "start_uri": start_uri,
+                    "end_uri": end_uri,
                     "relationship": data.get("label"),
                 },
             )
@@ -371,15 +528,20 @@ class AgeGraphManager:  # noqa: PLR0904
         nodes_by_label: dict[str, list[dict[str, Any]]] = {}
         for node_uri, data in graph.nodes(data=True):
             label = data.get("label", "Entity")
-            props: dict[str, Any] = {"uri": data.get("uri", node_uri)}
+            entity_type = data.get("entity_type", "")
+            name = data.get("name", str(node_uri))
 
-            if data.get("name") is not None:
-                props["name"] = data["name"]
-            elif "name" not in props:
-                props["name"] = str(node_uri)
+            if not entity_type:
+                parsed = parse_entity_uri(str(node_uri))
+                if parsed:
+                    entity_type = parsed[0].value
+                    if not data.get("name"):
+                        name = parsed[1]
 
-            if data.get("entity_type") is not None:
-                props["entity_type"] = data["entity_type"]
+            props: dict[str, Any] = {"entity_type": entity_type, "name": name}
+
+            if data.get("description") is not None:
+                props["description"] = data["description"]
 
             extra = data.get("properties", {})
             if isinstance(extra, dict):
@@ -390,19 +552,39 @@ class AgeGraphManager:  # noqa: PLR0904
             nodes_by_label.setdefault(label, []).append(props)
 
         for label, nodes in nodes_by_label.items():
-            cypher = unwind("$nodes", "node").merge(node("v", label, {"uri": "node.uri"})).set_("v+=node")
+            cypher = (
+                unwind("$nodes", "node")
+                .merge(node("v", label, {"entity_type": "node.entity_type", "name": "node.name"}))
+                .set_("v+=node")
+            )
             await self.aexecute_cypher(cypher, read_only=False, params={"nodes": nodes})
 
         edges_by_type: dict[str, list[dict[str, Any]]] = {}
         for u, v, data in graph.edges(data=True):
             rel_type = data.get("label", "related_to")
-            start_uri = graph.nodes[u].get("uri", u)
-            end_uri = graph.nodes[v].get("uri", v)
+            start_data = graph.nodes[u]
+            end_data = graph.nodes[v]
+
+            start_entity_type = start_data.get("entity_type", "")
+            start_name = start_data.get("name", str(u))
+            end_entity_type = end_data.get("entity_type", "")
+            end_name = end_data.get("name", str(v))
+
+            if not start_entity_type:
+                parsed = parse_entity_uri(str(u))
+                if parsed:
+                    start_entity_type = parsed[0].value
+                    start_name = parsed[1]
+            if not end_entity_type:
+                parsed = parse_entity_uri(str(v))
+                if parsed:
+                    end_entity_type = parsed[0].value
+                    end_name = parsed[1]
+
             predicate_uri = data.get("uri", f"cidoc:relationship/{rel_type}")
 
             props: dict[str, Any] = {
-                "uri": predicate_uri,
-                "predicate_uri": predicate_uri,
+                "_predicate_uri": predicate_uri,
             }
             extra = data.get("properties", {})
             if isinstance(extra, dict):
@@ -411,18 +593,20 @@ class AgeGraphManager:  # noqa: PLR0904
                         props[k] = val
 
             edges_by_type.setdefault(rel_type, []).append({
-                "s": start_uri,
-                "e": end_uri,
+                "s_type": start_entity_type,
+                "s_name": start_name,
+                "e_type": end_entity_type,
+                "e_name": end_name,
                 "p": props,
             })
 
         for rel_type, edges in edges_by_type.items():
             cypher = (
                 unwind("$edges", "edge")
-                .match(node("s", props={"uri": "edge.s"}))
-                .match(node("e", props={"uri": "edge.e"}))
+                .match(node("s", props={"entity_type": "edge.s_type", "name": "edge.s_name"}))
+                .match(node("e", props={"entity_type": "edge.e_type", "name": "edge.e_name"}))
                 .merge(
-                    node("s").rel("r", rel_type, {"uri": "edge.p.uri"}, direction="->").node("e"),
+                    node("s").rel("r", rel_type, direction="->").node("e"),
                 )
                 .set_("r+=edge.p")
             )
@@ -467,12 +651,12 @@ class AgeGraphManager:  # noqa: PLR0904
 
     async def aget_all_edge_connections(self) -> list[dict[str, Any]]:
         cypher = match(node("s").rel("r", direction="->").node("o")).return_(
-            ("r.uri", "predicate_uri"),
+            ("r._predicate_uri", "predicate_uri"),
             ("type(r)", "relationship_type"),
-            ("startNode(r).uri", "start_node_uri"),
-            ("startNode(r).name", "subject_name"),
-            ("endNode(r).uri", "end_node_uri"),
-            ("endNode(r).name", "object_name"),
+            ("s.entity_type", "start_entity_type"),
+            ("s.name", "subject_name"),
+            ("o.entity_type", "end_entity_type"),
+            ("o.name", "object_name"),
             ("r.description", "description"),
             ("r.connection_strength", "connection_strength"),
         )
@@ -507,12 +691,12 @@ class AgeGraphManager:  # noqa: PLR0904
             builder = builder.where(reduce(operator.and_, conditions))
 
         builder = builder.return_(
-            ("r.uri", "predicate_uri"),
+            ("r._predicate_uri", "predicate_uri"),
             ("type(r)", "relationship_type"),
-            ("startNode(r).uri", "start_node_uri"),
-            ("startNode(r).name", "subject_name"),
-            ("endNode(r).uri", "end_node_uri"),
-            ("endNode(r).name", "object_name"),
+            ("s.entity_type", "start_entity_type"),
+            ("s.name", "subject_name"),
+            ("o.entity_type", "end_entity_type"),
+            ("o.name", "object_name"),
             ("r.description", "description"),
             ("r.connection_strength", "connection_strength"),
         ).limit(limit)
@@ -526,10 +710,10 @@ class AgeGraphManager:  # noqa: PLR0904
         return_cols = (
             ("name", "query_name"),
             ("type(r)", "relationship_type"),
-            ("startNode(r).uri", "start_node_uri"),
-            ("startNode(r).name", "subject_name"),
-            ("endNode(r).uri", "end_node_uri"),
-            ("endNode(r).name", "object_name"),
+            ("s.entity_type", "start_entity_type"),
+            ("s.name", "subject_name"),
+            ("o.entity_type", "end_entity_type"),
+            ("o.name", "object_name"),
             ("r.description", "description"),
             ("r.connection_strength", "connection_strength"),
         )
@@ -552,14 +736,23 @@ class AgeGraphManager:  # noqa: PLR0904
         return await self.aexecute_cypher(sub1.union(sub2, union_all=True), params={"names": names})
 
     async def aget_vertices_by_uris(self, uris: list[str]) -> list[dict[str, Any]]:
+        infos: list[dict[str, str]] = []
+        for uri in uris:
+            match_params = self._uri_to_match_params(uri)
+            if match_params is not None:
+                entity_type, name = match_params
+                infos.append({"entity_type": entity_type, "name": name})
+        if not infos:
+            return []
+
         cypher = (
-            unwind("$uris", "uri")
-            .match(node("v", props={"uri": "uri"}))
+            unwind("$infos", "info")
+            .match(node("v", props={"entity_type": "info.entity_type", "name": "info.name"}))
             .return_(
-                ("v.uri", "uri"),
-                ("id(v)", "id"),
-                ("v.name", "name"),
                 ("v.entity_type", "entity_type"),
+                ("v.name", "name"),
+                ("id(v)", "id"),
+                ("v.description", "description"),
             )
         )
-        return await self.aexecute_cypher(cypher, params={"uris": uris})
+        return await self.aexecute_cypher(cypher, params={"infos": infos})

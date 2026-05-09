@@ -5,7 +5,7 @@ import spacy
 from asyncer import asyncify
 from spacy.language import Language
 
-from knowgraph import Document
+from knowgraph.documents.models import Document
 
 from .tokenizer import get_tokenizer
 

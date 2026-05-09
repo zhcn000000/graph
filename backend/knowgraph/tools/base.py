@@ -6,6 +6,7 @@ from pydantic_monty import Monty
 from rich.pretty import pretty_repr
 
 from knowgraph.database import RAGMode
+from knowgraph.graph.schema import EntityType, ExtractedEntity
 
 rag_mode = RAGMode()
 
@@ -81,12 +82,16 @@ async def traverse_graph_base(
 
     nodes_data = []
     for node_key, data in graph.nodes(data=True):
-        uri = data.get("uri", str(node_key))
-        name = data.get("name", uri)
-        etype = data.get("entity_type", "")
+        entity_type = str(data.get("entity_type", ""))
+        name = str(data.get("name", str(node_key)))
+        uri: str
+        if entity_type and name:
+            uri = str(ExtractedEntity(name=name, entity_type=EntityType(entity_type)).uri)
+        else:
+            uri = str(node_key)
         nodes_data.append({
             "名称": name,
-            "类型": etype,
+            "类型": entity_type,
             "URI": uri,
         })
 

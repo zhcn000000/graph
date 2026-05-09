@@ -1,12 +1,11 @@
 import json
 import warnings
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from pydantic import BaseModel
 from pydantic_ai import ModelSettings
 
-from ..documents.embedder import arerank_documents
-from ..documents.models import Document
 from .schema import (
     EntityType,
     ExtractedEntity,
@@ -14,6 +13,9 @@ from .schema import (
     RelationshipInfo,
     RelationshipType,
 )
+
+if TYPE_CHECKING:
+    from ..documents.models import Document
 
 
 class CSVRowInput(BaseModel):
@@ -111,6 +113,9 @@ async def compute_triples_strength(
 ) -> list[ExtractedTriple]:
     if not triples:
         return triples
+    from ..documents.embedder import arerank_documents
+    from ..documents.models import Document
+
     combined_query = " ".join([_build_edge_query_from_triple(t) for t in triples])
     edge_docs = [Document(content=_build_edge_query_from_triple(t)) for t in triples]
     reranked = await arerank_documents(combined_query, edge_docs, topn=topn, skip_sorting=True)

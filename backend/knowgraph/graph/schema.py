@@ -28,6 +28,23 @@ def get_entity_uri(entity_type: EntityType, name: str) -> str:
     return f"cidoc:{entity_type.value}/{safe_name}"
 
 
+def parse_entity_uri(uri: str) -> tuple[EntityType, str] | None:
+    if not uri.startswith("cidoc:"):
+        return None
+    body = uri[len("cidoc:") :]
+    if "/" not in body:
+        return None
+    entity_type_str, safe_name = body.split("/", 1)
+    if not entity_type_str or not safe_name:
+        return None
+    try:
+        entity_type = EntityType(entity_type_str)
+    except ValueError:
+        return None
+    name = safe_name.replace("_", " ")
+    return entity_type, name
+
+
 class RelationshipType(StrEnum):
     COLLECTED_BY = "collected_by"
     CREATED_BY = "created_by"

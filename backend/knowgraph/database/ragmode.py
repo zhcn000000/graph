@@ -44,13 +44,6 @@ class RAGMode:
             self._graph_manager = AgeGraphManager(dbname=self.__db.dbname)
         return self._graph_manager
 
-    @staticmethod
-    def _entity_type_from_uri(uri: str) -> EntityType:
-        if uri.startswith("cidoc:"):
-            parts = uri.split("/", 1)
-            return EntityType(parts[0].replace("cidoc:", ""))
-        return EntityType("")
-
     async def _query_edges_by_entity_names(
         self,
         names: list[str],
@@ -65,33 +58,22 @@ class RAGMode:
             query_name = row["query_name"]
             if len(edges_by_name[query_name]) >= max_per_name:
                 continue
-            # triple = ExtractedTriple.model_validate({
-            #     "subject": {
-            #         "name": row.get("subject_name", ""),
-            #         "entity_type": self._entity_type_from_uri(str(row.get("start_node_uri", ""))),
-            #     },
-            #     "predicate": {
-            #         "predicate": str(row.get("relationship_type", "")),
-            #         "strength": row.get("connection_strength"),
-            #     },
-            #     "object": {
-            #         "name": row.get("object_name", ""),
-            #         "entity_type": self._entity_type_from_uri(str(row.get("end_node_uri", ""))),
-            #     },
-            #     "description": row.get("description"),
-            # })
+            start_entity_type = EntityType(row.get("start_entity_type", ""))
+            start_name = str(row.get("subject_name", ""))
+            end_entity_type = EntityType(row.get("end_entity_type", ""))
+            end_name = str(row.get("object_name", ""))
             triple = ExtractedTriple(
                 subject=ExtractedEntity(
-                    name=row.get("subject_name", ""),
-                    entity_type=self._entity_type_from_uri(str(row.get("start_node_uri", ""))),
+                    name=start_name,
+                    entity_type=start_entity_type,
                 ),
                 predicate=RelationshipInfo(
                     predicate=RelationshipType(row.get("relationship_type", "")),
                     strength=row.get("connection_strength"),
                 ),
                 object=ExtractedEntity(
-                    name=row.get("object_name", ""),
-                    entity_type=self._entity_type_from_uri(str(row.get("end_node_uri", ""))),
+                    name=end_name,
+                    entity_type=end_entity_type,
                 ),
                 description=row.get("description"),
             )
@@ -182,7 +164,14 @@ class RAGMode:
 
         scan_uris = [uri for uri, _ in entity_uris_with_scores[: max(topn * 3, 30)]]
         vertex_rows = await self.graph_manager.aget_vertices_by_uris(scan_uris)
-        vertex_map: dict[str, dict[str, object]] = {r["uri"]: r for r in vertex_rows}
+        vertex_map: dict[str, dict[str, object]] = {}
+        for r in vertex_rows:
+            entity_type = str(r.get("entity_type", ""))
+            name = str(r.get("name", ""))
+            if entity_type and name:
+                computed_uri = str(ExtractedEntity(name=name, entity_type=EntityType(entity_type)).uri)
+                r["uri"] = computed_uri
+                vertex_map[computed_uri] = r
 
         unified_graph = DiGraph()
         traverse_uris = [uri for uri, _ in entity_uris_with_scores[: max(topn * 2, 20)] if uri in vertex_map]
@@ -194,13 +183,25 @@ class RAGMode:
 
         uri_to_node_key: dict[str, object] = {}
         for node_key in unified_graph.nodes():
-            node_uri = unified_graph.nodes[node_key].get("uri", "")
+            data = unified_graph.nodes[node_key]
+            entity_type = str(data.get("entity_type", ""))
+            name = str(data.get("name", ""))
+            if entity_type and name:
+                node_uri = str(ExtractedEntity(name=name, entity_type=EntityType(entity_type)).uri)
+            else:
+                node_uri = str(data.get("uri", str(node_key)))
             if node_uri:
                 uri_to_node_key[node_uri] = node_key
 
         personalization: dict[str, float] = {}
         for node_key in unified_graph.nodes():
-            node_uri = unified_graph.nodes[node_key].get("uri", "")
+            data = unified_graph.nodes[node_key]
+            entity_type = str(data.get("entity_type", ""))
+            name = str(data.get("name", ""))
+            if entity_type and name:
+                node_uri = str(ExtractedEntity(name=name, entity_type=EntityType(entity_type)).uri)
+            else:
+                node_uri = str(data.get("uri", str(node_key)))
             personalization[node_key] = entity_score_map.get(node_uri, 0.0)
 
         total_pers = sum(personalization.values())
@@ -224,7 +225,12 @@ class RAGMode:
 
         for node_key, pr_score in sorted_by_pr:
             node_data = unified_graph.nodes.get(node_key, {})
-            entity_uri = str(node_data.get("uri", ""))
+            node_entity_type = str(node_data.get("entity_type", ""))
+            node_name = str(node_data.get("name", ""))
+            if node_entity_type and node_name:
+                entity_uri = str(ExtractedEntity(name=node_name, entity_type=EntityType(node_entity_type)).uri)
+            else:
+                entity_uri = str(node_data.get("uri", str(node_key)))
             if not entity_uri or entity_uri in seen_uris:
                 continue
             seen_uris.add(entity_uri)
@@ -505,7 +511,12 @@ class RAGMode:
             )
             if gsr.path:
                 for node_key, data in gsr.path.nodes(data=True):
-                    node_uri = str(data.get("uri", node_key))
+                    entity_type = str(data.get("entity_type", ""))
+                    name = str(data.get("name", ""))
+                    if entity_type and name:
+                        node_uri = str(ExtractedEntity(name=name, entity_type=EntityType(entity_type)).uri)
+                    else:
+                        node_uri = str(node_key)
                     if node_uri in seen_path_nodes:
                         continue
                     seen_path_nodes.add(node_uri)
@@ -518,8 +529,20 @@ class RAGMode:
                     )
 
                 for u, v, data in gsr.path.edges(data=True):
-                    start_uri = str(gsr.path.nodes[u].get("uri", u))
-                    end_uri = str(gsr.path.nodes[v].get("uri", v))
+                    start_data = gsr.path.nodes[u]
+                    end_data = gsr.path.nodes[v]
+                    start_et = str(start_data.get("entity_type", ""))
+                    start_n = str(start_data.get("name", ""))
+                    end_et = str(end_data.get("entity_type", ""))
+                    end_n = str(end_data.get("name", ""))
+                    if start_et and start_n:
+                        start_uri = str(ExtractedEntity(name=start_n, entity_type=EntityType(start_et)).uri)
+                    else:
+                        start_uri = str(u)
+                    if end_et and end_n:
+                        end_uri = str(ExtractedEntity(name=end_n, entity_type=EntityType(end_et)).uri)
+                    else:
+                        end_uri = str(v)
                     rel = data.get("label")
                     rel_key = (start_uri, end_uri, rel)
                     if rel_key in seen_relationships:

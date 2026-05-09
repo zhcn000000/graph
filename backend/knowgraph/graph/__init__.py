@@ -6,6 +6,7 @@ from .schema import (
     RelationshipInfo,
     RelationshipType,
     get_entity_uri,
+    parse_entity_uri,
 )
 from .triples import (
     CSVRowInput,
@@ -24,4 +25,5 @@ __all__ = [
     "RelationshipInfo",
     "compute_triples_strength",
     "get_entity_uri",
+    "parse_entity_uri",
 ]
