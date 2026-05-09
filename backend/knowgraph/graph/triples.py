@@ -123,7 +123,7 @@ async def compute_triples_strength(
 class LLMExtractor:
     SYSTEM_PROMPT = """你是一个专业的文物知识图谱专家，专门从海外博物馆的文物数据中提取结构化三元组信息。
 你的任务是将文物记录转换为知识图谱三元组（主体-谓词-客体），遵循CIDOC-CRM本体标准。
-
+你无需提取关系中的strength字段，设置为null获不填即可，后续会根据三元组文本内容进行相关性计算来赋值strength。
 ## 实体类型
 - artifact (文物): 具有唯一标识的名称
 - museum (博物馆): 收藏文物的机构

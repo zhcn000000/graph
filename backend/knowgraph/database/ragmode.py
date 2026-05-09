@@ -1,5 +1,5 @@
 import operator
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import NamedTuple
 from uuid import UUID
 
@@ -10,7 +10,8 @@ from sqlmodel import col
 from knowgraph.documents.embedder import aembed_documents, arerank_documents
 from knowgraph.documents.models import Document
 from knowgraph.documents.tokenizer import atokenize_content
-from knowgraph.graph.edge_strength import TripleBasedEdgeQuerier
+from knowgraph.graph import RelationshipType
+from knowgraph.graph.schema import EntityType, ExtractedEntity, ExtractedTriple, RelationshipInfo
 
 from .database import DatabaseManager
 from .graph import AgeGraphManager
@@ -36,7 +37,6 @@ class RAGMode:
     def __init__(self, dbname: str | None = None) -> None:
         self.__db = DatabaseManager(dbname)
         self._graph_manager: AgeGraphManager | None = None
-        self._edge_querier: TripleBasedEdgeQuerier | None = None
 
     @property
     def graph_manager(self) -> AgeGraphManager:
@@ -44,11 +44,59 @@ class RAGMode:
             self._graph_manager = AgeGraphManager(dbname=self.__db.dbname)
         return self._graph_manager
 
-    @property
-    def edge_querier(self) -> TripleBasedEdgeQuerier:
-        if self._edge_querier is None:
-            self._edge_querier = TripleBasedEdgeQuerier(graph_manager=self.graph_manager)
-        return self._edge_querier
+    @staticmethod
+    def _entity_type_from_uri(uri: str) -> EntityType:
+        if uri.startswith("cidoc:"):
+            parts = uri.split("/", 1)
+            return EntityType(parts[0].replace("cidoc:", ""))
+        return EntityType("")
+
+    async def _query_edges_by_entity_names(
+        self,
+        names: list[str],
+        max_per_name: int = 20,
+    ) -> dict[str, list[ExtractedTriple]]:
+        edges_by_name: dict[str, list[ExtractedTriple]] = defaultdict(list)
+        if not names:
+            return edges_by_name
+
+        edge_rows = await self.graph_manager.aquery_edge_connections_by_entity_names(names)
+        for row in edge_rows:
+            query_name = row["query_name"]
+            if len(edges_by_name[query_name]) >= max_per_name:
+                continue
+            # triple = ExtractedTriple.model_validate({
+            #     "subject": {
+            #         "name": row.get("subject_name", ""),
+            #         "entity_type": self._entity_type_from_uri(str(row.get("start_node_uri", ""))),
+            #     },
+            #     "predicate": {
+            #         "predicate": str(row.get("relationship_type", "")),
+            #         "strength": row.get("connection_strength"),
+            #     },
+            #     "object": {
+            #         "name": row.get("object_name", ""),
+            #         "entity_type": self._entity_type_from_uri(str(row.get("end_node_uri", ""))),
+            #     },
+            #     "description": row.get("description"),
+            # })
+            triple = ExtractedTriple(
+                subject=ExtractedEntity(
+                    name=row.get("subject_name", ""),
+                    entity_type=self._entity_type_from_uri(str(row.get("start_node_uri", ""))),
+                ),
+                predicate=RelationshipInfo(
+                    predicate=RelationshipType(row.get("relationship_type", "")),
+                    strength=row.get("connection_strength"),
+                ),
+                object=ExtractedEntity(
+                    name=row.get("object_name", ""),
+                    entity_type=self._entity_type_from_uri(str(row.get("end_node_uri", ""))),
+                ),
+                description=row.get("description"),
+            )
+            edges_by_name[query_name].append(triple)
+        return edges_by_name
 
     @staticmethod
     async def _vector_search(
@@ -167,7 +215,7 @@ class RAGMode:
             if uri in vertex_map and vertex_map[uri].get("name")
         ][:30]
 
-        edges_by_name = await self.edge_querier.query_edges_by_entity_names(names)
+        edges_by_name = await self._query_edges_by_entity_names(names)
 
         graph_results: list[GraphSearchResult] = []
         seen_uris: set[str] = set()

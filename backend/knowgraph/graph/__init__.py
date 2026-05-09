@@ -1,10 +1,10 @@
-from .edge_strength import TripleBasedEdgeQuerier
 from .schema import (
     CIDOC_GRAPH,
     EntityType,
     ExtractedEntity,
     ExtractedTriple,
     RelationshipInfo,
+    RelationshipType,
     get_entity_uri,
 )
 from .triples import (
@@ -20,8 +20,8 @@ __all__ = [
     "ExtractedEntity",
     "ExtractedTriple",
     "LLMExtractor",
+    "RelationshipType",
     "RelationshipInfo",
-    "TripleBasedEdgeQuerier",
     "compute_triples_strength",
     "get_entity_uri",
 ]
