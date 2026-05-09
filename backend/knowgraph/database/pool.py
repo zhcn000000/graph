@@ -124,21 +124,6 @@ class ConnectionPoolManager:
             dbname = self.dbname
         conninfo = make_conninfo(dbname=dbname, conninfo=self.conninfo)
         if dbname not in self._pools:
-
-            def configure_conn(conn: Connection) -> None:
-                register_type(conn)
-                conn.set_autocommit(True)
-
-            def check_conn(conn: Connection) -> None:
-                """Check if the connection is valid and clean up transaction state if needed."""
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT 1")
-
-            def reset_conn(conn: Connection) -> None:
-                """Reset connection state, ensure no open transaction."""
-                with conn.cursor() as cursor:
-                    cursor.execute("SET search_path TO public,bm25_catalog,tokenizer_catalog;")
-
             self._pools[dbname] = ConnectionPool(
                 conninfo,
                 name=dbname,
@@ -147,9 +132,6 @@ class ConnectionPoolManager:
                 max_lifetime=10 * 60.0,
                 min_size=self.min_size,
                 max_size=self.max_size,
-                configure=configure_conn,
-                reset=reset_conn,
-                check=check_conn,
                 open=False,
             )
         if self._pools[dbname].closed:
@@ -161,23 +143,6 @@ class ConnectionPoolManager:
         if dbname is None:
             dbname = self.dbname
         if dbname not in self._apools:
-
-            async def configure_conn(conn: AsyncConnection) -> None:
-                await register_type_async(conn)
-                await conn.set_autocommit(True)
-                async with conn.cursor() as cursor:
-                    await cursor.execute("SET work_mem='8MB';")
-                    await cursor.execute("SET maintenance_work_mem='512MB';")
-
-            async def check_conn(conn: AsyncConnection) -> None:
-                async with conn.cursor() as cursor:
-                    await cursor.execute("SELECT 1")
-
-            async def reset_conn(conn: AsyncConnection) -> None:
-                """Reset connection state, ensure no open transaction."""
-                async with conn.cursor() as cursor:
-                    await cursor.execute("SET search_path TO public,bm25_catalog,tokenizer_catalog;")
-
             logging.debug("Creating new connection pool for database: %s", conninfo)
             self._apools[dbname] = AsyncConnectionPool(
                 conninfo,
@@ -187,9 +152,6 @@ class ConnectionPoolManager:
                 max_lifetime=10 * 60.0,
                 min_size=self.min_size,
                 max_size=self.max_size,
-                configure=configure_conn,
-                reset=reset_conn,
-                check=check_conn,
                 open=False,
             )
         if self._apools[dbname].closed:
