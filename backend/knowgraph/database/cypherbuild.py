@@ -1,10 +1,9 @@
+import logging
 import math
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from string.templatelib import Template
 from typing import Any, Literal, Self
-
-from psycopg.types.json import Jsonb
 
 
 def _quote_value(value: Any) -> str:
@@ -34,6 +33,28 @@ def _quote_value(value: Any) -> str:
     if isinstance(value, BuilderBase):
         return value.build()
     return _quote_value(str(value))
+
+
+def _quote_param_value(value: Any) -> str:
+    """Quote a value as a Cypher literal (parameter embedding, no variable refs)."""
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return _quote_value(value)
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{escaped}'"
+    if isinstance(value, (list, tuple)):
+        items = ", ".join(_quote_param_value(v) for v in value)
+        return f"[{items}]"
+    if isinstance(value, dict):
+        pairs = ", ".join(f"{_quote_key(k)}: {_quote_param_value(v)}" for k, v in value.items())
+        return f"{{{pairs}}}"
+    if isinstance(value, BuilderBase):
+        return value.build()
+    return _quote_param_value(str(value))
 
 
 def _quote_key(key: object) -> str:
@@ -534,5 +555,12 @@ def build_cypher_stmt(
     if isinstance(cypher, CypherBuilder):
         cypher = cypher.build()
 
-    final = t"SELECT * FROM cypher({graph_name:s}, {cypher:s},{Jsonb(params):s}) AS ({cols:q})"
+    if params:
+        for param_name in sorted(params.keys(), key=len, reverse=True):
+            placeholder = f"${param_name}"
+            if placeholder in cypher:
+                cypher = cypher.replace(placeholder, _quote_param_value(params[param_name]))  # type: ignore
+    logging.info("Built Cypher: %s", cypher)
+    # cypher(name,cstring,agtype)
+    final = t"SELECT * FROM cypher({graph_name:l}, $${Template(cypher):q}$$) AS ({cols:q})"
     return final

@@ -1,5 +1,6 @@
 import pytest
 
+from knowgraph.graph import RelationshipType
 from knowgraph.graph.schema import (
     CIDOC_GRAPH,
     EntityType,
@@ -77,20 +78,20 @@ class TestGetEntityURI:
 
 class TestRelationshipInfo:
     def test_relationship_creation(self):
-        rel = RelationshipInfo(predicate="collected_by")
-        assert rel.predicate == "collected_by"
+        rel = RelationshipInfo(predicate=RelationshipType.COLLECTED_BY)
+        assert rel.predicate == RelationshipType.COLLECTED_BY
         assert rel.strength is None
         assert rel.uri == "cidoc:relationship/collected_by"
 
     def test_relationship_with_strength(self):
-        rel = RelationshipInfo(predicate="created_by", strength=0.95)
-        assert rel.predicate == "created_by"
+        rel = RelationshipInfo(predicate=RelationshipType.CREATED_BY, strength=0.95)
+        assert rel.predicate == RelationshipType.CREATED_BY
         assert rel.strength == 0.95
         assert rel.uri == "cidoc:relationship/created_by"
 
     def test_parse_from_string(self):
         rel = RelationshipInfo.model_validate("collected_by")
-        assert rel.predicate == "collected_by"
+        assert rel.predicate == RelationshipType.COLLECTED_BY
         assert rel.strength is None
 
 
@@ -128,13 +129,13 @@ class TestExtractedTriple:
 
         triple = ExtractedTriple(
             subject=subject,
-            predicate=RelationshipInfo(predicate="collected_by"),
+            predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY),
             object=object_,
             description="青铜鼎收藏于Metropolitan Museum of Art",
         )
 
         assert triple.subject.name == "青铜鼎"
-        assert triple.predicate.predicate == "collected_by"
+        assert triple.predicate.predicate == RelationshipType.COLLECTED_BY
         assert triple.object.name == "Metropolitan Museum of Art"
         assert triple.description == "青铜鼎收藏于Metropolitan Museum of Art"
 
@@ -144,7 +145,7 @@ class TestExtractedTriple:
 
         triple = ExtractedTriple(
             subject=subject,
-            predicate=RelationshipInfo(predicate="belongs_to_dynasty"),
+            predicate=RelationshipInfo(predicate=RelationshipType.BELONGS_TO_DYNASTY),
             object=object_,
         )
 
@@ -153,7 +154,7 @@ class TestExtractedTriple:
     def test_triple_uri_properties(self):
         triple = ExtractedTriple(
             subject=ExtractedEntity(name="Test", entity_type=EntityType.ARTIFACT),
-            predicate=RelationshipInfo(predicate="collected_by"),
+            predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY),
             object=ExtractedEntity(name="Museum", entity_type=EntityType.MUSEUM),
         )
         assert triple.subject_uri == "cidoc:artifact/Test"

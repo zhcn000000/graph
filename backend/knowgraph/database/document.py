@@ -9,6 +9,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
 
+from knowgraph.documents.converter import aconvert_file
 from knowgraph.documents.embedder import aembed_documents
 from knowgraph.documents.models import Document
 from knowgraph.documents.splitter import asplit_document
@@ -244,8 +245,6 @@ class DocumentStore:
         )
 
     async def aload_from_document(self, file_path: str | Path) -> list[UUID]:
-        from knowgraph.documents.converter import aconvert_file
-
         file_path = Path(file_path)
         doc = await aconvert_file(file_path)
         doc.name = file_path.stem

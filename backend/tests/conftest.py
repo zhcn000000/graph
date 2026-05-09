@@ -1,10 +1,11 @@
-from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic_ai.models.test import TestModel
+from pytest_mock import MockerFixture
 
 from knowgraph.documents.models import Document
+from knowgraph.graph import RelationshipType
 from knowgraph.graph.schema import (
     EntityType,
     ExtractedEntity,
@@ -122,25 +123,25 @@ def sample_entities() -> list[ExtractedTriple]:
     return [
         ExtractedTriple(
             subject=ExtractedEntity(name="青铜鼎", entity_type=EntityType.ARTIFACT),
-            predicate=RelationshipInfo(predicate="collected_by"),
+            predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY),
             object=ExtractedEntity(name="Metropolitan Museum of Art", entity_type=EntityType.MUSEUM),
             description="青铜鼎收藏于Metropolitan Museum of Art",
         ),
         ExtractedTriple(
             subject=ExtractedEntity(name="青铜鼎", entity_type=EntityType.ARTIFACT),
-            predicate=RelationshipInfo(predicate="belongs_to_dynasty"),
+            predicate=RelationshipInfo(predicate=RelationshipType.BELONGS_TO_DYNASTY),
             object=ExtractedEntity(name="商朝", entity_type=EntityType.DYNASTY),
             description="青铜鼎属于商朝",
         ),
         ExtractedTriple(
             subject=ExtractedEntity(name="青铜鼎", entity_type=EntityType.ARTIFACT),
-            predicate=RelationshipInfo(predicate="made_of_material"),
+            predicate=RelationshipInfo(predicate=RelationshipType.MADE_OF_MATERIAL),
             object=ExtractedEntity(name="青铜", entity_type=EntityType.MATERIAL),
             description="青铜鼎材质为青铜",
         ),
         ExtractedTriple(
             subject=ExtractedEntity(name="青铜鼎", entity_type=EntityType.ARTIFACT),
-            predicate=RelationshipInfo(predicate="is_type_of"),
+            predicate=RelationshipInfo(predicate=RelationshipType.IS_TYPE_OF),
             object=ExtractedEntity(name="青铜器", entity_type=EntityType.ARTIFACT_TYPE),
             description="青铜鼎类型为青铜器",
         ),
@@ -158,11 +159,13 @@ def sample_entities_from_csv() -> list[ExtractedTriple]:
 
 
 @pytest.fixture(autouse=True)
-def mock_llm_extractor(sample_entities: list[ExtractedTriple]):
-    mock = AsyncMock(return_value=sample_entities)
+def mock_llm_extractor(sample_entities: list[ExtractedTriple], mocker: MockerFixture):
+    mock = mocker.AsyncMock(return_value=sample_entities)
     with (
-        patch.object(LLMExtractor, "_run_agent_with_prompt", mock),
-        patch("knowgraph.graph.triples.compute_triples_strength", AsyncMock(side_effect=lambda t, **kw: t)),
+        mocker.patch.object(LLMExtractor, "_run_agent_with_prompt", mock),
+        mocker.patch(
+            "knowgraph.graph.triples.compute_triples_strength", mocker.AsyncMock(side_effect=lambda t, **kw: t)
+        ),
     ):
         yield
 

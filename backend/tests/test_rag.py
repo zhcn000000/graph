@@ -7,6 +7,7 @@ from knowgraph.database.document import DocumentStore
 from knowgraph.database.source import SourceStore
 from knowgraph.database.tables import DocumentTable, Source
 from knowgraph.documents.models import Document
+from knowgraph.graph.schema import ExtractedTriple
 
 TEST_DB_NAME = "test_data"
 
@@ -37,6 +38,7 @@ class TestAaddDocuments:
         self,
         doc_store,
         sample_documents: list[Document],
+        sample_entities: list[ExtractedTriple],
     ):
         """Documents with pre-populated entities should store them."""
         doc_name = sample_documents[0].name
@@ -49,7 +51,8 @@ class TestAaddDocuments:
         doc = Document(
             content=sample_documents[0].content,
             name=doc_name,
-            entities=["cidoc:artifact/custom_entity"],
+            triples=sample_entities[:2],
+            file_id=source_id,
         )
         result = await doc_store.aadd_documents([doc])
         assert len(result) > 0
@@ -64,7 +67,7 @@ class TestAaddDocuments:
             for row in result.fetchall():
                 if row[0]:
                     all_entities.update(row[0])
-            assert "cidoc:artifact/custom_entity" in all_entities
+            assert "cidoc:artifact/青铜鼎" in all_entities
 
 
 @pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
@@ -75,15 +78,15 @@ class TestIntegrationFlow:
 
     @pytest.mark.usefixtures("clean_tables")
     async def test_multiple_documents_inserted_together(
-        self,
-        doc_store,
-        sample_documents: list[Document],
+        self, doc_store, sample_documents: list[Document], sample_entities: list[ExtractedTriple]
     ):
         """Insert multiple documents via aadd_documents with pre-created sources."""
         source_store = SourceStore(dbname=TEST_DB_NAME)
+        source_ids = []
         for doc in sample_documents:
             assert doc.name is not None
-            await source_store.ainsert_source(name=doc.name)
+            source_id = await source_store.ainsert_source(name=doc.name)
+            source_ids.append(source_id)
 
         name_a = sample_documents[0].name
         name_b = sample_documents[1].name
@@ -94,10 +97,14 @@ class TestIntegrationFlow:
             Document(
                 content=sample_documents[0].content,
                 name=name_a,
+                triples=sample_entities[:2],
+                file_id=source_ids[0],
             ),
             Document(
                 content=sample_documents[1].content,
                 name=name_b,
+                triples=sample_entities[2:],
+                file_id=source_ids[1],
             ),
         ]
 
