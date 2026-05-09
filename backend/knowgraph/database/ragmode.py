@@ -10,7 +10,7 @@ from sqlmodel import col
 from knowgraph.documents.embedder import aembed_documents, arerank_documents
 from knowgraph.documents.models import Document
 from knowgraph.documents.tokenizer import atokenize_content
-from knowgraph.graph.edge_strength import EdgeConnectionInfo, EdgeStrengthCalculator, TripleBasedEdgeQuerier
+from knowgraph.graph.edge_strength import TripleBasedEdgeQuerier
 
 from .database import DatabaseManager
 from .graph import AgeGraphManager
@@ -37,7 +37,6 @@ class RAGMode:
         self.__db = DatabaseManager(dbname)
         self._graph_manager: AgeGraphManager | None = None
         self._edge_querier: TripleBasedEdgeQuerier | None = None
-        self._edge_calculator: EdgeStrengthCalculator | None = None
 
     @property
     def graph_manager(self) -> AgeGraphManager:
@@ -50,12 +49,6 @@ class RAGMode:
         if self._edge_querier is None:
             self._edge_querier = TripleBasedEdgeQuerier(graph_manager=self.graph_manager)
         return self._edge_querier
-
-    @property
-    def edge_calculator(self) -> EdgeStrengthCalculator:
-        if self._edge_calculator is None:
-            self._edge_calculator = EdgeStrengthCalculator(graph_manager=self.graph_manager)
-        return self._edge_calculator
 
     @staticmethod
     async def _vector_search(
@@ -176,13 +169,6 @@ class RAGMode:
 
         edges_by_name = await self.edge_querier.query_edges_by_entity_names(names)
 
-        combined_query = " ".join(queries)
-        all_edges: list[EdgeConnectionInfo] = []
-        for edges in edges_by_name.values():
-            all_edges.extend(edges)
-        if all_edges:
-            await self.edge_calculator.compute_strength_for_edges(combined_query, all_edges)
-
         graph_results: list[GraphSearchResult] = []
         seen_uris: set[str] = set()
 
@@ -206,8 +192,8 @@ class RAGMode:
             connected_edges = edges_by_name.get(entity_name, [])
             connected_strength = 0.0
             for edge in connected_edges:
-                if edge.connection_strength is not None:
-                    connected_strength = max(connected_strength, edge.connection_strength)
+                if edge.predicate.strength is not None:
+                    connected_strength = max(connected_strength, edge.predicate.strength)
 
             final_score: float
             if connected_strength > 0:

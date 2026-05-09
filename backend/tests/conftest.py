@@ -9,7 +9,7 @@ from knowgraph.graph.schema import (
     EntityType,
     ExtractedEntity,
     ExtractedTriple,
-    RelationshipType,
+    RelationshipInfo,
 )
 from knowgraph.graph.triples import CSVRowInput, LLMExtractor
 from knowgraph.utils.environments import settings
@@ -122,25 +122,25 @@ def sample_entities() -> list[ExtractedTriple]:
     return [
         ExtractedTriple(
             subject=ExtractedEntity(name="青铜鼎", entity_type=EntityType.ARTIFACT),
-            predicate=RelationshipType.COLLECTED_BY,
+            predicate=RelationshipInfo(predicate="collected_by"),
             object=ExtractedEntity(name="Metropolitan Museum of Art", entity_type=EntityType.MUSEUM),
             description="青铜鼎收藏于Metropolitan Museum of Art",
         ),
         ExtractedTriple(
             subject=ExtractedEntity(name="青铜鼎", entity_type=EntityType.ARTIFACT),
-            predicate=RelationshipType.BELONGS_TO_DYNASTY,
+            predicate=RelationshipInfo(predicate="belongs_to_dynasty"),
             object=ExtractedEntity(name="商朝", entity_type=EntityType.DYNASTY),
             description="青铜鼎属于商朝",
         ),
         ExtractedTriple(
             subject=ExtractedEntity(name="青铜鼎", entity_type=EntityType.ARTIFACT),
-            predicate=RelationshipType.MADE_OF_MATERIAL,
+            predicate=RelationshipInfo(predicate="made_of_material"),
             object=ExtractedEntity(name="青铜", entity_type=EntityType.MATERIAL),
             description="青铜鼎材质为青铜",
         ),
         ExtractedTriple(
             subject=ExtractedEntity(name="青铜鼎", entity_type=EntityType.ARTIFACT),
-            predicate=RelationshipType.IS_TYPE_OF,
+            predicate=RelationshipInfo(predicate="is_type_of"),
             object=ExtractedEntity(name="青铜器", entity_type=EntityType.ARTIFACT_TYPE),
             description="青铜鼎类型为青铜器",
         ),
@@ -153,22 +153,17 @@ def sample_entities_from_csv() -> list[ExtractedTriple]:
     for row_dict in TEST_CSV_ROWS:
         clean_row = {k: v for k, v in row_dict.items() if v is not None}
         csv_input = CSVRowInput(**clean_row)
-        for t in csv_input.to_artifact_triples():
-            triples.append(
-                ExtractedTriple(
-                    subject=ExtractedEntity(name=t.subject_name, entity_type=t.subject_type),
-                    predicate=RelationshipType(t.predicate_uri.rsplit("/", 1)[-1]),
-                    object=ExtractedEntity(name=t.object_name, entity_type=t.object_type),
-                    description=t.description,
-                )
-            )
+        triples.extend(csv_input.to_artifact_triples())
     return triples
 
 
 @pytest.fixture(autouse=True)
 def mock_llm_extractor(sample_entities: list[ExtractedTriple]):
     mock = AsyncMock(return_value=sample_entities)
-    with patch.object(LLMExtractor, "_run_agent_with_prompt", mock):
+    with (
+        patch.object(LLMExtractor, "_run_agent_with_prompt", mock),
+        patch("knowgraph.graph.triples.compute_triples_strength", AsyncMock(side_effect=lambda t, **kw: t)),
+    ):
         yield
 
 

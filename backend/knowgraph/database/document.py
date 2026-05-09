@@ -9,10 +9,11 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
 
-from knowgraph.documents.embedder import aembed_documents
+from knowgraph.documents import aembed_documents
 from knowgraph.documents.models import Document
-from knowgraph.documents.splitter import asplit_content
+from knowgraph.documents.splitter import asplit_document
 from knowgraph.documents.tokenizer import atokenize_content
+from knowgraph.graph.schema import ExtractedTriple
 from knowgraph.graph.triples import CSVRowInput, LLMExtractor
 
 from .database import DatabaseManager
@@ -40,43 +41,47 @@ class DocumentStore:
             self._extractor = LLMExtractor()
         return self._extractor
 
-    async def _extract_and_update_graph(self, content: str, full_graph: DiGraph) -> set[str]:
+    async def _extract_llm_triples(self, doc: Document) -> list[ExtractedTriple]:
         try:
-            triples = await self.extractor.aextract_from_document(Document(content=content))
+            return await self.extractor.aextract_from_document(doc)
         except Exception:
             warnings.warn(
                 "LLM extraction call failed, continuing without extracted entities.",
                 UserWarning,
                 stacklevel=2,
             )
-            return set()
+            return []
 
+    @staticmethod
+    def _triples_to_networkx(
+        triples: list[ExtractedTriple],
+        graph: DiGraph,
+    ) -> set[str]:
         entity_uris: set[str] = set()
-        for triple in triples:
+        for t in triples:
             try:
-                subject_label = triple.subject.entity_type.value.capitalize()
-                object_label = triple.object.entity_type.value.capitalize()
-                full_graph.add_node(
-                    triple.subject.uri,
-                    label=subject_label,
-                    name=triple.subject.name,
-                    entity_type=triple.subject.entity_type.value,
+                graph.add_node(
+                    t.subject.uri,
+                    label=t.subject.entity_type.value.capitalize(),
+                    name=t.subject.name,
+                    entity_type=t.subject.entity_type.value,
                 )
-                full_graph.add_node(
-                    triple.object.uri,
-                    label=object_label,
-                    name=triple.object.name,
-                    entity_type=triple.object.entity_type.value,
+                graph.add_node(
+                    t.object.uri,
+                    label=t.object.entity_type.value.capitalize(),
+                    name=t.object.name,
+                    entity_type=t.object.entity_type.value,
                 )
-                full_graph.add_edge(
-                    triple.subject.uri,
-                    triple.object.uri,
-                    label=triple.predicate.value,
-                    uri=f"cidoc:relationship/{triple.predicate.value}",
-                    description=triple.description,
+                graph.add_edge(
+                    t.subject.uri,
+                    t.object.uri,
+                    label=t.predicate.predicate,
+                    uri=t.predicate.uri,
+                    description=t.description,
+                    connection_strength=t.predicate.strength,
                 )
-                entity_uris.add(triple.subject.uri)
-                entity_uris.add(triple.object.uri)
+                entity_uris.add(t.subject.uri)
+                entity_uris.add(t.object.uri)
             except ValueError as e:
                 warnings.warn(
                     f"Skipping triple due to invalid entity URI: {e}",
@@ -85,15 +90,15 @@ class DocumentStore:
                 )
         return entity_uris
 
-    async def _next_document_index(self, session) -> int:
-        stmt = select(func.coalesce(func.max(col(DocumentTable.document_index)), 0))
-        result = await session.execute(stmt)
-        return (result.scalar() or 0) + 1
+    async def _next_document_index(self) -> int:
+        async with self.__db.asession() as session:
+            stmt = select(func.coalesce(func.max(col(DocumentTable.document_index)), 0))
+            result = await session.execute(stmt)
+            return (result.scalar() or 0) + 1
 
     async def aadd_documents(
         self,
         documents: list[Document],
-        extraction_contents: list[str | None] | None = None,
     ) -> list[UUID]:
         if not documents:
             return []
@@ -112,10 +117,8 @@ class DocumentStore:
                 file_id_map = {row[1]: row[0] for row in result.fetchall()}
 
         insert_values: list[dict] = []
-        async with self.__db.asession() as session:
-            next_doc_id = await self._next_document_index(session)
-
-        for i, doc in enumerate(documents):
+        start_idx = await self._next_document_index()
+        for doc_idx, doc in enumerate(documents, start_idx):
             file_id = file_id_map.get(doc.name or "")
             if file_id is None:
                 warnings.warn(
@@ -124,44 +127,31 @@ class DocumentStore:
                     stacklevel=2,
                 )
                 continue
-
-            sub_chunks: list[str] = []
-            async for chunk in asplit_content(doc.content, chunk_size=512, chunk_overlap=64):
-                sub_chunks.append(chunk)
-            if not sub_chunks:
-                sub_chunks = [doc.content]
-
-            seen: set[str] = set()
-            sub_chunks = [c for c in sub_chunks if c not in seen and not seen.add(c)]
-
-            sub_docs = [Document(content=c) for c in sub_chunks]
-            vectors = await aembed_documents(sub_docs)
-
-            bmvector = await atokenize_content(doc.content)
-
             entity_uris: set[str] = set()
-            if extraction_contents is not None:
-                extraction_content = extraction_contents[i] if i < len(extraction_contents) else None
-                if extraction_content is not None:
-                    entity_uris |= await self._extract_and_update_graph(extraction_content, full_graph)
-            else:
-                entity_uris |= await self._extract_and_update_graph(doc.content, full_graph)
-
+            doc_llm_triples = await self._extract_llm_triples(doc)
+            doc.triples = doc.triples + doc_llm_triples
+            entity_uris |= self._triples_to_networkx(doc.triples, full_graph)
             entity_uris |= set(doc.entities)
 
-            for chunk_idx, chunk_content in enumerate(sub_chunks):
+            chunk_idx = 0
+            async for chunk in asplit_document(doc, chunk_size=4096, chunk_overlap=128):
+                chunk_idx += 1
+                sub_chunks = []
+                async for sub_doc in asplit_document(chunk, chunk_size=512, chunk_overlap=32):
+                    sub_chunks.append(sub_doc)
+                vectors = await aembed_documents(sub_chunks)
+                bmvector = await atokenize_content(chunk.content)
+
                 insert_values.append({
                     "file_id": file_id,
-                    "content": chunk_content,
+                    "content": chunk.content,
                     "vector": vectors,
                     "bmvector": bmvector,
                     "entities": list(entity_uris),
                     "meta": doc.metadata,
-                    "document_index": next_doc_id,
+                    "document_index": doc_idx,
                     "chunk_index": chunk_idx,
                 })
-
-            next_doc_id += 1
 
         if insert_values:
             async with self.__db.asession() as session:
@@ -211,76 +201,36 @@ class DocumentStore:
             await session.commit()
         return (result.rowcount or 0) > 0  # type: ignore
 
-    async def ainsert_document(
+    async def ainsert_documents(
         self,
-        name: str,
-        content: str,
-        link: str | None = None,
-    ) -> UUID | None:
-        source_id = await self.__source.ainsert_source(name=name, link=link)
-        if source_id is None:
-            existing_ids = await self.__source.aget_id_by_names([name])
-            if existing_ids:
-                source_id = existing_ids[0]
-            else:
-                return None
+        documents: list[Document],
+    ) -> list[UUID]:
+        if not documents:
+            return []
 
-        doc = Document(
-            content=content,
-            name=name,
-            link=link,
-            metadata={"name": name, "link": link or ""},
-        )
+        for doc in documents:
+            if not doc.name:
+                continue
+            artifact_id_str = doc.metadata.get("artifact_id")
+            artifact_id = UUID(artifact_id_str) if artifact_id_str else None
+            source_id = await self.__source.ainsert_source(name=doc.name, link=doc.link, artifact_id=artifact_id)
+            if source_id is None:
+                source_id = (await self.__source.aget_id_by_names([doc.name]))[0]
 
-        await self.aadd_documents([doc])
-        return source_id
+        await self.aadd_documents(documents)
 
-    async def aload_from_document(self, file_path: str | Path) -> list[UUID]:
-        from knowgraph.documents.converter import aconvert_file
-
-        file_path = Path(file_path)
-        doc = await aconvert_file(file_path)
-        doc.name = file_path.stem
-        doc.link = f"file://{file_path.absolute()}"
-        doc.metadata = {"file_name": file_path.name}
-
-        source_id = await self.__source.ainsert_source(name=doc.name, link=doc.link)
-        if source_id is None:
-            existing_ids = await self.__source.aget_id_by_names([doc.name])
-            if existing_ids:
-                source_id = existing_ids[0]
-            else:
-                return []
-
-        doc_ids = await self.aadd_documents([doc])
-
-        return doc_ids
+        source_names = list({d.name for d in documents if d.name})
+        if not source_names:
+            return []
+        return await self.__source.aget_id_by_names(source_names)
 
     @staticmethod
-    def _build_doc_and_source_from_row_input(
+    def _build_doc_from_row_input(
         row_input: CSVRowInput,
-        structured_graph: DiGraph,
-    ) -> tuple[Document, str | None, dict]:
+    ) -> Document:
         triples = row_input.to_artifact_triples()
-        for triple in triples:
-            structured_graph.add_node(
-                triple.subject_uri,
-                label=triple.subject_type.value.capitalize(),
-                name=triple.subject_name,
-                entity_type=triple.subject_type.value,
-            )
-            structured_graph.add_node(
-                triple.object_uri,
-                label=triple.object_type.value.capitalize(),
-                name=triple.object_name,
-                entity_type=triple.object_type.value,
-            )
-            rel_type = triple.predicate_uri.rsplit("/", 1)[-1]
-            structured_graph.add_edge(triple.subject_uri, triple.object_uri, label=rel_type)
 
-        structured_entities: list[str] = list({
-            uri for triple in triples for uri in (triple.subject_uri, triple.object_uri)
-        })
+        structured_entities: list[str] = list({uri for t in triples for uri in (t.subject.uri, t.object.uri)})
 
         content_parts = [row_input.title]
         if row_input.museum:
@@ -295,54 +245,28 @@ class DocumentStore:
             content_parts.append(row_input.description)
         content_str = "\n".join(content_parts)
 
-        doc = Document(
+        return Document(
             content=content_str,
             name=row_input.title,
             link=row_input.detail_url,
             metadata=row_input.model_dump(),
             entities=structured_entities,
+            triples=triples,
         )
-        extraction_content = row_input.description or None
-        source_info = {
-            "name": row_input.title,
-            "link": row_input.detail_url,
-        }
 
-        return doc, extraction_content, source_info
+    async def aload_from_document(self, file_path: str | Path) -> list[UUID]:
+        from knowgraph.documents.converter import aconvert_file
 
-    async def _insert_artifact_batch(
-        self,
-        documents: list[Document],
-        extraction_contents: list[str | None],
-        source_infos: list[dict],
-        structured_graph: DiGraph,
-    ) -> list[UUID]:
-        if not documents:
-            return []
+        file_path = Path(file_path)
+        doc = await aconvert_file(file_path)
+        doc.name = file_path.stem
+        doc.link = f"file://{file_path.absolute()}"
+        doc.metadata = {"file_name": file_path.name}
 
-        if structured_graph.number_of_nodes() > 0:
-            await self.graph_manager.afrom_networkx(structured_graph)
-
-        async with self.__db.asession() as session:
-            for info in source_infos:
-                stmt = insert(Source).values(**info).on_conflict_do_nothing(index_elements=[col(Source.name)])
-                await session.execute(stmt)
-            await session.commit()
-
-        await self.aadd_documents(documents, extraction_contents=extraction_contents)
-
-        source_names = list({d.name for d in documents if d.name})
-        file_ids: list[UUID] = []
-        if source_names:
-            file_ids = await self.__source.aget_id_by_names(source_names)
-
-        return file_ids
+        return await self.ainsert_documents([doc])
 
     async def aload_from_csv(self, csv_path: str) -> list[UUID]:
-        structured_graph = DiGraph()
         documents: list[Document] = []
-        source_infos: list[dict] = []
-        extraction_contents: list[str | None] = []
 
         df = pd.read_csv(csv_path)
         for _, row in df.iterrows():
@@ -353,14 +277,10 @@ class DocumentStore:
                 warnings.warn(f"Skipping invalid CSV row: {e}", UserWarning, stacklevel=2)
                 continue
 
-            doc, extraction_content, source_info = self._build_doc_and_source_from_row_input(
-                row_input, structured_graph
-            )
+            doc = self._build_doc_from_row_input(row_input)
             documents.append(doc)
-            extraction_contents.append(extraction_content)
-            source_infos.append(source_info)
 
-        return await self._insert_artifact_batch(documents, extraction_contents, source_infos, structured_graph)
+        return await self.ainsert_documents(documents)
 
     async def alingest_artifacts(
         self,
@@ -380,10 +300,7 @@ class DocumentStore:
         if not artifacts:
             return []
 
-        structured_graph = DiGraph()
         documents: list[Document] = []
-        source_infos: list[dict] = []
-        extraction_contents: list[str | None] = []
 
         for artifact in artifacts:
             row_dict = {
@@ -410,15 +327,11 @@ class DocumentStore:
                 warnings.warn(f"Skipping artifact {artifact.id}: {e}", UserWarning, stacklevel=2)
                 continue
 
-            doc, extraction_content, source_info = self._build_doc_and_source_from_row_input(
-                row_input, structured_graph
-            )
-            source_info["artifact_id"] = artifact.id
+            doc = self._build_doc_from_row_input(row_input)
+            doc.metadata["artifact_id"] = str(artifact.id)
             documents.append(doc)
-            extraction_contents.append(extraction_content)
-            source_infos.append(source_info)
 
-        return await self._insert_artifact_batch(documents, extraction_contents, source_infos, structured_graph)
+        return await self.ainsert_documents(documents)
 
     async def aremove_documents(self, file_ids: list[UUID] | UUID | None = None) -> list[UUID]:
         if isinstance(file_ids, UUID):

@@ -5,6 +5,8 @@ import spacy
 from asyncer import asyncify
 from spacy.language import Language
 
+from knowgraph import Document
+
 from .tokenizer import get_tokenizer
 
 _nlp: Language | None = None
@@ -61,3 +63,17 @@ async def asplit_content(content: str, chunk_size: int = 512, chunk_overlap: int
 
     if current_text:
         yield current_text
+
+
+async def asplit_document(
+    document: Document, chunk_size: int = 512, chunk_overlap: int = 32
+) -> AsyncIterator[Document]:
+    async for chunk in asplit_content(document.content, chunk_size, chunk_overlap):
+        yield Document(
+            content=chunk,
+            name=document.name,
+            link=document.link,
+            metadata=document.metadata,
+            entities=document.entities,
+            triples=document.triples,
+        )

@@ -2,6 +2,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from knowgraph.graph.schema import ExtractedTriple
+
 
 class Document(BaseModel):
     content: str
@@ -10,6 +12,7 @@ class Document(BaseModel):
     query_score: float | None = None
     metadata: dict = Field(default_factory=dict)
     entities: list[str] = Field(default_factory=list)
+    triples: list[ExtractedTriple] = Field(default_factory=list)
     id: UUID | None = None
     document_index: int | None = None
     chunk_index: int | None = None

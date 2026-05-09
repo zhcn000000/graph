@@ -1,79 +1,4 @@
-from knowgraph.graph.schema import EntityType
-from knowgraph.graph.triples import ArtifactTriple, CSVRowInput, Triple
-
-
-class TestTriple:
-    def test_triple_creation(self):
-        triple = Triple(
-            subject_uri="cidoc:artifact/test",
-            predicate_uri="cidoc:relationship/collected_by",
-            object_uri="cidoc:museum/test_museum",
-            subject_type=EntityType.ARTIFACT,
-            object_type=EntityType.MUSEUM,
-            subject_name="test_artifact",
-            object_name="test_museum",
-        )
-        assert triple.subject_name == "test_artifact"
-        assert triple.object_name == "test_museum"
-
-    def test_triple_with_properties(self):
-        triple = Triple(
-            subject_uri="cidoc:artifact/test",
-            predicate_uri="cidoc:relationship/collected_by",
-            object_uri="cidoc:museum/test_museum",
-            subject_type=EntityType.ARTIFACT,
-            object_type=EntityType.MUSEUM,
-            subject_name="test",
-            object_name="test_museum",
-            properties={"key": "value"},
-            description="A test triple",
-            source="https://example.com",
-        )
-        assert triple.properties == {"key": "value"}
-        assert triple.description == "A test triple"
-        assert triple.source == "https://example.com"
-
-    def test_triple_created_at_default(self):
-        from datetime import datetime
-
-        triple = Triple(
-            subject_uri="cidoc:artifact/test",
-            predicate_uri="cidoc:relationship/collected_by",
-            object_uri="cidoc:museum/test_museum",
-            subject_type=EntityType.ARTIFACT,
-            object_type=EntityType.MUSEUM,
-            subject_name="test",
-            object_name="test_museum",
-        )
-        assert isinstance(triple.created_at, datetime)
-
-
-class TestArtifactTriple:
-    def test_artifact_triple_basic(self):
-        triple = ArtifactTriple(
-            artifact_name="青铜鼎",
-            museum_name="Metropolitan Museum of Art",
-        )
-        assert triple.subject_name == "青铜鼎"
-        assert triple.object_name == "Metropolitan Museum of Art"
-        assert triple.subject_type == EntityType.ARTIFACT
-        assert triple.object_type == EntityType.MUSEUM
-        assert triple.predicate_uri == "cidoc:relationship/collected_by"
-
-    def test_artifact_triple_with_optional_fields(self):
-        triple = ArtifactTriple(
-            artifact_name="青花瓷瓶",
-            museum_name="Cleveland Museum of Art",
-            dynasty_name="明朝",
-            artist_name="未知",
-            material="陶瓷",
-            artifact_type="瓷器",
-            description="一件明朝青花瓷瓶",
-            properties={"source": "museum catalog"},
-        )
-        assert triple.artifact_type == "瓷器"
-        assert triple.material == "陶瓷"
-        assert triple.description == "一件明朝青花瓷瓶"
+from knowgraph.graph.triples import CSVRowInput
 
 
 class TestCSVRowInput:
@@ -129,13 +54,13 @@ class TestCSVRowInput:
 
         assert len(triples) == 5
 
-        triple_types = {t.predicate_uri for t in triples}
-        assert "cidoc:relationship/collected_by" in triple_types
-        assert "cidoc:relationship/belongs_to_dynasty" in triple_types
-        assert "cidoc:relationship/made_of_material" in triple_types
-        assert "cidoc:relationship/is_type_of" in triple_types
+        triple_predicates = {t.predicate.predicate for t in triples}
+        assert "collected_by" in triple_predicates
+        assert "belongs_to_dynasty" in triple_predicates
+        assert "made_of_material" in triple_predicates
+        assert "is_type_of" in triple_predicates
 
-        has_location = any("cidoc:relationship/located_at" for t in triples)
+        has_location = any(t.predicate.predicate == "located_at" for t in triples)
         assert has_location
 
     def test_to_artifact_triples_minimal(self):
@@ -148,7 +73,7 @@ class TestCSVRowInput:
         triples = row.to_artifact_triples()
 
         assert len(triples) == 1
-        assert triples[0].predicate_uri == "cidoc:relationship/collected_by"
+        assert triples[0].predicate.predicate == "collected_by"
 
     def test_to_artifact_triples_no_optional_fields(self):
         row = CSVRowInput(
@@ -165,8 +90,8 @@ class TestCSVRowInput:
         triples = row.to_artifact_triples()
 
         assert len(triples) == 1
-        assert triples[0].subject_name == "无名文物"
-        assert triples[0].object_name == "Unknown Museum"
+        assert triples[0].subject.name == "无名文物"
+        assert triples[0].object.name == "Unknown Museum"
 
     def test_to_artifact_triples_no_location_skips_located_at(self):
         row = CSVRowInput(
@@ -179,5 +104,5 @@ class TestCSVRowInput:
 
         triples = row.to_artifact_triples()
 
-        has_location = any(t.predicate_uri == "cidoc:relationship/located_at" for t in triples)
+        has_location = any(t.predicate.predicate == "located_at" for t in triples)
         assert not has_location

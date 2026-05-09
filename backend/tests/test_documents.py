@@ -1,4 +1,10 @@
 from knowgraph.documents.models import Document
+from knowgraph.graph.schema import (
+    EntityType,
+    ExtractedEntity,
+    ExtractedTriple,
+    RelationshipInfo,
+)
 
 
 class TestDocument:
@@ -10,6 +16,7 @@ class TestDocument:
         assert doc.query_score is None
         assert doc.metadata == {}
         assert doc.entities == []
+        assert doc.triples == []
         assert doc.id is None
         assert doc.document_index is None
         assert doc.chunk_index is None
@@ -25,6 +32,13 @@ class TestDocument:
             query_score=0.95,
             metadata={"author": "test"},
             entities=["cidoc:artifact/test"],
+            triples=[
+                ExtractedTriple(
+                    subject=ExtractedEntity(name="test", entity_type=EntityType.ARTIFACT),
+                    predicate=RelationshipInfo(predicate="collected_by"),
+                    object=ExtractedEntity(name="museum", entity_type=EntityType.MUSEUM),
+                )
+            ],
             id=doc_id,
             document_index=1,
             chunk_index=0,
@@ -34,6 +48,8 @@ class TestDocument:
         assert doc.query_score == 0.95
         assert doc.metadata == {"author": "test"}
         assert doc.entities == ["cidoc:artifact/test"]
+        assert len(doc.triples) == 1
+        assert doc.triples[0].predicate.predicate == "collected_by"
         assert doc.id == doc_id
         assert doc.document_index == 1
         assert doc.chunk_index == 0

@@ -8,6 +8,7 @@ from knowgraph.database.database import DatabaseManager
 from knowgraph.database.document import DocumentStore
 from knowgraph.database.ragmode import RAGMode
 from knowgraph.database.tables import DocumentTable, Source
+from knowgraph.documents.models import Document
 
 TEST_DB_NAME = "test_data"
 
@@ -132,10 +133,14 @@ class TestInsertAndSearch:
     @pytest.mark.usefixtures("clean_tables")
     async def test_insert_then_vector_search(self, doc_store, rag_mode):
         """Insert a document and verify vector search finds it."""
-        source_id = await doc_store.ainsert_document(
-            name="bronze_art.md",
-            content=ARTIFACT_SEARCH_CONTENT,
-        )
+        source_ids = await doc_store.ainsert_documents([
+            Document(
+                name="bronze_art.md",
+                content=ARTIFACT_SEARCH_CONTENT,
+                metadata={"name": "bronze_art.md", "link": ""},
+            )
+        ])
+        source_id = source_ids[0]
         assert source_id is not None
 
         results, _ = await rag_mode.ahyprid_search(
@@ -150,14 +155,20 @@ class TestInsertAndSearch:
     @pytest.mark.usefixtures("clean_tables")
     async def test_insert_then_hybrid_search(self, doc_store, rag_mode):
         """Multiple documents should be findable by hybrid search."""
-        await doc_store.ainsert_document(
-            name="porcelain.md",
-            content=PORCELAIN_SEARCH_CONTENT,
-        )
-        await doc_store.ainsert_document(
-            name="painting.md",
-            content=PAINTING_SEARCH_CONTENT,
-        )
+        await doc_store.ainsert_documents([
+            Document(
+                name="porcelain.md",
+                content=PORCELAIN_SEARCH_CONTENT,
+                metadata={"name": "porcelain.md", "link": ""},
+            )
+        ])
+        await doc_store.ainsert_documents([
+            Document(
+                name="painting.md",
+                content=PAINTING_SEARCH_CONTENT,
+                metadata={"name": "painting.md", "link": ""},
+            )
+        ])
 
         results, _ = await rag_mode.ahyprid_search(
             queries=["青花瓷 景德镇"],
@@ -181,10 +192,13 @@ class TestInsertAndSearch:
     @pytest.mark.usefixtures("clean_tables")
     async def test_aquery_documents(self, doc_store, rag_mode):
         """aquery_documents should return structured search results."""
-        await doc_store.ainsert_document(
-            name="bronze_ritual.md",
-            content="商代青铜鼎高50cm，用于祭祀仪式。饕餮纹是其标志性纹饰。西周青铜器铭文记载了大量历史事件。",
-        )
+        await doc_store.ainsert_documents([
+            Document(
+                name="bronze_ritual.md",
+                content="商代青铜鼎高50cm，用于祭祀仪式。饕餮纹是其标志性纹饰。西周青铜器铭文记载了大量历史事件。",
+                metadata={"name": "bronze_ritual.md", "link": ""},
+            )
+        ])
 
         results = await rag_mode.aquery_documents(
             queries=["青铜鼎 商代 祭祀"],
@@ -198,10 +212,13 @@ class TestInsertAndSearch:
     @pytest.mark.usefixtures("clean_tables")
     async def test_search_with_graph(self, doc_store, rag_mode):
         """Search with graph boosting enabled should work."""
-        await doc_store.ainsert_document(
-            name="museum_collection.md",
-            content=ARTIFACT_SEARCH_CONTENT,
-        )
+        await doc_store.ainsert_documents([
+            Document(
+                name="museum_collection.md",
+                content=ARTIFACT_SEARCH_CONTENT,
+                metadata={"name": "museum_collection.md", "link": ""},
+            )
+        ])
 
         results, graph_entities = await rag_mode.ahyprid_search(
             queries=["大都会博物馆 青铜器"],
@@ -225,10 +242,14 @@ class TestGetAndDelete:
     @pytest.mark.usefixtures("clean_tables")
     async def test_aget_by_ids(self, doc_store, rag_mode):
         """aget_by_ids should return documents for given IDs."""
-        source_id = await doc_store.ainsert_document(
-            name="get_by_id_test.md",
-            content="测试获取文档内容。青铜鼎是商代重要祭祀礼器。",
-        )
+        source_ids = await doc_store.ainsert_documents([
+            Document(
+                name="get_by_id_test.md",
+                content="测试获取文档内容。青铜鼎是商代重要祭祀礼器。",
+                metadata={"name": "get_by_id_test.md", "link": ""},
+            )
+        ])
+        source_id = source_ids[0]
         assert source_id is not None
 
         db = DatabaseManager(TEST_DB_NAME)
@@ -261,10 +282,14 @@ class TestGetAndDelete:
     @pytest.mark.usefixtures("clean_tables")
     async def test_adelete_documents_success(self, doc_store):
         """Delete documents by ID and verify removal."""
-        source_id = await doc_store.ainsert_document(
-            name="delete_test.md",
-            content="待删除的文档内容。青花瓷是景德镇的代表性瓷器。",
-        )
+        source_ids = await doc_store.ainsert_documents([
+            Document(
+                name="delete_test.md",
+                content="待删除的文档内容。青花瓷是景德镇的代表性瓷器。",
+                metadata={"name": "delete_test.md", "link": ""},
+            )
+        ])
+        source_id = source_ids[0]
         assert source_id is not None
 
         db = DatabaseManager(TEST_DB_NAME)
@@ -300,10 +325,14 @@ class TestGetAndDelete:
     @pytest.mark.usefixtures("clean_tables")
     async def test_aremove_documents_success(self, doc_store):
         """Remove documents by file_id."""
-        source_id = await doc_store.ainsert_document(
-            name="remove_test.md",
-            content="待移除的文档内容。清代绘画以山水花鸟为主题。",
-        )
+        source_ids = await doc_store.ainsert_documents([
+            Document(
+                name="remove_test.md",
+                content="待移除的文档内容。清代绘画以山水花鸟为主题。",
+                metadata={"name": "remove_test.md", "link": ""},
+            )
+        ])
+        source_id = source_ids[0]
         assert source_id is not None
 
         result = await doc_store.aremove_documents(source_id)
@@ -329,10 +358,13 @@ class TestGraphContext:
     @pytest.mark.usefixtures("clean_tables")
     async def test_aquery_graph_context(self, doc_store, rag_mode):
         """Graph context query should return entities/paths/relationships."""
-        await doc_store.ainsert_document(
-            name="graph_context.md",
-            content="大都会博物馆收藏的商代青铜鼎是重要文物。青铜鼎是青铜器的典型代表，纹饰精美。",
-        )
+        await doc_store.ainsert_documents([
+            Document(
+                name="graph_context.md",
+                content="大都会博物馆收藏的商代青铜鼎是重要文物。青铜鼎是青铜器的典型代表，纹饰精美。",
+                metadata={"name": "graph_context.md", "link": ""},
+            )
+        ])
 
         context = await rag_mode.aquery_graph_context(
             queries=["大都会博物馆 青铜鼎"],
@@ -346,11 +378,14 @@ class TestGraphContext:
     @pytest.mark.usefixtures("clean_tables")
     async def test_aget_document_context(self, doc_store, rag_mode):
         """aget_document_context should return chunks with surrounding context."""
-        await doc_store.ainsert_document(
-            name="doc_context.md",
-            content="中国青铜器历史悠久。商周青铜器工艺精湛。大都会博物馆收藏丰富。"
-            "清代绘画以工笔重彩为主。北京故宫博物院收藏了大量清代绘画精品。",
-        )
+        await doc_store.ainsert_documents([
+            Document(
+                name="doc_context.md",
+                content="中国青铜器历史悠久。商周青铜器工艺精湛。大都会博物馆收藏丰富。"
+                "清代绘画以工笔重彩为主。北京故宫博物院收藏了大量清代绘画精品。",
+                metadata={"name": "doc_context.md", "link": ""},
+            )
+        ])
 
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:
@@ -378,10 +413,13 @@ class TestGraphContext:
     @pytest.mark.usefixtures("clean_tables")
     async def test_aget_document_entities(self, doc_store, rag_mode):
         """aget_document_entities should return entities associated with document."""
-        await doc_store.ainsert_document(
-            name="entities_context.md",
-            content="景德镇青花瓷工艺精湛。大都会博物馆收藏了大量中国瓷器。青花瓷以其蓝色釉料闻名于世。",
-        )
+        await doc_store.ainsert_documents([
+            Document(
+                name="entities_context.md",
+                content="景德镇青花瓷工艺精湛。大都会博物馆收藏了大量中国瓷器。青花瓷以其蓝色釉料闻名于世。",
+                metadata={"name": "entities_context.md", "link": ""},
+            )
+        ])
 
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:

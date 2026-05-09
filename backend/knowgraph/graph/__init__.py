@@ -1,45 +1,27 @@
-from .edge_strength import (
-    EdgeConnectionInfo,
-    EdgeStrengthCalculator,
-    TripleBasedEdgeQuerier,
-)
+from .edge_strength import TripleBasedEdgeQuerier
 from .schema import (
     CIDOC_GRAPH,
-    Artifact,
-    Artist,
-    Dynasty,
-    Entity,
     EntityType,
-    Location,
-    Museum,
-    RelationshipType,
+    ExtractedEntity,
+    ExtractedTriple,
+    RelationshipInfo,
     get_entity_uri,
-    get_relationship_uri,
 )
 from .triples import (
-    ArtifactTriple,
     CSVRowInput,
     LLMExtractor,
-    Triple,
+    compute_triples_strength,
 )
 
 __all__ = [
     "CIDOC_GRAPH",
-    "Artifact",
-    "ArtifactTriple",
-    "Artist",
     "CSVRowInput",
-    "Dynasty",
-    "EdgeConnectionInfo",
-    "EdgeStrengthCalculator",
-    "Entity",
     "EntityType",
+    "ExtractedEntity",
+    "ExtractedTriple",
     "LLMExtractor",
-    "Location",
-    "Museum",
-    "RelationshipType",
-    "Triple",
+    "RelationshipInfo",
     "TripleBasedEdgeQuerier",
+    "compute_triples_strength",
     "get_entity_uri",
-    "get_relationship_uri",
 ]
