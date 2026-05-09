@@ -9,7 +9,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
 
-from knowgraph.documents import aembed_documents
+from knowgraph.documents.embedder import aembed_documents
 from knowgraph.documents.models import Document
 from knowgraph.documents.splitter import asplit_document
 from knowgraph.documents.tokenizer import atokenize_content

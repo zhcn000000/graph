@@ -1,4 +1,5 @@
 from knowgraph.documents.models import Document
+from knowgraph.graph import RelationshipType
 from knowgraph.graph.schema import (
     EntityType,
     ExtractedEntity,
@@ -35,7 +36,7 @@ class TestDocument:
             triples=[
                 ExtractedTriple(
                     subject=ExtractedEntity(name="test", entity_type=EntityType.ARTIFACT),
-                    predicate=RelationshipInfo(predicate="collected_by"),
+                    predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY),
                     object=ExtractedEntity(name="museum", entity_type=EntityType.MUSEUM),
                 )
             ],
@@ -49,7 +50,7 @@ class TestDocument:
         assert doc.metadata == {"author": "test"}
         assert doc.entities == ["cidoc:artifact/test"]
         assert len(doc.triples) == 1
-        assert doc.triples[0].predicate.predicate == "collected_by"
+        assert doc.triples[0].predicate.predicate == RelationshipType.COLLECTED_BY
         assert doc.id == doc_id
         assert doc.document_index == 1
         assert doc.chunk_index == 0
