@@ -138,7 +138,7 @@ class TestInsertAndSearch:
                 name="bronze_art.md",
                 content=ARTIFACT_SEARCH_CONTENT,
                 metadata={"name": "bronze_art.md", "link": ""},
-            )
+            ),
         ])
         source_id = source_ids[0]
         assert source_id is not None
@@ -160,14 +160,14 @@ class TestInsertAndSearch:
                 name="porcelain.md",
                 content=PORCELAIN_SEARCH_CONTENT,
                 metadata={"name": "porcelain.md", "link": ""},
-            )
+            ),
         ])
         await doc_store.ainsert_documents([
             Document(
                 name="painting.md",
                 content=PAINTING_SEARCH_CONTENT,
                 metadata={"name": "painting.md", "link": ""},
-            )
+            ),
         ])
 
         results, _ = await rag_mode.ahyprid_search(
@@ -197,7 +197,7 @@ class TestInsertAndSearch:
                 name="bronze_ritual.md",
                 content="商代青铜鼎高50cm，用于祭祀仪式。饕餮纹是其标志性纹饰。西周青铜器铭文记载了大量历史事件。",
                 metadata={"name": "bronze_ritual.md", "link": ""},
-            )
+            ),
         ])
 
         results = await rag_mode.aquery_documents(
@@ -217,7 +217,7 @@ class TestInsertAndSearch:
                 name="museum_collection.md",
                 content=ARTIFACT_SEARCH_CONTENT,
                 metadata={"name": "museum_collection.md", "link": ""},
-            )
+            ),
         ])
 
         results, graph_entities = await rag_mode.ahyprid_search(
@@ -247,7 +247,7 @@ class TestGetAndDelete:
                 name="get_by_id_test.md",
                 content="测试获取文档内容。青铜鼎是商代重要祭祀礼器。",
                 metadata={"name": "get_by_id_test.md", "link": ""},
-            )
+            ),
         ])
         source_id = source_ids[0]
         assert source_id is not None
@@ -287,7 +287,7 @@ class TestGetAndDelete:
                 name="delete_test.md",
                 content="待删除的文档内容。青花瓷是景德镇的代表性瓷器。",
                 metadata={"name": "delete_test.md", "link": ""},
-            )
+            ),
         ])
         source_id = source_ids[0]
         assert source_id is not None
@@ -330,7 +330,7 @@ class TestGetAndDelete:
                 name="remove_test.md",
                 content="待移除的文档内容。清代绘画以山水花鸟为主题。",
                 metadata={"name": "remove_test.md", "link": ""},
-            )
+            ),
         ])
         source_id = source_ids[0]
         assert source_id is not None
@@ -363,7 +363,7 @@ class TestGraphContext:
                 name="graph_context.md",
                 content="大都会博物馆收藏的商代青铜鼎是重要文物。青铜鼎是青铜器的典型代表，纹饰精美。",
                 metadata={"name": "graph_context.md", "link": ""},
-            )
+            ),
         ])
 
         context = await rag_mode.aquery_graph_context(
@@ -384,7 +384,7 @@ class TestGraphContext:
                 content="中国青铜器历史悠久。商周青铜器工艺精湛。大都会博物馆收藏丰富。"
                 "清代绘画以工笔重彩为主。北京故宫博物院收藏了大量清代绘画精品。",
                 metadata={"name": "doc_context.md", "link": ""},
-            )
+            ),
         ])
 
         db = DatabaseManager(TEST_DB_NAME)
@@ -418,7 +418,7 @@ class TestGraphContext:
                 name="entities_context.md",
                 content="景德镇青花瓷工艺精湛。大都会博物馆收藏了大量中国瓷器。青花瓷以其蓝色釉料闻名于世。",
                 metadata={"name": "entities_context.md", "link": ""},
-            )
+            ),
         ])
 
         db = DatabaseManager(TEST_DB_NAME)

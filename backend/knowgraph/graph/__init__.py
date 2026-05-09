@@ -14,8 +14,8 @@ __all__ = [
     "EntityType",
     "ExtractedEntity",
     "ExtractedTriple",
-    "RelationshipType",
     "RelationshipInfo",
+    "RelationshipType",
     "get_entity_uri",
     "parse_entity_uri",
 ]

@@ -7,6 +7,7 @@ from networkx import DiGraph
 
 from knowgraph.database.cypherbuild import (
     CypherBuilder,
+    _quote_key,
     build_cypher_stmt,
     expr,
     func,
@@ -438,7 +439,7 @@ class AgeGraphManager:  # noqa: PLR0904
             .node("end", props={"entity_type": "$end_entity_type", "name": "$end_name"})
         )
         cypher = match(f"path = shortestPath({path_pattern})").return_(
-            ("nodes(path)", "nodes"), ("relationships(path)", "edges")
+            ("nodes(path)", "nodes"), ("relationships(path)", "edges"),
         )
         return await self.ato_networkx(
             cypher,
@@ -608,7 +609,7 @@ class AgeGraphManager:  # noqa: PLR0904
                 .merge(
                     node("s").rel("r", rel_type, direction="->").node("e"),
                 )
-                .set_("r+=edge.p")
+                .set_(*(f"r.{_quote_key(k)}=edge.p.{_quote_key(k)}" for k in edges[0]["p"].keys()))
             )
             await self.aexecute_cypher(cypher, read_only=False, params={"edges": edges})
 
@@ -637,7 +638,7 @@ class AgeGraphManager:  # noqa: PLR0904
                     add_edge_to_networkx(x)
 
         rows = await self.aexecute_cypher(
-            cypher, params=params, columns=["nodes agtype", "edges agtype"], read_only=True
+            cypher, params=params, columns=["nodes agtype", "edges agtype"], read_only=True,
         )
         for row in rows:
             for value in row.values():

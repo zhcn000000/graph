@@ -451,7 +451,7 @@ class CypherBuilder(BuilderBase):
         return clone
 
     def return_(
-        self, *items: str | ExpressionBuilder | tuple[str | ExpressionBuilder, str | ExpressionBuilder]
+        self, *items: str | ExpressionBuilder | tuple[str | ExpressionBuilder, str | ExpressionBuilder],
     ) -> Self:
         clone = deepcopy(self)
         converted_items = []
@@ -531,11 +531,10 @@ def build_cypher_stmt(
         for col in columns:
             if isinstance(col, tuple):
                 builded_columns.append(f"{col[0]} {col[1]}")
+            elif " " in col:
+                builded_columns.append(col)
             else:
-                if " " in col:
-                    builded_columns.append(col)
-                else:
-                    builded_columns.append(f"{col} agtype")
+                builded_columns.append(f"{col} agtype")
         col_parts: list[Template] = []
         for raw_col in builded_columns:
             col = raw_col.strip()

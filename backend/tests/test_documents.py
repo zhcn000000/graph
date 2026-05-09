@@ -38,7 +38,7 @@ class TestDocument:
                     subject=ExtractedEntity(name="test", entity_type=EntityType.ARTIFACT),
                     predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY),
                     object=ExtractedEntity(name="museum", entity_type=EntityType.MUSEUM),
-                )
+                ),
             ],
             id=doc_id,
             document_index=1,

@@ -27,7 +27,7 @@ async def aconvert_file(uri: Path | str | BytesIO) -> Document:
     elif isinstance(uri, str) and re.match(r"^https?://", uri):
         result = await asyncify(converter.convert_url)(uri)
         link = uri
-    elif isinstance(uri, str) and re.match(r"^data:.*;base64,", uri) or re.match(r"^file://", uri):
+    elif (isinstance(uri, str) and re.match(r"^data:.*;base64,", uri)) or re.match(r"^file://", uri):
         result = await asyncify(converter.convert_uri)(uri)
         link = uri
     else:

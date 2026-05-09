@@ -178,7 +178,7 @@ class ConnectionPoolManager:
                 async with conn.cursor() as cursor:
                     await cursor.execute("SET search_path TO public,bm25_catalog,tokenizer_catalog;")
 
-            logging.debug(f"Creating new connection pool for database: {conninfo}")
+            logging.debug("Creating new connection pool for database: %s", conninfo)
             self._apools[dbname] = AsyncConnectionPool(
                 conninfo,
                 name=dbname,

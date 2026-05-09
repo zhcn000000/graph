@@ -44,7 +44,7 @@ class CSVRowInput(BaseModel):
                     predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY),
                     object=ExtractedEntity(name=self.museum, entity_type=EntityType.MUSEUM),
                     description=self.description or f"{self.title} 收藏于 {self.museum}",
-                )
+                ),
             )
 
         if self.period:
@@ -54,7 +54,7 @@ class CSVRowInput(BaseModel):
                     predicate=RelationshipInfo(predicate=RelationshipType.BELONGS_TO_DYNASTY),
                     object=ExtractedEntity(name=self.period, entity_type=EntityType.DYNASTY),
                     description=f"{self.title} 属于 {self.period}",
-                )
+                ),
             )
 
         if self.material:
@@ -64,7 +64,7 @@ class CSVRowInput(BaseModel):
                     predicate=RelationshipInfo(predicate=RelationshipType.MADE_OF_MATERIAL),
                     object=ExtractedEntity(name=self.material, entity_type=EntityType.MATERIAL),
                     description=f"{self.title} 材质为 {self.material}",
-                )
+                ),
             )
 
         if self.type:
@@ -74,7 +74,7 @@ class CSVRowInput(BaseModel):
                     predicate=RelationshipInfo(predicate=RelationshipType.IS_TYPE_OF),
                     object=ExtractedEntity(name=self.type, entity_type=EntityType.ARTIFACT_TYPE),
                     description=f"{self.title} 类型为 {self.type}",
-                )
+                ),
             )
 
         if self.location and self.museum:
@@ -84,7 +84,7 @@ class CSVRowInput(BaseModel):
                     predicate=RelationshipInfo(predicate=RelationshipType.LOCATED_AT),
                     object=ExtractedEntity(name=self.location, entity_type=EntityType.LOCATION),
                     description=f"{self.museum} 位于 {self.location}",
-                )
+                ),
             )
 
         return triples

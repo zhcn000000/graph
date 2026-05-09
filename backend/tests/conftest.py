@@ -164,7 +164,7 @@ def mock_llm_extractor(sample_entities: list[ExtractedTriple], mocker: MockerFix
     with (
         mocker.patch.object(LLMExtractor, "_run_agent_with_prompt", mock),
         mocker.patch(
-            "knowgraph.graph.triples.compute_triples_strength", mocker.AsyncMock(side_effect=lambda t, **kw: t)
+            "knowgraph.graph.triples.compute_triples_strength", mocker.AsyncMock(side_effect=lambda t, **kw: t),
         ),
     ):
         yield
@@ -188,7 +188,6 @@ def source_id() -> UUID:
 @pytest.fixture(scope="session")
 async def setup_test_database():
     """Session-scoped fixture: creates and initializes the test database once."""
-
     from knowgraph.database.initdb import init_db
 
     await init_db(alter_system=False, dbname=TEST_DB_NAME)
@@ -200,7 +199,6 @@ async def clean_tables():
 
     Depends on setup_test_database to ensure the database exists.
     """
-
     from knowgraph.database.database import DatabaseManager
 
     db = DatabaseManager(TEST_DB_NAME)
@@ -211,7 +209,6 @@ async def clean_tables():
 @pytest.fixture
 async def clean_test_database():
     """Function-scoped fixture: drops and recreates the entire test database."""
-
     from knowgraph.database.initdb import clean_db
 
     await clean_db(dbname=TEST_DB_NAME, force=True)
@@ -220,7 +217,6 @@ async def clean_test_database():
 @pytest.fixture
 async def reset_test_database():
     """Function-scoped fixture: resets the test database by dropping and recreating it."""
-
     from knowgraph.database.initdb import reset_db
 
     await reset_db(dbname=TEST_DB_NAME, force=True)
