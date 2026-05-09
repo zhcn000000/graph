@@ -14,5 +14,6 @@ class Document(BaseModel):
     entities: list[str] = Field(default_factory=list)
     triples: list[ExtractedTriple] = Field(default_factory=list)
     id: UUID | None = None
+    file_id: UUID | None = None
     document_index: int | None = None
     chunk_index: int | None = None

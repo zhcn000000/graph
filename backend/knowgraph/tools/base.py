@@ -5,7 +5,7 @@ import pandas as pd
 from pydantic_monty import Monty
 from rich.pretty import pretty_repr
 
-from knowgraph.database import RAGMode
+from knowgraph.database.ragmode import RAGMode
 from knowgraph.graph.schema import EntityType, ExtractedEntity
 
 rag_mode = RAGMode()

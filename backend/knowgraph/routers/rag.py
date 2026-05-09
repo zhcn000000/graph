@@ -5,9 +5,9 @@ from uuid import UUID
 from fastapi import APIRouter, UploadFile
 from pydantic import BaseModel
 
-from knowgraph.database import RAGMode
 from knowgraph.database.document import DocumentStore
 from knowgraph.database.graph import AgeGraphManager
+from knowgraph.database.ragmode import RAGMode
 
 router = APIRouter()
 

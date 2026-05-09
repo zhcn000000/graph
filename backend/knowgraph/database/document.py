@@ -19,7 +19,7 @@ from knowgraph.graph.triples import CSVRowInput, LLMExtractor
 from .database import DatabaseManager
 from .graph import AgeGraphManager
 from .source import SourceStore
-from .tables import ArtifactRawTable, DocumentTable, Source
+from .tables import ArtifactRawTable, DocumentTable
 
 
 class DocumentStore:
@@ -105,28 +105,17 @@ class DocumentStore:
 
         all_doc_ids: list[UUID] = []
         full_graph = DiGraph()
-
-        source_names = {doc.name for doc in documents if doc.name}
-        file_id_map: dict[str, UUID] = {}
-        if source_names:
-            async with self.__db.asession() as pre_session:
-                stmt = select(col(Source.id), col(Source.name)).where(
-                    col(Source.name).in_(list(source_names)),
-                )
-                result = await pre_session.execute(stmt)
-                file_id_map = {row[1]: row[0] for row in result.fetchall()}
-
         insert_values: list[dict] = []
         start_idx = await self._next_document_index()
         for doc_idx, doc in enumerate(documents, start_idx):
-            file_id = file_id_map.get(doc.name or "")
-            if file_id is None:
+            file_id = doc.file_id
+            if file_id is None and doc.name:
                 warnings.warn(
                     f"Source not found for name '{doc.name}', skipping document.",
                     UserWarning,
                     stacklevel=2,
                 )
-                continue
+
             entity_uris: set[str] = set()
             doc_llm_triples = await self._extract_llm_triples(doc)
             doc.triples = doc.triples + doc_llm_triples
@@ -140,7 +129,7 @@ class DocumentStore:
                 async for sub_doc in asplit_document(chunk, chunk_size=512, chunk_overlap=32):
                     sub_chunks.append(sub_doc)
                 vectors = await aembed_documents(sub_chunks)
-                bmvector = await atokenize_content(chunk.content)
+                bmvector = await atokenize_content(chunk)
 
                 insert_values.append({
                     "file_id": file_id,
@@ -213,9 +202,9 @@ class DocumentStore:
                 continue
             artifact_id_str = doc.metadata.get("artifact_id")
             artifact_id = UUID(artifact_id_str) if artifact_id_str else None
-            source_id = await self.__source.ainsert_source(name=doc.name, link=doc.link, artifact_id=artifact_id)
-            if source_id is None:
-                source_id = (await self.__source.aget_id_by_names([doc.name]))[0]
+            doc.file_id = await self.__source.ainsert_source(name=doc.name, link=doc.link, artifact_id=artifact_id)
+            if doc.file_id is None:
+                doc.file_id = (await self.__source.aget_id_by_names([doc.name]))[0]
 
         await self.aadd_documents(documents)
 

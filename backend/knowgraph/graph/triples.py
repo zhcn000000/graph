@@ -5,6 +5,8 @@ import pandas as pd
 from pydantic import BaseModel
 from pydantic_ai import ModelSettings
 
+from ..chat.model import agent
+from ..chat.struct import ModelDeps
 from ..documents.embedder import arerank_documents
 from ..documents.models import Document
 from .schema import (
@@ -186,8 +188,6 @@ class LLMExtractor:
         return self.USER_PROMPT_TEMPLATE.format(record=record, known_triples=known_str)
 
     async def _run_agent_with_prompt(self, prompt: str) -> list[ExtractedTriple]:
-        from ..chat.model import agent
-        from ..chat.struct import ModelDeps
 
         result = await agent.run(
             prompt,
