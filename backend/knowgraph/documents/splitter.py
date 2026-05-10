@@ -1,11 +1,8 @@
 from collections.abc import AsyncIterator
 
 from asyncer import asyncify
-from spacy.language import Language
 
 from knowgraph.documents.models import Document, get_nlp
-
-_nlp: Language | None = None
 
 
 async def asplit_content(content: str, chunk_size: int = 512, chunk_overlap: int = 32) -> AsyncIterator[str]:
