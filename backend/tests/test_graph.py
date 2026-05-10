@@ -513,7 +513,11 @@ class TestNetworkXInterop:
             properties={"description": "商代"},
         )
         nx_in.add_node(
-            "cidoc:museum/故宫", label="Museum", entity_type="museum", name="故宫", properties={"description": "北京"}
+            "cidoc:museum/故宫",
+            label="Museum",
+            entity_type="museum",
+            name="故宫",
+            properties={"description": "北京"},
         )
         nx_in.add_edge("cidoc:artifact/青铜鼎", "cidoc:museum/故宫", label="collected_by", properties={"notes": "test"})
 
@@ -552,7 +556,10 @@ class TestNetworkXInterop:
         nx_in.add_node("cidoc:artifact/花瓶", label="Artifact", entity_type="artifact", name="花瓶")
         nx_in.add_node("cidoc:dynasty/清", label="Dynasty", entity_type="dynasty", name="清")
         nx_in.add_edge(
-            "cidoc:artifact/花瓶", "cidoc:dynasty/清", label="belongs_to_dynasty", properties={"confidence": 0.95}
+            "cidoc:artifact/花瓶",
+            "cidoc:dynasty/清",
+            label="belongs_to_dynasty",
+            properties={"confidence": 0.95},
         )
 
         success = await mgr.afrom_networkx(nx_in)
@@ -583,10 +590,16 @@ class TestEdgeConnections:
 
         await mgr.amupsert_edge("cidoc:artifact/鼎", "cidoc:museum/故宫", "collected_by", {"description": "故宫藏鼎"})
         await mgr.amupsert_edge(
-            "cidoc:artifact/鼎", "cidoc:dynasty/商", "belongs_to_dynasty", {"description": "商代青铜鼎"}
+            "cidoc:artifact/鼎",
+            "cidoc:dynasty/商",
+            "belongs_to_dynasty",
+            {"description": "商代青铜鼎"},
         )
         await mgr.amupsert_edge(
-            "cidoc:artifact/鼎", "cidoc:material/青铜", "made_of_material", {"description": "青铜材质"}
+            "cidoc:artifact/鼎",
+            "cidoc:material/青铜",
+            "made_of_material",
+            {"description": "青铜材质"},
         )
 
     @pytest.mark.usefixtures("clean_tables")

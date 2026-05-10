@@ -222,7 +222,7 @@ class TestInsertAndSearch:
         ])
 
         results, graph_entities = await rag_mode.ahyprid_search(
-            queries=["大都会博物馆 青铜器"],
+            queries=["大都会博物馆", "青铜器"],
             k=3,
             use_graph=True,
         )

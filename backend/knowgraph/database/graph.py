@@ -639,7 +639,10 @@ class AgeGraphManager:  # noqa: PLR0904
         return True
 
     async def ato_networkx(
-        self, cypher: str | CypherBuilder, params: dict | None = None, columns: list | None = None
+        self,
+        cypher: str | CypherBuilder,
+        params: dict | None = None,
+        columns: list | None = None,
     ) -> DiGraph:
 
         graph = DiGraph()

@@ -544,13 +544,12 @@ def build_cypher_stmt(
                 col_parts.append(Template(name) + t" " + Template(type_name))
             else:
                 col_parts.append(Template(raw_col) + t" agtype")
+    elif isinstance(cypher, CypherBuilder):
+        col_parts = [Template(col) + t" agtype" for col in cypher.get_columns()]
+        if not col_parts:
+            col_parts = [t"result agtype"]
     else:
-        if isinstance(cypher, CypherBuilder):
-            col_parts = [Template(col) + t" agtype" for col in cypher.get_columns()]
-            if not col_parts:
-                col_parts = [t"result agtype"]
-        else:
-            raise ValueError("Please provide columns")
+        raise ValueError("Please provide columns")
 
     cols = col_parts[0]
     for col in col_parts[1:]:

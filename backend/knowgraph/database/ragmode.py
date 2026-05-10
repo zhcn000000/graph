@@ -1,5 +1,5 @@
 import operator
-from collections import Counter, defaultdict
+from collections import Counter
 from typing import NamedTuple
 from uuid import UUID
 
@@ -10,8 +10,7 @@ from sqlmodel import col
 from knowgraph.documents.embedder import aembed_documents, arerank_documents
 from knowgraph.documents.models import Document
 from knowgraph.documents.tokenizer import atokenize_document
-from knowgraph.graph import RelationshipType
-from knowgraph.graph.schema import EntityType, ExtractedEntity, ExtractedTriple, RelationshipInfo
+from knowgraph.graph.schema import EntityType, ExtractedEntity
 
 from .database import DatabaseManager
 from .graph import AgeGraphManager
@@ -43,42 +42,6 @@ class RAGMode:
         if self._graph_manager is None:
             self._graph_manager = AgeGraphManager(dbname=self.__db.dbname)
         return self._graph_manager
-
-    async def _query_edges_by_entity_names(
-        self,
-        names: list[str],
-        max_per_name: int = 20,
-    ) -> dict[str, list[ExtractedTriple]]:
-        edges_by_name: dict[str, list[ExtractedTriple]] = defaultdict(list)
-        if not names:
-            return edges_by_name
-
-        edge_rows = await self.graph_manager.aquery_edge_connections_by_entity_names(names)
-        for row in edge_rows:
-            query_name = row["query_name"]
-            if len(edges_by_name[query_name]) >= max_per_name:
-                continue
-            start_entity_type = EntityType(row.get("start_entity_type", ""))
-            start_name = str(row.get("subject_name", ""))
-            end_entity_type = EntityType(row.get("end_entity_type", ""))
-            end_name = str(row.get("object_name", ""))
-            triple = ExtractedTriple(
-                subject=ExtractedEntity(
-                    name=start_name,
-                    entity_type=start_entity_type,
-                ),
-                predicate=RelationshipInfo(
-                    predicate=RelationshipType(row.get("relationship_type", "")),
-                    strength=row.get("connection_strength"),
-                ),
-                object=ExtractedEntity(
-                    name=end_name,
-                    entity_type=end_entity_type,
-                ),
-                description=row.get("description"),
-            )
-            edges_by_name[query_name].append(triple)
-        return edges_by_name
 
     @staticmethod
     async def _vector_search(
@@ -135,7 +98,7 @@ class RAGMode:
         self,
         doc_ids: list[UUID],
         session,
-    ) -> list[tuple[str, float]]:
+    ) -> list[str]:
         if not doc_ids:
             return []
         stmt = select(col(DocumentTable.entities)).where(col(DocumentTable.id).in_(doc_ids))
@@ -146,23 +109,20 @@ class RAGMode:
             for uri in entities:
                 counter[uri] = counter.get(uri, 0) + 1
 
-        total = sum(counter.values()) or 1
         ranked = sorted(counter.items(), key=operator.itemgetter(1), reverse=True)
-        return [(uri, count / total) for uri, count in ranked]
+        return [uri for uri, _ in ranked]
 
     async def _graph_search(
         self,
         queries: list[str],
         topn: int,
-        entity_uris_with_scores: list[tuple[str, float]],
+        entity_uris: list[str],
         max_hops: int = 2,
     ) -> list[GraphSearchResult]:
-        if not entity_uris_with_scores:
+        if not entity_uris:
             return []
 
-        entity_score_map: dict[str, float] = dict(entity_uris_with_scores)
-
-        scan_uris = [uri for uri, _ in entity_uris_with_scores[: max(topn * 3, 30)]]
+        scan_uris = entity_uris[: max(topn * 3, 30)]
         vertex_rows = await self.graph_manager.aget_vertices_by_uris(scan_uris)
         vertex_map: dict[str, dict[str, object]] = {}
         for r in vertex_rows:
@@ -174,12 +134,18 @@ class RAGMode:
                 vertex_map[computed_uri] = r
 
         unified_graph = DiGraph()
-        traverse_uris = [uri for uri, _ in entity_uris_with_scores[: max(topn * 2, 20)] if uri in vertex_map]
+        traverse_uris = [uri for uri in entity_uris[: max(topn * 2, 20)] if uri in vertex_map]
         if traverse_uris:
             unified_graph = await self.graph_manager.atraverse_multi(traverse_uris, max_hops=max_hops)
 
         if unified_graph.number_of_nodes() == 0:
             return []
+
+        for _u, _v, data in unified_graph.edges(data=True):
+            props = data.get("properties", {}) if isinstance(data.get("properties"), dict) else {}
+            cs = props.get("connection_strength")
+            if cs is not None:
+                data["weight"] = float(cs)
 
         uri_to_node_key: dict[str, object] = {}
         for node_key in unified_graph.nodes():
@@ -194,31 +160,7 @@ class RAGMode:
             if node_uri:
                 uri_to_node_key[node_uri] = node_key
 
-        personalization: dict[str, float] = {}
-        for node_key in unified_graph.nodes():
-            data = unified_graph.nodes[node_key]
-            node_props = data.get("properties", {}) if isinstance(data.get("properties"), dict) else {}
-            entity_type = str(data.get("entity_type") or node_props.get("entity_type", ""))
-            name = str(data.get("name") or node_props.get("name", ""))
-            if entity_type and name:
-                node_uri = str(ExtractedEntity(name=name, entity_type=EntityType(entity_type)).uri)
-            else:
-                node_uri = str(data.get("uri", str(node_key)))
-            personalization[node_key] = entity_score_map.get(node_uri, 0.0)
-
-        total_pers = sum(personalization.values())
-        if total_pers > 0:
-            pr_scores = pagerank(unified_graph, personalization=personalization)
-        else:
-            pr_scores = pagerank(unified_graph)
-
-        names: list[str] = [
-            str(vertex_map[uri]["name"])
-            for uri in entity_score_map
-            if uri in vertex_map and vertex_map[uri].get("name")
-        ][:30]
-
-        edges_by_name = await self._query_edges_by_entity_names(names)
+        pr_scores = pagerank(unified_graph, weight="weight")
 
         graph_results: list[GraphSearchResult] = []
         seen_uris: set[str] = set()
@@ -246,17 +188,7 @@ class RAGMode:
                 entity_name = str(vertex.get("name", entity_uri))
                 entity_type = str(vertex.get("entity_type", ""))
 
-            connected_edges = edges_by_name.get(entity_name, [])
-            connected_strength = 0.0
-            for edge in connected_edges:
-                if edge.predicate.strength is not None:
-                    connected_strength = max(connected_strength, edge.predicate.strength)
-
-            final_score: float
-            if connected_strength > 0:
-                final_score = pr_score * (1 + 0.2 * connected_strength)
-            else:
-                final_score = pr_score
+            final_score = pr_score
 
             path_graph: DiGraph | None = None
             entity_node_key = uri_to_node_key.get(entity_uri)
@@ -327,7 +259,7 @@ class RAGMode:
         k: int = 4,
         file_ids: list[UUID] | None = None,
         regex: str | None = None,
-        use_graph: bool = False,
+        use_graph: bool = True,
         max_hops: int = 3,
         graph_weight: float = 0.3,
         vector_weight: float = 0.4,
@@ -364,7 +296,7 @@ class RAGMode:
                 graph_entities = await self._graph_search(
                     queries=queries,
                     topn=topn,
-                    entity_uris_with_scores=entity_stats,
+                    entity_uris=entity_stats,
                     max_hops=max_hops,
                 )
                 if graph_entities:
@@ -506,7 +438,7 @@ class RAGMode:
             graph_entities = await self._graph_search(
                 queries=queries,
                 topn=10,
-                entity_uris_with_scores=entity_stats,
+                entity_uris=entity_stats,
                 max_hops=max_hops,
             )
 
