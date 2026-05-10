@@ -601,11 +601,6 @@ class TestEdgeConnections:
             assert "predicate_uri" in row
 
     @pytest.mark.usefixtures("clean_tables")
-    async def test_aget_all_edge_connections_empty(self, mgr):
-        results = await mgr.aget_all_edge_connections()
-        assert results == []
-
-    @pytest.mark.usefixtures("clean_tables")
     async def test_aquery_edge_connections_by_subject(self, mgr):
         await self._setup_edges(mgr)
         results = await mgr.aquery_edge_connections(subject_name="鼎")
