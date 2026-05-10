@@ -3,4 +3,4 @@ from pydantic import BaseModel
 
 class ModelDeps(BaseModel):
     max_result_retries: int = 3
-    use_tools: bool = True
+    select_toolset: set[str] = {"rag_toolkit", "code_toolkit", "web_toolkit"}

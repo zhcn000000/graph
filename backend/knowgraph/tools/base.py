@@ -1,9 +1,13 @@
+from functools import cache
 from typing import Literal
 from uuid import UUID
 
+import httpx
 import pandas as pd
+from bs4 import BeautifulSoup
 from pydantic_monty import Monty
 from rich.pretty import pretty_repr
+from tavily import AsyncTavilyClient
 
 from knowgraph.database.ragmode import RAGMode
 from knowgraph.graph.schema import EntityType, ExtractedEntity
@@ -254,6 +258,71 @@ async def get_document_entities_base(document_index: int) -> str:
     md += "\n> 使用 `get_entity_info` 查看特定实体的详细信息。"
 
     return md
+
+
+@cache
+def _get_tavily() -> AsyncTavilyClient:
+    return AsyncTavilyClient()
+
+
+async def search_web_base(
+    query: str,
+    max_results: int = 5,
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+    include_image: bool = False,
+) -> dict:
+    try:
+        return await _get_tavily().search(
+            query,
+            max_results=max_results,
+            include_domains=include_domains,  # type: ignore
+            exclude_domains=exclude_domains,  # type: ignore
+            include_image=include_image,
+        )
+    except Exception as e:
+        return {"error": str(e), "results": []}
+
+
+async def extract_web_base(
+    urls: list[str],
+    query: str | None = None,
+    include_image: bool = False,
+) -> dict:
+    try:
+        return await _get_tavily().extract(
+            urls,
+            include_images=include_image,
+            query=query,  # type: ignore
+        )
+    except Exception as e:
+        return {"error": str(e), "results": []}
+
+
+async def crawl_web_base(
+    url: str,
+    max_depth: int = 1,
+    max_pages: int = 10,
+) -> dict:
+    try:
+        return await _get_tavily().crawl(
+            url,
+            max_depth=max_depth,
+            max_pages=max_pages,
+        )
+    except Exception as e:
+        return {"error": str(e), "results": []}
+
+
+async def fetch_web_base(url: str, format: str = "text") -> str:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        html_content = response.text
+    if format == "html":
+        return html_content
+    soup = BeautifulSoup(html_content, "html.parser")
+    return soup.get_text(separator="\n")
 
 
 async def python_repl_base(code: str) -> str:

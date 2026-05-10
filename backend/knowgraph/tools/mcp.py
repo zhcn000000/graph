@@ -1,16 +1,20 @@
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from knowgraph.tools.base import (
+    crawl_web_base,
+    extract_web_base,
+    fetch_web_base,
     get_document_context_base,
     get_document_entities_base,
     get_entity_info_base,
     get_entity_paths_base,
     python_repl_base,
     search_documents_base,
+    search_web_base,
     traverse_graph_base,
 )
 
@@ -164,3 +168,67 @@ async def python_repl(
         return await python_repl_base(code=code)
     except Exception as e:
         raise ToolError(f"执行Python代码时发生错误: {e}") from e
+
+
+@mcp.tool(
+    name="search_web",
+    description="网络搜索工具，输入搜索关键词，返回搜索结果摘要。",
+)
+async def search_web(
+    query: Annotated[str, Field(description="搜索关键词")],
+    max_results: Annotated[int, Field(description="返回的最大搜索结果数量")] = 5,
+    include_domains: Annotated[list[str] | None, Field(description="要包含的域名列表")] = None,
+    exclude_domains: Annotated[list[str] | None, Field(description="要排除的域名列表")] = None,
+) -> dict[str, Any]:
+    try:
+        return await search_web_base(
+            query=query,
+            max_results=max_results,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+        )
+    except Exception as e:
+        raise ToolError(f"网络搜索失败: {e!s}") from e
+
+
+@mcp.tool(
+    name="extract_web",
+    description="提取网页内容工具，输入网页URL列表，返回网页的主要内容摘要。",
+)
+async def extract_web(
+    urls: Annotated[list[str], Field(description="要提取内容的网页URL列表")],
+    query: Annotated[str | None, Field(description="可选的查询关键词，用于指导内容提取")] = None,
+) -> dict[str, Any]:
+    try:
+        return await extract_web_base(urls=urls, query=query)
+    except Exception as e:
+        raise ToolError(f"网页内容提取失败: {e!s}") from e
+
+
+@mcp.tool(
+    name="crawl_web",
+    description="网页爬取工具，输入网页URL，递归爬取并返回网页文本内容。",
+)
+async def crawl_web(
+    url: Annotated[str, Field(description="要爬取内容的网页URL")],
+    max_depth: Annotated[int, Field(description="爬取的最大深度")] = 1,
+    max_pages: Annotated[int, Field(description="爬取的最大页面数量")] = 10,
+) -> dict[str, Any]:
+    try:
+        return await crawl_web_base(url=url, max_depth=max_depth, max_pages=max_pages)
+    except Exception as e:
+        raise ToolError(f"网页爬取失败: {e!s}") from e
+
+
+@mcp.tool(
+    name="fetch_web",
+    description="获取网页原始内容工具，输入网页URL，返回网页的文本内容。",
+)
+async def fetch_web(
+    url: Annotated[str, Field(description="要获取内容的网页URL")],
+    format: Annotated[Literal["text", "html"], Field(description="内容格式，支持html和text两种格式")] = "text",
+) -> str:
+    try:
+        return await fetch_web_base(url=url, format=format)
+    except Exception as e:
+        raise ToolError(f"网页获取失败: {e!s}") from e

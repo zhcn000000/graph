@@ -103,6 +103,7 @@ class ChatRequest(BaseModel):
     files: list[str | dict] = []
     model: str | None = None
     thinking: bool = True
+    select_toolset: set[str] = {"rag_toolkit", "code_toolkit", "web_toolkit"}
 
 
 class ChatTitleRequest(BaseModel):
@@ -213,7 +214,7 @@ async def api_chat(
     request: ChatRequest,
 ) -> StreamingResponse:
     message_history = await db.aget_messages(session_id)
-    deps = ModelDeps()
+    deps = ModelDeps(select_toolset=request.select_toolset)
     files: list[Any] = []
     messages: Sequence[UserContent] = [request.text] + files
     model_settings = ModelSettings(

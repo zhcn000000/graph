@@ -126,6 +126,10 @@ class LLMExtractor:
     SYSTEM_PROMPT = """你是一个专业的文物知识图谱专家，专门从海外博物馆的文物数据中提取结构化三元组信息。
 你的任务是将文物记录转换为知识图谱三元组（主体-谓词-客体），遵循CIDOC-CRM本体标准。
 你无需提取关系中的strength字段，设置为null获不填即可，后续会根据三元组文本内容进行相关性计算来赋值strength。
+如果文物记录中的信息不完整或你怀疑有错（如缺少朝代、材质、艺术家等），
+你可以结合自身知识或必要时使用 search_web 工具进行网络搜索来补充缺失的上下文信息，
+确保提取的三元组尽可能准确和完整。
+
 ## 实体类型
 - artifact (文物): 具有唯一标识的名称
 - museum (博物馆): 收藏文物的机构
@@ -148,7 +152,7 @@ class LLMExtractor:
 ## 输出要求
 1. 优先关注已有三元组未覆盖的实体和关系
 2. 对于每个实体，生成唯一的URI
-3. 如果信息不明确或缺失，跳过该实体
+3. 如果信息不明确或缺失，可以使用 search_web 搜索相关信息后再提取
 4. 用中文描述这个三元组代表的语义关系
 
 ## 三元组格式
@@ -195,7 +199,7 @@ class LLMExtractor:
         result = await agent.run(
             prompt,
             instructions=self.SYSTEM_PROMPT,
-            deps=ModelDeps(use_tools=False),
+            deps=ModelDeps(select_toolset={"web_toolkit"}),
             model_settings=ModelSettings(extra_body={"thinking": {"type": "disabled"}}),
             output_type=list[ExtractedTriple],
         )

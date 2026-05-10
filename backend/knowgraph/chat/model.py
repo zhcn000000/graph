@@ -7,12 +7,12 @@ from pydantic_ai.providers.deepseek import DeepSeekProvider
 from knowgraph.utils.templete import FIRST_INPUT_TEMPLATE
 
 from .struct import ModelDeps
-from .tools import toolset as rag_toolset
+from .tools import code_toolset, rag_toolset, web_toolset
 
 agent: Agent[ModelDeps, str] = Agent(
     model=OpenAIChatModel(model_name="deepseek-v4-flash", provider=DeepSeekProvider()),
     deps_type=ModelDeps,
-    toolsets=[rag_toolset],
+    toolsets=[rag_toolset, code_toolset, web_toolset],
     instructions=FIRST_INPUT_TEMPLATE,
     output_retries=5,
 )
