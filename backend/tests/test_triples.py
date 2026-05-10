@@ -119,7 +119,6 @@ class TestLLMExtractorLive:
 
     async def test_aextract_from_csv_row_produces_valid_triples(self):
         """Verify LLM produces well-formed ExtractedTriple list with correct enum values."""
-
         from knowgraph.graph.schema import EntityType, ExtractedTriple, RelationshipType
 
         extractor = LLMExtractor()

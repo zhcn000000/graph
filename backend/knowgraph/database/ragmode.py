@@ -228,7 +228,7 @@ class RAGMode:
         all_entity_uris = [gsr.entity_uri for gsr in graph_entities]
 
         stmt = select(col(DocumentTable.id), col(DocumentTable.entities)).where(
-            col(DocumentTable.entities).op("&&")(all_entity_uris)
+            col(DocumentTable.entities).op("&&")(all_entity_uris),
         )
         result = await session.execute(stmt)
         rows = result.fetchall()
@@ -239,7 +239,7 @@ class RAGMode:
         for row in rows:
             doc_id, doc_entities = row[0], row[1] or []
             best_rank = min(
-                (entity_rank.get(e, len(all_entity_uris)) for e in doc_entities), default=len(all_entity_uris)
+                (entity_rank.get(e, len(all_entity_uris)) for e in doc_entities), default=len(all_entity_uris),
             )
             doc_pairs.append((doc_id, best_rank))
 
