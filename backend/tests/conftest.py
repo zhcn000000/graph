@@ -158,7 +158,7 @@ def sample_entities_from_csv() -> list[ExtractedTriple]:
     return triples
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_llm_extractor(mocker: MockerFixture):
     mock_agent = mocker.AsyncMock(return_value=[])
     with mocker.patch.object(LLMExtractor, "_run_agent_with_prompt", mock_agent):

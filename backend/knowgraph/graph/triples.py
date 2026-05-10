@@ -165,9 +165,9 @@ class LLMExtractor:
 {record}
 
 请以JSON数组格式输出所有提取的三元组，每条记录包含：
-- subject: 主体实体 {name, entity_type, properties, description}
+- subject: 主体实体 {{name, entity_type, properties, description}}
 - predicate: 关系类型字符串 (如 "collected_by", "belongs_to_dynasty" 等)
-- object: 客体实体 {name, entity_type, properties, description}
+- object: 客体实体 {{name, entity_type, properties, description}}
 - description: 关系的语义描述（中文）
 
 只输出JSON，不要包含其他文字。"""
@@ -192,13 +192,11 @@ class LLMExtractor:
         return self.USER_PROMPT_TEMPLATE.format(record=record, known_triples=known_str)
 
     async def _run_agent_with_prompt(self, prompt: str) -> list[ExtractedTriple]:
-
         result = await agent.run(
             prompt,
-            deps=ModelDeps(),
-            model_settings=ModelSettings(
-                extra_body={"thinking": {"type": "disabled"}},
-            ),
+            instructions=self.SYSTEM_PROMPT,
+            deps=ModelDeps(use_tools=False),
+            model_settings=ModelSettings(extra_body={"thinking": {"type": "disabled"}}),
             output_type=list[ExtractedTriple],
         )
         return result.output

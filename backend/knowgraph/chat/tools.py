@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from pydantic import Field
-from pydantic_ai import FunctionToolset, ModelRetry, RunContext
+from pydantic_ai import FunctionToolset, ModelRetry, RunContext, ToolDefinition
 
 from knowgraph.tools.base import (
     get_document_context_base,
@@ -18,6 +18,13 @@ from .struct import ModelDeps
 toolset: FunctionToolset[ModelDeps] = FunctionToolset()
 
 
+async def prepare_tools(ctx: RunContext[ModelDeps], tool_def: ToolDefinition) -> ToolDefinition | None:
+    """根据上下文动态添加相关工具."""
+    if ctx.deps.use_tools:
+        return tool_def
+    return None
+
+
 @toolset.tool(
     name="search_documents",
     description="""
@@ -27,6 +34,7 @@ toolset: FunctionToolset[ModelDeps] = FunctionToolset()
 如果用户指定了包含/排除关键词，可以提供`regex`正则表达式过滤。
 返回结果包含文档内容和相关实体，支持翻页查看更多结果。
 """,
+    prepare=prepare_tools,
 )
 async def search_documents(
     ctx: RunContext[ModelDeps],
@@ -55,6 +63,7 @@ async def search_documents(
 可用于深入了解搜索结果中发现的实体，扩展知识上下文。
 支持控制遍历方向和跳数。
 """,
+    prepare=prepare_tools,
 )
 async def traverse_graph(
     ctx: RunContext[ModelDeps],
@@ -78,6 +87,7 @@ async def traverse_graph(
 获取知识图谱中指定实体的详细信息，包括属性、关联关系等。
 用于深入了解某个特定实体。
 """,
+    prepare=prepare_tools,
 )
 async def get_entity_info(
     ctx: RunContext[ModelDeps],
@@ -95,6 +105,7 @@ async def get_entity_info(
 查询两个实体之间的最短路径。
 用于理解两个实体之间的关联方式。
 """,
+    prepare=prepare_tools,
 )
 async def get_entity_paths(
     ctx: RunContext[ModelDeps],
@@ -119,6 +130,7 @@ async def get_entity_paths(
 当一个文档在搜索中被截断时，使用此工具获取该文档的相邻分块以获得更完整的上下文。
 返回结果包含 document_index，可用于后续查询相关图实体。
 """,
+    prepare=prepare_tools,
 )
 async def get_document_context(
     ctx: RunContext[ModelDeps],
@@ -148,6 +160,7 @@ async def get_document_context(
 通过搜索结果中的 document_index 查询该文档中的图实体（如人物、地点、事件等）。
 可用于深入了解某个文档中涉及的知识实体及其关系。
 """,
+    prepare=prepare_tools,
 )
 async def get_document_entities(
     ctx: RunContext[ModelDeps],
@@ -163,6 +176,7 @@ async def get_document_entities(
     name="python_repl",
     description="这是一个可以执行Python代码的工具，输入Python代码并返回最后一条表达式的结果和控制台输出。"
     "为了沙盒的安全性，以及沙盒的局限性，该工具不支持任何需要使用import导入的库，除了sys, typing, asyncio",
+    prepare=prepare_tools,
 )
 async def python_repl(
     ctx: RunContext[ModelDeps],
