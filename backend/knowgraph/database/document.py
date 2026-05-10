@@ -12,7 +12,7 @@ from sqlmodel import col
 from knowgraph.documents.converter import aconvert_file
 from knowgraph.documents.embedder import aembed_documents
 from knowgraph.documents.models import Document
-from knowgraph.documents.splitter import asplit_document
+from knowgraph.documents.splitter import asplit_content
 from knowgraph.documents.tokenizer import atokenize_content
 from knowgraph.graph.schema import ExtractedTriple
 from knowgraph.graph.triples import CSVRowInput, LLMExtractor
@@ -131,10 +131,10 @@ class DocumentStore:
             entity_uris |= set(doc.entities)
 
             chunk_idx = 0
-            async for chunk in asplit_document(doc, chunk_size=4096, chunk_overlap=128):
+            async for chunk in asplit_content(doc, chunk_size=4096, chunk_overlap=128):
                 chunk_idx += 1
                 sub_chunks = []
-                async for sub_doc in asplit_document(chunk, chunk_size=512, chunk_overlap=32):
+                async for sub_doc in asplit_content(chunk, chunk_size=512, chunk_overlap=32):
                     sub_chunks.append(sub_doc)
                 vectors = await aembed_documents(sub_chunks)
                 bmvector = await atokenize_content(chunk)

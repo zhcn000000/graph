@@ -1,25 +1,17 @@
-import os
 from collections import Counter
-from functools import lru_cache
 
-from transformers.models.auto.tokenization_auto import AutoTokenizer
+import mmh3
+from asyncer import asyncify
 
-from .models import Document
+from .models import Document, get_nlp
 
-HF_ENDPOINT = os.environ.get("HF_ENDPOINT", "https://hf-mirror.com")
-os.environ["HF_ENDPOINT"] = HF_ENDPOINT
-
-
-@lru_cache(maxsize=1)
-def get_tokenizer():
-    return AutoTokenizer.from_pretrained("BAAI/bge-m3")
+BM25_VOCAB_SIZE = 1_000_000
 
 
 async def atokenize_content(content: str | Document) -> Counter[int]:
     if isinstance(content, Document):
         content = content.content
-    tokens = get_tokenizer().tokenize(content)
-    ids = get_tokenizer().convert_tokens_to_ids(tokens)
-    if isinstance(ids, int):
-        ids = [ids]
+    nlp = get_nlp()
+    doc = await asyncify(nlp)(content)
+    ids = [abs(mmh3.hash(token.text)) % BM25_VOCAB_SIZE for token in doc if not token.is_space]
     return Counter(ids)

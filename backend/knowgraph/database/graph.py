@@ -104,7 +104,7 @@ class AgeGraphManager:  # noqa: PLR0904
         return None
 
     async def acreate_graph(self) -> bool:
-        async with self.__db.acursor() as cur:
+        async with self.__db.acursor(read_only=False) as cur:
             result = await cur.execute(t"SELECT * FROM ag_catalog.ag_graph WHERE name = {self.graph_name:s}")
             exists = await result.fetchone()
             if not exists:
@@ -113,7 +113,7 @@ class AgeGraphManager:  # noqa: PLR0904
             return False
 
     async def adrop_graph(self) -> bool:
-        async with self.__db.acursor() as cur:
+        async with self.__db.acursor(read_only=False) as cur:
             result = await cur.execute(t"SELECT * FROM ag_catalog.ag_graph WHERE name = {self.graph_name:s}")
             exists = await result.fetchone()
             if exists:
@@ -383,12 +383,27 @@ class AgeGraphManager:  # noqa: PLR0904
         else:
             rel_dir = "--"
 
+        if max_hops <= 0:
+            result = await self.aget_vertex(start_uri)
+            if result is None:
+                return DiGraph()
+            g = DiGraph()
+            node_uri = result.get("uri") or start_uri
+            g.add_node(
+                node_uri,
+                label=result.get("label", ""),
+                entity_type=result.get("entity_type"),
+                name=result.get("name"),
+                properties={k: v for k, v in result.items() if k not in {"uri", "label", "entity_type", "name"}},
+            )
+            return g
+
         path_pattern = (
             node("start", props={"entity_type": "$entity_type", "name": "$name"})
             .rel("", length=f"1..{max_hops}", direction=rel_dir)
-            .node("end")
+            .node("end_node")
         )
-        cypher = match(f"path = {path_pattern}").return_(("nodes(path)", "nodes"), ("relationships(path)", "edges"))
+        cypher = match(f"path = {path_pattern}").return_(("path", "path"))
         return await self.ato_networkx(cypher, params={"entity_type": entity_type, "name": name})
 
     async def atraverse_multi(
@@ -419,13 +434,9 @@ class AgeGraphManager:  # noqa: PLR0904
         path_pattern = (
             node("start", props={"entity_type": "info.entity_type", "name": "info.name"})
             .rel("", length=f"1..{max_hops}", direction=rel_dir)
-            .node("end")
+            .node("end_node")
         )
-        cypher = (
-            unwind("$infos", "info")
-            .match(f"path = {path_pattern}")
-            .return_(("nodes(path)", "nodes"), ("relationships(path)", "edges"))
-        )
+        cypher = unwind("$infos", "info").match(f"path = {path_pattern}").return_(("path", "path"))
         return await self.ato_networkx(cypher, params={"infos": infos})
 
     async def afind_paths(
@@ -444,12 +455,9 @@ class AgeGraphManager:  # noqa: PLR0904
         path_pattern = (
             node("start", props={"entity_type": "$start_entity_type", "name": "$start_name"})
             .rel("", length=f"1..{max_hops}", direction="->")
-            .node("end", props={"entity_type": "$end_entity_type", "name": "$end_name"})
+            .node("end_node", props={"entity_type": "$end_entity_type", "name": "$end_name"})
         )
-        cypher = match(f"path = shortestPath({path_pattern})").return_(
-            ("nodes(path)", "nodes"),
-            ("relationships(path)", "edges"),
-        )
+        cypher = match(f"path = {path_pattern}").return_(("path", "path")).limit(1)
         return await self.ato_networkx(
             cypher,
             params={

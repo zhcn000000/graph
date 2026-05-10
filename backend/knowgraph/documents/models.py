@@ -1,5 +1,7 @@
+from functools import cache
 from uuid import UUID
 
+import spacy
 from pydantic import BaseModel, Field
 
 from knowgraph.graph.schema import ExtractedTriple
@@ -17,3 +19,8 @@ class Document(BaseModel):
     file_id: UUID | None = None
     document_index: int | None = None
     chunk_index: int | None = None
+
+
+@cache
+def get_nlp():
+    return spacy.load("zh_core_web_trf")
