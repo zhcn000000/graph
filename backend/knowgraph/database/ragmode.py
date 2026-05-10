@@ -184,8 +184,9 @@ class RAGMode:
         uri_to_node_key: dict[str, object] = {}
         for node_key in unified_graph.nodes():
             data = unified_graph.nodes[node_key]
-            entity_type = str(data.get("entity_type", ""))
-            name = str(data.get("name", ""))
+            node_props = data.get("properties", {}) if isinstance(data.get("properties"), dict) else {}
+            entity_type = str(data.get("entity_type") or node_props.get("entity_type", ""))
+            name = str(data.get("name") or node_props.get("name", ""))
             if entity_type and name:
                 node_uri = str(ExtractedEntity(name=name, entity_type=EntityType(entity_type)).uri)
             else:
@@ -196,8 +197,9 @@ class RAGMode:
         personalization: dict[str, float] = {}
         for node_key in unified_graph.nodes():
             data = unified_graph.nodes[node_key]
-            entity_type = str(data.get("entity_type", ""))
-            name = str(data.get("name", ""))
+            node_props = data.get("properties", {}) if isinstance(data.get("properties"), dict) else {}
+            entity_type = str(data.get("entity_type") or node_props.get("entity_type", ""))
+            name = str(data.get("name") or node_props.get("name", ""))
             if entity_type and name:
                 node_uri = str(ExtractedEntity(name=name, entity_type=EntityType(entity_type)).uri)
             else:
@@ -225,8 +227,9 @@ class RAGMode:
 
         for node_key, pr_score in sorted_by_pr:
             node_data = unified_graph.nodes.get(node_key, {})
-            node_entity_type = str(node_data.get("entity_type", ""))
-            node_name = str(node_data.get("name", ""))
+            node_props = node_data.get("properties", {}) if isinstance(node_data.get("properties"), dict) else {}
+            node_entity_type = str(node_data.get("entity_type") or node_props.get("entity_type", ""))
+            node_name = str(node_data.get("name") or node_props.get("name", ""))
             if node_entity_type and node_name:
                 entity_uri = str(ExtractedEntity(name=node_name, entity_type=EntityType(node_entity_type)).uri)
             else:
@@ -237,8 +240,8 @@ class RAGMode:
 
             vertex = vertex_map.get(entity_uri)
             if vertex is None:
-                entity_name = str(node_data.get("name", str(node_key)))
-                entity_type = str(node_data.get("entity_type", ""))
+                entity_name = str(node_data.get("name") or node_props.get("name", str(node_key)))
+                entity_type = str(node_data.get("entity_type") or node_props.get("entity_type", ""))
             else:
                 entity_name = str(vertex.get("name", entity_uri))
                 entity_type = str(vertex.get("entity_type", ""))
@@ -511,8 +514,9 @@ class RAGMode:
             )
             if gsr.path:
                 for node_key, data in gsr.path.nodes(data=True):
-                    entity_type = str(data.get("entity_type", ""))
-                    name = str(data.get("name", ""))
+                    node_props = data.get("properties", {}) if isinstance(data.get("properties"), dict) else {}
+                    entity_type = str(data.get("entity_type") or node_props.get("entity_type", ""))
+                    name = str(data.get("name") or node_props.get("name", ""))
                     if entity_type and name:
                         node_uri = str(ExtractedEntity(name=name, entity_type=EntityType(entity_type)).uri)
                     else:
@@ -523,18 +527,22 @@ class RAGMode:
                     context["paths"].append(
                         {
                             "uri": node_uri,
-                            "name": data.get("name"),
-                            "type": data.get("entity_type"),
+                            "name": data.get("name") or node_props.get("name"),
+                            "type": data.get("entity_type") or node_props.get("entity_type"),
                         },
                     )
 
                 for u, v, data in gsr.path.edges(data=True):
                     start_data = gsr.path.nodes[u]
                     end_data = gsr.path.nodes[v]
-                    start_et = str(start_data.get("entity_type", ""))
-                    start_n = str(start_data.get("name", ""))
-                    end_et = str(end_data.get("entity_type", ""))
-                    end_n = str(end_data.get("name", ""))
+                    start_np = (
+                        start_data.get("properties", {}) if isinstance(start_data.get("properties"), dict) else {}
+                    )
+                    end_np = end_data.get("properties", {}) if isinstance(end_data.get("properties"), dict) else {}
+                    start_et = str(start_data.get("entity_type") or start_np.get("entity_type", ""))
+                    start_n = str(start_data.get("name") or start_np.get("name", ""))
+                    end_et = str(end_data.get("entity_type") or end_np.get("entity_type", ""))
+                    end_n = str(end_data.get("name") or end_np.get("name", ""))
                     if start_et and start_n:
                         start_uri = str(ExtractedEntity(name=start_n, entity_type=EntityType(start_et)).uri)
                     else:

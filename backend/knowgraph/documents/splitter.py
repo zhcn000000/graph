@@ -66,7 +66,9 @@ async def asplit_content(content: str, chunk_size: int = 512, chunk_overlap: int
 
 
 async def asplit_document(
-    document: Document, chunk_size: int = 512, chunk_overlap: int = 32,
+    document: Document,
+    chunk_size: int = 512,
+    chunk_overlap: int = 32,
 ) -> AsyncIterator[Document]:
     async for chunk in asplit_content(document.content, chunk_size, chunk_overlap):
         yield Document(

@@ -164,7 +164,8 @@ def mock_llm_extractor(sample_entities: list[ExtractedTriple], mocker: MockerFix
     with (
         mocker.patch.object(LLMExtractor, "_run_agent_with_prompt", mock),
         mocker.patch(
-            "knowgraph.graph.triples.compute_triples_strength", mocker.AsyncMock(side_effect=lambda t, **kw: t),
+            "knowgraph.graph.triples.compute_triples_strength",
+            mocker.AsyncMock(side_effect=lambda t, **kw: t),
         ),
     ):
         yield

@@ -64,22 +64,28 @@ class DocumentStore:
                 graph.add_node(
                     t.subject.uri,
                     label=t.subject.entity_type.value.capitalize(),
-                    name=t.subject.name,
-                    entity_type=t.subject.entity_type.value,
+                    properties={
+                        "entity_type": t.subject.entity_type.value,
+                        "name": t.subject.name,
+                    },
                 )
                 graph.add_node(
                     t.object.uri,
                     label=t.object.entity_type.value.capitalize(),
-                    name=t.object.name,
-                    entity_type=t.object.entity_type.value,
+                    properties={
+                        "entity_type": t.object.entity_type.value,
+                        "name": t.object.name,
+                    },
                 )
                 graph.add_edge(
                     t.subject.uri,
                     t.object.uri,
                     label=t.predicate.predicate,
-                    uri=t.predicate.uri,
-                    description=t.description,
-                    connection_strength=t.predicate.strength,
+                    properties={
+                        "relationship_type": t.predicate.predicate,
+                        "description": t.description,
+                        "connection_strength": t.predicate.strength,
+                    },
                 )
                 entity_uris.add(t.subject.uri)
                 entity_uris.add(t.object.uri)

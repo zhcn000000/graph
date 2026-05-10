@@ -133,6 +133,7 @@ class ConnectionPoolManager:
                 min_size=self.min_size,
                 max_size=self.max_size,
                 open=False,
+                configure=register_type,
             )
         if self._pools[dbname].closed:
             self._pools[dbname].open()
@@ -153,6 +154,7 @@ class ConnectionPoolManager:
                 min_size=self.min_size,
                 max_size=self.max_size,
                 open=False,
+                configure=register_type_async,
             )
         if self._apools[dbname].closed:
             await self._apools[dbname].open()

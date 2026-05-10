@@ -78,7 +78,10 @@ class TestIntegrationFlow:
 
     @pytest.mark.usefixtures("clean_tables")
     async def test_multiple_documents_inserted_together(
-        self, doc_store, sample_documents: list[Document], sample_entities: list[ExtractedTriple],
+        self,
+        doc_store,
+        sample_documents: list[Document],
+        sample_entities: list[ExtractedTriple],
     ):
         """Insert multiple documents via aadd_documents with pre-created sources."""
         source_store = SourceStore(dbname=TEST_DB_NAME)

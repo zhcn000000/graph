@@ -409,7 +409,8 @@ class CypherBuilder(BuilderBase):
             if not set_args.endswith(", "):
                 set_args += ", "
             set_args += ", ".join(f"{_quote_key(k)} = {_quote_value(v)}" for k, v in kwargs.items())
-        clone._clauses.append(f"SET {set_args}")
+        if set_args:
+            clone._clauses.append(f"SET {set_args}")
         return clone
 
     def delete(self, *variables: str, detach: bool = False) -> Self:
@@ -451,7 +452,8 @@ class CypherBuilder(BuilderBase):
         return clone
 
     def return_(
-        self, *items: str | ExpressionBuilder | tuple[str | ExpressionBuilder, str | ExpressionBuilder],
+        self,
+        *items: str | ExpressionBuilder | tuple[str | ExpressionBuilder, str | ExpressionBuilder],
     ) -> Self:
         clone = deepcopy(self)
         converted_items = []
