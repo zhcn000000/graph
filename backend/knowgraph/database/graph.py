@@ -104,7 +104,7 @@ class AgeGraphManager:  # noqa: PLR0904
         return None
 
     async def acreate_graph(self) -> bool:
-        async with self.__db.acursor(read_only=False) as cur:
+        async with self.__db.acursor(read_only=False, autocommit=True) as cur:
             result = await cur.execute(t"SELECT * FROM ag_catalog.ag_graph WHERE name = {self.graph_name:s}")
             exists = await result.fetchone()
             if not exists:
@@ -113,7 +113,7 @@ class AgeGraphManager:  # noqa: PLR0904
             return False
 
     async def adrop_graph(self) -> bool:
-        async with self.__db.acursor(read_only=False) as cur:
+        async with self.__db.acursor(read_only=False, autocommit=True) as cur:
             result = await cur.execute(t"SELECT * FROM ag_catalog.ag_graph WHERE name = {self.graph_name:s}")
             exists = await result.fetchone()
             if exists:

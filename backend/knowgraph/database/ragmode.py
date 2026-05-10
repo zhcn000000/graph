@@ -432,16 +432,32 @@ class RAGMode:
         documents: list[Document] = []
 
         async with self.__db.asession() as session:
-            stmt = select(DocumentTable).where(col(DocumentTable.id).in_(uid_list))
+            stmt = (
+                select(
+                    col(DocumentTable.id),
+                    col(DocumentTable.content),
+                    col(DocumentTable.meta),
+                    col(DocumentTable.document_index),
+                    col(DocumentTable.chunk_index),
+                    col(DocumentTable.entities),
+                    col(Source.name),
+                    col(Source.link),
+                )
+                .join(Source, col(Source.id) == col(DocumentTable.file_id))
+                .where(col(DocumentTable.id).in_(uid_list))
+            )
             result = await session.execute(stmt)
-            for row in result.scalars().all():
-                meta = dict(row.meta or {})
+            for row in result.all():
                 documents.append(
                     Document(
-                        content=row.content,
-                        name=meta.get("file_name"),
-                        link=meta.get("file_hash"),
-                        metadata=meta,
+                        id=row[0],
+                        content=row[1],
+                        metadata=row[2] or {},
+                        document_index=row[3],
+                        chunk_index=row[4],
+                        entities=row[5] or [],
+                        name=row[6],
+                        link=row[7],
                     ),
                 )
             return documents
@@ -636,7 +652,13 @@ class RAGMode:
             entity_details: list[dict] = []
             if all_entities:
                 vertices = await self.graph_manager.aget_vertices_by_uris(list(all_entities))
-                vertex_map_batch = {v["uri"]: v for v in vertices}
+                vertex_map_batch: dict[str, dict] = {}
+                for v in vertices:
+                    vt = str(v.get("entity_type", ""))
+                    vn = str(v.get("name", ""))
+                    if vt and vn:
+                        computed_uri = str(ExtractedEntity(name=vn, entity_type=EntityType(vt)).uri)
+                        vertex_map_batch[computed_uri] = v
                 for uri in all_entities:
                     vertex = vertex_map_batch.get(uri)
                     if vertex:
