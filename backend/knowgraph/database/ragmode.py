@@ -9,7 +9,7 @@ from sqlmodel import col
 
 from knowgraph.documents.embedder import aembed_documents, arerank_documents
 from knowgraph.documents.models import Document
-from knowgraph.documents.tokenizer import atokenize_content
+from knowgraph.documents.tokenizer import atokenize_document
 from knowgraph.graph import RelationshipType
 from knowgraph.graph.schema import EntityType, ExtractedEntity, ExtractedTriple, RelationshipInfo
 
@@ -113,7 +113,7 @@ class RAGMode:
     ) -> list[UUID]:
         query_count = Counter()
         for q in queries:
-            query_count += await atokenize_content(q)
+            query_count += await atokenize_document(q)
 
         bm25_stmt = select(col(DocumentTable.id))
         if file_ids:

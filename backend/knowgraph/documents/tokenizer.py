@@ -8,7 +8,7 @@ from .models import Document, get_nlp
 BM25_VOCAB_SIZE = 1_000_000
 
 
-async def atokenize_content(content: str | Document) -> Counter[int]:
+async def atokenize_document(content: str | Document) -> Counter[int]:
     if isinstance(content, Document):
         content = content.content
     nlp = get_nlp()
