@@ -239,7 +239,8 @@ class RAGMode:
         for row in rows:
             doc_id, doc_entities = row[0], row[1] or []
             best_rank = min(
-                (entity_rank.get(e, len(all_entity_uris)) for e in doc_entities), default=len(all_entity_uris),
+                (entity_rank.get(e, len(all_entity_uris)) for e in doc_entities),
+                default=len(all_entity_uris),
             )
             doc_pairs.append((doc_id, best_rank))
 
