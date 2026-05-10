@@ -210,13 +210,14 @@ class TestInsertAndSearch:
             assert r.score >= 0.0
 
     @pytest.mark.usefixtures("clean_tables")
-    async def test_search_with_graph(self, doc_store, rag_mode):
+    async def test_search_with_graph(self, doc_store, rag_mode, sample_entities):
         """Search with graph boosting enabled should work."""
         await doc_store.ainsert_documents([
             Document(
                 name="museum_collection.md",
                 content=ARTIFACT_SEARCH_CONTENT,
                 metadata={"name": "museum_collection.md", "link": ""},
+                triples=sample_entities,
             ),
         ])
 
@@ -227,6 +228,7 @@ class TestInsertAndSearch:
         )
 
         assert len(results) > 0
+        assert len(graph_entities) > 0
 
 
 @pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
@@ -356,13 +358,14 @@ class TestGraphContext:
         return RAGMode(dbname=TEST_DB_NAME)
 
     @pytest.mark.usefixtures("clean_tables")
-    async def test_aquery_graph_context(self, doc_store, rag_mode):
+    async def test_aquery_graph_context(self, doc_store, rag_mode, sample_entities):
         """Graph context query should return entities/paths/relationships."""
         await doc_store.ainsert_documents([
             Document(
                 name="graph_context.md",
                 content="大都会博物馆收藏的商代青铜鼎是重要文物。青铜鼎是青铜器的典型代表，纹饰精美。",
                 metadata={"name": "graph_context.md", "link": ""},
+                triples=sample_entities,
             ),
         ])
 
@@ -374,6 +377,7 @@ class TestGraphContext:
         assert "entities" in context
         assert "paths" in context
         assert "relationships" in context
+        assert len(context["entities"]) > 0
 
     @pytest.mark.usefixtures("clean_tables")
     async def test_aget_document_context(self, doc_store, rag_mode):
