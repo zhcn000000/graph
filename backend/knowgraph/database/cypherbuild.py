@@ -563,7 +563,7 @@ def build_cypher_stmt(
             placeholder = f"${param_name}"
             if placeholder in cypher:
                 cypher = cypher.replace(placeholder, _quote_param_value(params[param_name]))  # type: ignore
-    logging.info("Built Cypher: %s", cypher)
+    logging.debug("Built Cypher: %s", cypher)
     # cypher(name,cstring,agtype)
     final = t"SELECT * FROM cypher({graph_name:l}, $${Template(cypher):q}$$) AS ({cols:q})"
     return final
