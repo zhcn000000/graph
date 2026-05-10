@@ -375,6 +375,7 @@ class CypherBuilder(BuilderBase):
 
     def __init__(self):
         self._clauses: list[str] = []
+        self._columns: list[str] = []
 
     def match(self, pattern: str | PatternBuilder, optional: bool = False) -> Self:
         clone = deepcopy(self)
@@ -410,6 +411,7 @@ class CypherBuilder(BuilderBase):
                 set_args += ", "
             set_args += ", ".join(f"{_quote_key(k)} = {_quote_value(v)}" for k, v in kwargs.items())
         if set_args:
+            set_args = set_args.strip(", ")
             clone._clauses.append(f"SET {set_args}")
         return clone
 
@@ -453,7 +455,7 @@ class CypherBuilder(BuilderBase):
 
     def return_(
         self,
-        *items: str | ExpressionBuilder | tuple[str | ExpressionBuilder, str | ExpressionBuilder],
+        *items: str | tuple[str | ExpressionBuilder, str],
     ) -> Self:
         clone = deepcopy(self)
         converted_items = []
@@ -462,9 +464,10 @@ class CypherBuilder(BuilderBase):
                 item_0 = item[0].build() if isinstance(item[0], BuilderBase) else item[0]
                 item_1 = item[1].build() if isinstance(item[1], BuilderBase) else item[1]
                 converted_items.append(f"{item_0} AS {item_1}")
+                clone._columns.append(str(item_1))
             else:
-                item_0 = item.build() if isinstance(item, BuilderBase) else item
-                converted_items.append(item_0)
+                converted_items.append(item)
+                clone._columns.append(str(item).split("AS")[-1].strip())
         clone._clauses.append(f"RETURN {', '.join(converted_items)}")
         return clone
 
@@ -489,6 +492,9 @@ class CypherBuilder(BuilderBase):
         clone = deepcopy(self)
         clone._clauses.extend(cypher._clauses)
         return clone
+
+    def get_columns(self) -> list[str]:
+        return self._columns
 
 
 def match(pattern: str | PatternBuilder) -> CypherBuilder:
@@ -528,31 +534,28 @@ def build_cypher_stmt(
     params: dict[str, Any] | None = None,
 ) -> Template:
     """Build the ``SELECT * FROM cypher(...) AS (columns)`` SQL wrapper."""
+    col_parts: list[Template] = []
     if columns:
-        builded_columns: list[str] = []
-        for col in columns:
-            if isinstance(col, tuple):
-                builded_columns.append(f"{col[0]} {col[1]}")
-            elif " " in col:
-                builded_columns.append(col)
+        for raw_col in columns:
+            if isinstance(raw_col, tuple):
+                name, type_name = raw_col
+            elif " " in raw_col:
+                name, type_name = raw_col.split(" ", 1)
+                col_parts.append(Template(name) + t" " + Template(type_name))
             else:
-                builded_columns.append(f"{col} agtype")
-        col_parts: list[Template] = []
-        for raw_col in builded_columns:
-            col = raw_col.strip()
-            if not col:
-                continue
-            if " " in col:
-                name, type_name = col.split(" ", 1)
-                col_parts.append(t"{name:i} {type_name:i}")
-            else:
-                col_parts.append(t"{col:i} agtype")
-        cols = col_parts[0]
-        for col in col_parts[1:]:
-            cols += t", " + col
-
+                col_parts.append(Template(raw_col) + t" agtype")
     else:
-        cols = t"result agtype"
+        if isinstance(cypher, CypherBuilder):
+            col_parts = [Template(col) + t" agtype" for col in cypher.get_columns()]
+            if not col_parts:
+                col_parts = [t"result agtype"]
+        else:
+            raise ValueError("Please provide columns")
+
+    cols = col_parts[0]
+    for col in col_parts[1:]:
+        cols += t", " + col
+
     if isinstance(cypher, CypherBuilder):
         cypher = cypher.build()
 

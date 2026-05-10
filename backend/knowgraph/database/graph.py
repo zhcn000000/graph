@@ -349,7 +349,7 @@ class AgeGraphManager:  # noqa: PLR0904
                 .node("e", props={"entity_type": "$end_entity_type", "name": "$end_name"}),
             )
             .delete("r")
-            .return_("count(*) as deleted_count")
+            .return_(("count(*)", "deleted_count"))
         )
         results = await self.aexecute_cypher(
             cypher,
@@ -388,7 +388,7 @@ class AgeGraphManager:  # noqa: PLR0904
             .rel("", length=f"1..{max_hops}", direction=rel_dir)
             .node("end")
         )
-        cypher = match(f"path = {path_pattern}").return_("nodes(path) as nodes", "relationships(path) as edges")
+        cypher = match(f"path = {path_pattern}").return_(("nodes(path)", "nodes"), ("relationships(path)", "edges"))
         return await self.ato_networkx(cypher, params={"entity_type": entity_type, "name": name})
 
     async def atraverse_multi(
@@ -630,7 +630,9 @@ class AgeGraphManager:  # noqa: PLR0904
 
         return True
 
-    async def ato_networkx(self, cypher: str | CypherBuilder, params: dict | None = None) -> DiGraph:
+    async def ato_networkx(
+        self, cypher: str | CypherBuilder, params: dict | None = None, columns: list | None = None
+    ) -> DiGraph:
 
         graph = DiGraph()
 
@@ -654,7 +656,7 @@ class AgeGraphManager:  # noqa: PLR0904
         rows = await self.aexecute_cypher(
             cypher,
             params=params,
-            columns=None,
+            columns=columns,
             read_only=True,
         )
         for row in rows:
