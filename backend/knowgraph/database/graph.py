@@ -117,7 +117,7 @@ class AgeGraphManager:  # noqa: PLR0904
             result = await cur.execute(t"SELECT * FROM ag_catalog.ag_graph WHERE name = {self.graph_name:s}")
             exists = await result.fetchone()
             if exists:
-                await cur.execute(t"SELECT drop_graph({self.graph_name:s});")
+                await cur.execute(t"SELECT drop_graph({self.graph_name:s},true);")
                 return True
             return False
 

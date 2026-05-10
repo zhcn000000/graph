@@ -53,11 +53,11 @@ class TestAaddDocuments:
         source_store = SourceStore(dbname=TEST_DB_NAME)
         source_id = await source_store.ainsert_source(name=doc_name)
         assert source_id is not None
-
+        triples = sample_entities
         doc = Document(
             content=sample_documents[0].content,
             name=doc_name,
-            triples=sample_entities[:2],
+            triples=triples,
             file_id=source_id,
         )
         result = await doc_store.aadd_documents([doc])
@@ -74,32 +74,6 @@ class TestAaddDocuments:
                 if row[0]:
                     all_entities.update(row[0])
             assert "cidoc:artifact/青铜鼎" in all_entities
-
-    @pytest.mark.usefixtures("clean_tables")
-    async def test_pre_existing_triples_strength_scored(
-        self,
-        doc_store,
-        sample_documents: list[Document],
-        sample_entities: list[ExtractedTriple],
-    ):
-        """Pre-existing triples with strength=None should get real scores from rerank API."""
-        doc_name = sample_documents[0].name
-        assert doc_name is not None
-
-        source_store = SourceStore(dbname=TEST_DB_NAME)
-        source_id = await source_store.ainsert_source(name=doc_name)
-        assert source_id is not None
-
-        triples = sample_entities[:3]
-        doc = Document(
-            content=sample_documents[0].content,
-            name=doc_name,
-            triples=triples,
-            file_id=source_id,
-        )
-
-        result = await doc_store.aadd_documents([doc])
-        assert len(result) > 0
 
         for t in triples:
             assert t.predicate.strength is not None, f"Expected strength for triple {t.subject.name} → {t.object.name}"

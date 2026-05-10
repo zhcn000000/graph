@@ -200,7 +200,7 @@ async def clean_tables():
     db = DatabaseManager(TEST_DB_NAME)
     await db.adrop_all()
     await db.acreate_all()
-    graph = AgeGraphManager()
+    graph = AgeGraphManager(TEST_DB_NAME)
     await graph.adrop_graph()
     await graph.acreate_graph()
 
