@@ -411,13 +411,14 @@ class TestGraphContext:
         assert len(context["chunks"]) > 0
 
     @pytest.mark.usefixtures("clean_tables")
-    async def test_aget_document_entities(self, doc_store, rag_mode):
-        """aget_document_entities should return entities associated with document."""
+    async def test_aget_document_entities(self, doc_store, rag_mode, sample_entities):
+        """aget_document_entities should return non-empty entities when triples are attached."""
         await doc_store.ainsert_documents([
             Document(
                 name="entities_context.md",
                 content="景德镇青花瓷工艺精湛。大都会博物馆收藏了大量中国瓷器。青花瓷以其蓝色釉料闻名于世。",
                 metadata={"name": "entities_context.md", "link": ""},
+                triples=sample_entities,
             ),
         ])
 

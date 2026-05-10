@@ -159,16 +159,10 @@ def sample_entities_from_csv() -> list[ExtractedTriple]:
 
 
 @pytest.fixture(autouse=True)
-def mock_llm_extractor(sample_entities: list[ExtractedTriple], mocker: MockerFixture):
-    mock = mocker.AsyncMock(return_value=sample_entities)
-    with (
-        mocker.patch.object(LLMExtractor, "_run_agent_with_prompt", mock),
-        mocker.patch(
-            "knowgraph.graph.triples.compute_triples_strength",
-            mocker.AsyncMock(side_effect=lambda t, **kw: t),
-        ),
-    ):
-        yield
+def mock_llm_extractor(mocker: MockerFixture):
+    mock_agent = mocker.AsyncMock(return_value=[])
+    with mocker.patch.object(LLMExtractor, "_run_agent_with_prompt", mock_agent):
+        yield mock_agent
 
 
 @pytest.fixture
@@ -201,10 +195,14 @@ async def clean_tables():
     Depends on setup_test_database to ensure the database exists.
     """
     from knowgraph.database.database import DatabaseManager
+    from knowgraph.database.graph import AgeGraphManager
 
     db = DatabaseManager(TEST_DB_NAME)
     await db.adrop_all()
     await db.acreate_all()
+    graph = AgeGraphManager()
+    await graph.adrop_graph()
+    await graph.acreate_graph()
 
 
 @pytest.fixture
@@ -221,11 +219,3 @@ async def reset_test_database():
     from knowgraph.database.initdb import reset_db
 
     await reset_db(dbname=TEST_DB_NAME, force=True)
-
-
-@pytest.fixture
-def graph_manager():
-    """Provides a real AgeGraphManager connected to the test database."""
-    from knowgraph.database.graph import AgeGraphManager
-
-    return AgeGraphManager(dbname=TEST_DB_NAME)

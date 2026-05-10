@@ -122,6 +122,7 @@ class DocumentStore:
                     UserWarning,
                     stacklevel=2,
                 )
+                continue
 
             entity_uris: set[str] = set()
             doc_llm_triples = await self._extract_llm_triples(doc)

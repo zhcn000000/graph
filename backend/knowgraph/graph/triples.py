@@ -179,6 +179,10 @@ class LLMExtractor:
         return await compute_triples_strength(triples)
 
     async def aextract_from_document(self, doc: Document) -> list[ExtractedTriple]:
+        pre_triples = [t for t in doc.triples if t.predicate.strength is None]
+        if pre_triples:
+            await compute_triples_strength(pre_triples)
+
         user_prompt = self._build_user_prompt(doc.content, doc.triples)
         triples = await self._run_agent_with_prompt(user_prompt)
         return await compute_triples_strength(triples)

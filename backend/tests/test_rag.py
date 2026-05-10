@@ -7,7 +7,13 @@ from knowgraph.database.document import DocumentStore
 from knowgraph.database.source import SourceStore
 from knowgraph.database.tables import DocumentTable, Source
 from knowgraph.documents.models import Document
-from knowgraph.graph.schema import ExtractedTriple
+from knowgraph.graph import RelationshipType
+from knowgraph.graph.schema import (
+    EntityType,
+    ExtractedEntity,
+    ExtractedTriple,
+    RelationshipInfo,
+)
 
 TEST_DB_NAME = "test_data"
 
@@ -68,6 +74,121 @@ class TestAaddDocuments:
                 if row[0]:
                     all_entities.update(row[0])
             assert "cidoc:artifact/青铜鼎" in all_entities
+
+    @pytest.mark.usefixtures("clean_tables")
+    async def test_pre_existing_triples_strength_scored(
+        self,
+        doc_store,
+        sample_documents: list[Document],
+        sample_entities: list[ExtractedTriple],
+    ):
+        """Pre-existing triples with strength=None should get real scores from rerank API."""
+        doc_name = sample_documents[0].name
+        assert doc_name is not None
+
+        source_store = SourceStore(dbname=TEST_DB_NAME)
+        source_id = await source_store.ainsert_source(name=doc_name)
+        assert source_id is not None
+
+        triples = sample_entities[:3]
+        doc = Document(
+            content=sample_documents[0].content,
+            name=doc_name,
+            triples=triples,
+            file_id=source_id,
+        )
+
+        result = await doc_store.aadd_documents([doc])
+        assert len(result) > 0
+
+        for t in triples:
+            assert t.predicate.strength is not None, f"Expected strength for triple {t.subject.name} → {t.object.name}"
+            assert 0.0 <= t.predicate.strength <= 1.0, f"Strength {t.predicate.strength} out of [0,1] range"
+
+    @pytest.mark.usefixtures("clean_tables")
+    async def test_aadd_documents_triples_inserted_to_graph(
+        self,
+        doc_store,
+        sample_documents: list[Document],
+        sample_entities: list[ExtractedTriple],
+    ):
+        """Triples passed via Document.triples should be persisted as graph nodes/edges."""
+        doc_name = sample_documents[0].name
+        assert doc_name is not None
+
+        source_store = SourceStore(dbname=TEST_DB_NAME)
+        source_id = await source_store.ainsert_source(name=doc_name)
+        assert source_id is not None
+
+        doc = Document(
+            content=sample_documents[0].content,
+            name=doc_name,
+            triples=sample_entities,
+            file_id=source_id,
+        )
+
+        result = await doc_store.aadd_documents([doc])
+        assert len(result) > 0
+
+        db = DatabaseManager(TEST_DB_NAME)
+        async with db.asession() as session:
+            stmt = select(col(DocumentTable.entities)).where(
+                col(DocumentTable.file_id) == source_id,
+            )
+            result = await session.execute(stmt)
+            all_entities: set[str] = set()
+            for row in result.fetchall():
+                if row[0]:
+                    all_entities.update(row[0])
+
+        expected_uris = {t.subject.uri for t in sample_entities} | {t.object.uri for t in sample_entities}
+        for uri in expected_uris:
+            assert uri in all_entities, f"Expected {uri} in document entities"
+
+    @pytest.mark.usefixtures("clean_tables")
+    async def test_aadd_documents_triples_with_strength_preserved(
+        self,
+        doc_store,
+        sample_documents: list[Document],
+    ):
+        """Triples with pre-set strength values should not be overwritten by compute_triples_strength."""
+        doc_name = sample_documents[0].name
+        assert doc_name is not None
+
+        source_store = SourceStore(dbname=TEST_DB_NAME)
+        source_id = await source_store.ainsert_source(name=doc_name)
+        assert source_id is not None
+
+        pre_scored_triple = ExtractedTriple(
+            subject=ExtractedEntity(name="测试文物", entity_type=EntityType.ARTIFACT),
+            predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY, strength=0.88),
+            object=ExtractedEntity(name="测试博物馆", entity_type=EntityType.MUSEUM),
+            description="测试三元组",
+        )
+
+        doc = Document(
+            content=sample_documents[0].content,
+            name=doc_name,
+            triples=[pre_scored_triple],
+            file_id=source_id,
+        )
+
+        result = await doc_store.aadd_documents([doc])
+        assert len(result) > 0
+
+        db = DatabaseManager(TEST_DB_NAME)
+        async with db.asession() as session:
+            stmt = select(col(DocumentTable.entities)).where(
+                col(DocumentTable.file_id) == source_id,
+            )
+            result = await session.execute(stmt)
+            all_entities: set[str] = set()
+            for row in result.fetchall():
+                if row[0]:
+                    all_entities.update(row[0])
+
+        assert pre_scored_triple.subject.uri in all_entities
+        assert pre_scored_triple.object.uri in all_entities
 
 
 @pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
