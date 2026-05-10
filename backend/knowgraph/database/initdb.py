@@ -10,6 +10,7 @@ async def init_db(alter_system: bool = False, dbname: str | None = None) -> bool
     async with db.acursor(autocommit=True) as cur:
         await cur.execute(
             SQL("""
+            CREATE EXTENSION IF NOT EXISTS pgcrypto CASCADE;
             CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
             CREATE EXTENSION IF NOT EXISTS vchord_bm25 CASCADE;
             CREATE EXTENSION IF NOT EXISTS age CASCADE;

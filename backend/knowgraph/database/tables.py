@@ -20,7 +20,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import declared_attr
 from sqlmodel import Field, SQLModel, col
 
-from .types import BM25Vector
+from .types import BM25Vector, Password
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -30,6 +30,38 @@ if TYPE_CHECKING:
 
 
 VECTOR_DIM = 1024
+
+
+class User(SQLModel, table=True):
+    __tablename__ = "users"
+
+    id: Annotated[
+        UUID,
+        Field(
+            sa_column=Column(
+                Uuid[UUID](native_uuid=True, as_uuid=True),
+                primary_key=True,
+                server_default=func.uuidv7(),
+            ),
+        ),
+    ]
+    username: Annotated[
+        str,
+        Field(
+            sa_column=Column(
+                String,
+                unique=True,
+                nullable=False,
+                index=True,
+            ),
+        ),
+    ]
+    password: Annotated[str, Field(sa_column=Column(Password, nullable=False))]
+
+    @declared_attr
+    @classmethod
+    def __table_args__(cls) -> tuple:
+        return (CheckConstraint(func.length(col(cls.username)) > 0, name="chk_user_name_not_empty"),)
 
 
 class SessionTable(SQLModel, table=True):

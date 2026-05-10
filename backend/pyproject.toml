@@ -45,6 +45,7 @@ dependencies = [
   "spacy>=3.8.13",
   "zh-core-web-trf",
   "mmh3>=5.2.1",
+  "pyjwt>=2.12.1",
 ]
 
 [project.scripts]

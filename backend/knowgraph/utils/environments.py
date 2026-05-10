@@ -44,6 +44,7 @@ class EnvironmentSettings(BaseSettings):
     RELEASE_MODE: Annotated[bool, Field(alias="RAG_RELEASE_MODE")] = True
     TMP_DIR: Annotated[Path, Field(alias="RAG_TMP_DIR")] = Path(mkdtemp())
     TOKEN_EXPIRES_IN: Annotated[int, Field(alias="RAG_TOKEN_EXPIRES_IN")] = 3600 * 6
+    JWT_SECRET: SecretStr = SecretStr("knowgraph-jwt-secret-change-in-production")
     SSL_KEY_PATH: Path | None = None
     SSL_CERT_PATH: Path | None = None
     model_config = SettingsConfigDict(env_ignore_empty=True, env_file=env_file, extra="ignore")
