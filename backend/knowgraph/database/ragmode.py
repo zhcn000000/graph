@@ -112,18 +112,15 @@ class RAGMode:
         ranked = sorted(counter.items(), key=operator.itemgetter(1), reverse=True)
         return [uri for uri, _ in ranked]
 
-    async def _graph_search(
+    async def _graph_pagerank(
         self,
-        queries: list[str],
-        topn: int,
         entity_uris: list[str],
         max_hops: int = 2,
     ) -> list[GraphSearchResult]:
         if not entity_uris:
             return []
 
-        scan_uris = entity_uris[: max(topn * 3, 30)]
-        vertex_rows = await self.graph_manager.aget_vertices_by_uris(scan_uris)
+        vertex_rows = await self.graph_manager.aget_vertices_by_uris(entity_uris)
         vertex_map: dict[str, dict[str, object]] = {}
         for r in vertex_rows:
             entity_type = str(r.get("entity_type", ""))
@@ -134,18 +131,23 @@ class RAGMode:
                 vertex_map[computed_uri] = r
 
         unified_graph = DiGraph()
-        traverse_uris = [uri for uri in entity_uris[: max(topn * 2, 20)] if uri in vertex_map]
+        traverse_uris = [uri for uri in entity_uris if uri in vertex_map]
         if traverse_uris:
             unified_graph = await self.graph_manager.atraverse_multi(traverse_uris, max_hops=max_hops)
 
         if unified_graph.number_of_nodes() == 0:
             return []
 
-        for _u, _v, data in unified_graph.edges(data=True):
-            props = data.get("properties", {}) if isinstance(data.get("properties"), dict) else {}
+        for _, __, data in unified_graph.edges(data=True):
+            props = data.get("properties", {})
+            if not isinstance(props, dict):
+                data["weight"] = 0.01
+                continue
             cs = props.get("connection_strength")
             if cs is not None:
                 data["weight"] = float(cs)
+            else:
+                data["weight"] = 0.01
 
         uri_to_node_key: dict[str, object] = {}
         for node_key in unified_graph.nodes():
@@ -206,22 +208,57 @@ class RAGMode:
             )
 
         graph_results.sort(key=lambda x: x.score, reverse=True)
-        return graph_results[:topn]
+        return graph_results
 
-    async def _get_entity_documents(
+    async def _graph_search(
         self,
-        entity_uri: str,
+        topn: int,
+        entity_uris: list[str],
         session,
-    ) -> list[UUID]:
-        stmt = select(col(DocumentTable.id)).where(col(DocumentTable.entities).contains([entity_uri]))
+        max_hops: int = 2,
+    ) -> tuple[list[UUID], list[GraphSearchResult]]:
+        graph_entities = await self._graph_pagerank(
+            entity_uris=entity_uris,
+            max_hops=max_hops,
+        )
+
+        if not graph_entities:
+            return [], []
+
+        all_entity_uris = [gsr.entity_uri for gsr in graph_entities]
+
+        stmt = select(col(DocumentTable.id), col(DocumentTable.entities)).where(
+            col(DocumentTable.entities).op("&&")(all_entity_uris)
+        )
         result = await session.execute(stmt)
-        return [row[0] for row in result.fetchall()]
+        rows = result.fetchall()
+
+        entity_rank: dict[str, int] = {uri: idx for idx, uri in enumerate(all_entity_uris)}
+
+        doc_pairs: list[tuple[UUID, int]] = []
+        for row in rows:
+            doc_id, doc_entities = row[0], row[1] or []
+            best_rank = min(
+                (entity_rank.get(e, len(all_entity_uris)) for e in doc_entities), default=len(all_entity_uris)
+            )
+            doc_pairs.append((doc_id, best_rank))
+
+        doc_pairs.sort(key=operator.itemgetter(1))
+
+        seen: set[UUID] = set()
+        doc_ids: list[UUID] = []
+        for doc_id, _ in doc_pairs:
+            if doc_id not in seen:
+                seen.add(doc_id)
+                doc_ids.append(doc_id)
+
+        return doc_ids[:topn], graph_entities[:topn]
 
     @staticmethod
     def _rrf_fusion(
         vector_results: list[UUID],
         bm25_results: list[UUID],
-        graph_results: list[tuple[UUID, float]] | None = None,
+        graph_results: list[UUID] | None = None,
         topk: int = 10,
         rrf_k: int = 60,
         graph_weight: float = 0.3,
@@ -242,7 +279,7 @@ class RAGMode:
 
         if graph_results:
             doc_ranks: dict[UUID, int] = {}
-            for rank, (doc_id, _) in enumerate(graph_results, start=1):
+            for rank, doc_id in enumerate(graph_results, start=1):
                 if doc_id not in doc_ranks:
                     doc_ranks[doc_id] = rank
             for doc_id, rank in doc_ranks.items():
@@ -288,30 +325,22 @@ class RAGMode:
             )
 
             graph_entities: list[GraphSearchResult] = []
-            graph_search_results: list[tuple[UUID, float]] | None = None
+            graph_results: list[UUID] | None = None
             if use_graph:
                 all_search_doc_ids = list(set(vector_results + bm25_results))
                 entity_stats = await self._collect_entity_uris(all_search_doc_ids, session)
 
-                graph_entities = await self._graph_search(
-                    queries=queries,
+                graph_results, graph_entities = await self._graph_search(
                     topn=topn,
                     entity_uris=entity_stats,
+                    session=session,
                     max_hops=max_hops,
                 )
-                if graph_entities:
-                    graph_doc_ids: list[tuple[UUID, float]] = []
-                    for gsr in graph_entities:
-                        doc_ids = await self._get_entity_documents(gsr.entity_uri, session)
-                        for doc_id in doc_ids:
-                            graph_doc_ids.append((doc_id, gsr.score))
-                    graph_doc_ids.sort(key=operator.itemgetter(1), reverse=True)
-                    graph_search_results = graph_doc_ids[:topn]
 
             doc_ids = self._rrf_fusion(
                 vector_results=vector_results,
                 bm25_results=bm25_results,
-                graph_results=graph_search_results,
+                graph_results=graph_results,
                 topk=topk,
                 rrf_k=rrf_k,
                 graph_weight=graph_weight,
@@ -435,12 +464,12 @@ class RAGMode:
             doc_ids = await self._vector_search(queries=queries, topn=30, session=session)
             entity_stats = await self._collect_entity_uris(doc_ids, session)
 
-            graph_entities = await self._graph_search(
-                queries=queries,
-                topn=10,
-                entity_uris=entity_stats,
-                max_hops=max_hops,
-            )
+            graph_entities = (
+                await self._graph_pagerank(
+                    entity_uris=entity_stats,
+                    max_hops=max_hops,
+                )
+            )[:10]
 
         context = {
             "entities": [],
