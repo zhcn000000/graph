@@ -1,0 +1,23 @@
+web:
+  cd backend && uv run knowgraph start
+
+initdb:
+  cd backend && uv run knowgraph initdb
+
+ui:
+  cd frontend && vite dev
+
+build-ui:
+  cd frontend && vite build
+  rm -rf ../backend/knowgraph/static
+  cp dist ../backend/knowgraph/static
+  
+
+database:
+  cd docker && podman-compose up database
+
+web-docker:
+  cd docker && podman-compose up web
+
+docker:
+  cd docker && podman-compose up
