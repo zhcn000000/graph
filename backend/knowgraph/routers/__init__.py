@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from knowgraph.database.user import TokenDataDict, UserManager
 from knowgraph.routers.user import CurrentUserDep
 from knowgraph.tools.mcp import mcp
+from knowgraph.utils.environments import find_project_directory
 
 from .chat import router as chat_router
 from .graph import router as graph_router
@@ -28,7 +29,7 @@ app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(rag_router, prefix="/api/rag", tags=["rag"])
 app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
 app.include_router(user_router, prefix="/api/users", tags=["users"])
-static_path = Path(__file__).parent.parent / "static"
+static_path = find_project_directory() / "static"
 if static_path.exists() and static_path.is_dir():
     app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 

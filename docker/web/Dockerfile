@@ -58,11 +58,6 @@ RUN apt-get update && \
     echo "zh_CN.UTF-8 UTF-8" >> /etc/locale.gen && \
     locale-gen && \
     touch /app/.proj_root && \
-    mkdir -p /data/huggingface \
-    /data/postgres \
-    /data/cache \
-    /data/docling \
-    /data/tmp && \
     rm -rf /tmp/*
 
 

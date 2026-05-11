@@ -9,8 +9,8 @@ ui:
 
 build-ui:
   cd frontend && vite build
-  rm -rf ../backend/knowgraph/static
-  cp dist ../backend/knowgraph/static
+  rm -rf ../static
+  cp -r dist ../static
   
 
 database:
