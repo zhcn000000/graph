@@ -4,7 +4,7 @@ from uuid import UUID
 
 import orjson
 from fastapi import APIRouter
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 from pydantic_ai import (
     AgentRun,
     AudioUrl,
@@ -41,118 +41,28 @@ from knowgraph.chat.model import agent
 from knowgraph.chat.struct import ModelDeps
 from knowgraph.database.history import HistoryStore
 
+from .schema import (
+    AssistantMessageItem,
+    ChatRequest,
+    ChatTitleRequest,
+    ChatTitleResponse,
+    FileItem,
+    HistoryResponse,
+    MessageItem,
+    RenameRequest,
+    SessionCreateResponse,
+    SessionItem,
+    SessionListResponse,
+    StatusResponse,
+    SystemMessageItem,
+    ToolItem,
+    ToolMessageItem,
+    UserMessageItem,
+)
+
 router = APIRouter()
 
 db = HistoryStore()
-
-
-class ToolItem(BaseModel):
-    name: str
-    id: str
-    args: dict[str, Any]
-
-
-class FileItem(BaseModel):
-    type: str
-    name: str
-    url: str
-
-
-class MessageItem(BaseModel):
-    role: str
-    content: str | None = None
-    reasoning: str | None = None
-    tool_calls: list[ToolItem] | None = None
-    files: list[FileItem] | None = None
-    success: bool = True
-
-
-class SystemMessageItem(BaseModel):
-    role: str
-    content: str
-    success: bool = True
-
-
-class UserMessageItem(BaseModel):
-    role: str
-    content: str | None = None
-    files: list[FileItem] | None = None
-    success: bool = True
-
-
-class ToolMessageItem(BaseModel):
-    role: str
-    tool_call_id: str
-    name: str
-    content: str | None = None
-    files: list[FileItem] | None = None
-    success: bool = True
-
-
-class AssistantMessageItem(BaseModel):
-    role: str
-    content: str | None = None
-    reasoning: str | None = None
-    tool_calls: list[ToolItem] | None = None
-    files: list[FileItem] | None = None
-    success: bool = True
-
-
-class ChatRequest(BaseModel):
-    text: str
-    files: list[str | dict] = []
-    model: str | None = None
-    thinking: bool = True
-    select_toolset: set[str] = {"rag_toolkit", "code_toolkit", "web_toolkit"}
-
-
-class ChatTitleRequest(BaseModel):
-    text: str
-
-
-class ChatTitleResponse(BaseModel):
-    success: bool
-    status: str
-    title: str
-
-
-class TranscriptionResponse(BaseModel):
-    success: bool
-    status: str
-    text: str
-
-
-class RenameRequest(BaseModel):
-    name: str
-
-
-class SessionCreateResponse(BaseModel):
-    success: bool
-    status: str
-    session_id: UUID
-    name: str
-
-
-class StatusResponse(BaseModel):
-    success: bool
-    status: str
-
-
-class SessionItem(BaseModel):
-    session_id: UUID
-    name: str
-
-
-class SessionListResponse(BaseModel):
-    success: bool
-    status: str
-    sessions: list[SessionItem]
-
-
-class HistoryResponse(BaseModel):
-    success: bool
-    status: str
-    messages: list[MessageItem]
 
 
 def _resolve_user_content(
