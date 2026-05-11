@@ -1,205 +1,144 @@
-# 海外中国文物知识图谱构建系统
+# KnowGraph — 海外中国文物知识图谱系统
 
-## 项目概述
+**Overseas Chinese Cultural Artifact Knowledge Graph System**
 
-本系统旨在从海外博物馆网站爬取中国文物信息，通过数据清洗、建模与存储，构建结构化的海外文物知识图谱，为知识服务、问答及可视化功能提供数据基础。
-
-## 主要功能模块
-
-### 1. 数据爬取
-
-- 爬取至少3家指定海外博物馆的全部中国文物信息
-- 爬取内容：文物名称、文物图片（原图）、年代、类型、材质、介绍文本、文物详情页URL
-- 数据以UTF-8编码的CSV文件输出
-- 提交字段说明文档
-- 处理反爬机制，下载原始图片（非缩略图）
-- 统计各博物馆文物数量并核验数据完整性
-
-### 2. 数据清洗与质量控制
-
-- 基于大模型（pydantic-ai）实现自动化数据清洗与质量控制
-- 字段标准化：统一年代格式（如"公元前206年"）、文物类型分类等，利用大模型结构化输出功能
-- 去重处理：识别并合并同一文物的重复记录，利用大模型去重
-- 图片有效性验证：检测图片链接可访问性，过滤无效图片
-
-### 3. 数据建模
-
-将清洗后的数据转化为三元组形式（主体-谓词-客体），参考CIDOC-CRM文化遗产领域本体标准：
-
-**实体类型：**
-
-- 文物（Artifact）
-- 博物馆（Museum）
-- 朝代（Dynasty）
-- 艺术家（Artist）
-- 地点（Location）
-
-**关系类型：**
-
-- 收藏于、创作于、属于朝代、材质为、类型为
-
-### 4. 数据补充
-
-- 从百度百科、维基百科等外部来源爬取信息
-- 补充书画作家生平、朝代背景、文物介绍等
-- 补充数据与原始数据建立关联，标注来源与补充日期
-
-### 5. 实体对齐与去重
-
-- 对艺术家、朝代、地点等共享实体进行识别与合并
-- 建立实体唯一标识符（URI）
-- 对齐结果可追溯，保留原始来源信息
-
-### 6. 数据存储
-
-关系型数据库存储使用sqlalchemy,图数据库存储使用apache age python binding,使用单一技术栈全功能数据库postgresql减少负担
-双层存储架构：
-
-- **图数据库**（Apache Age）：存储全部三元组，支持图查询、关系遍历与SPARQL检索，可选发布为链接开放数据（LOD）
-- **关系型数据库**（PostgreSQL）：存储文物详细数据、用户数据及系统业务数据
-- **向量数据库** (VectorChord/VectorChordBM25): 对介绍文本密集嵌入存储向量数据，暴露接口用于搜索
-
-### 7. 数据更新与增量爬取
-
-- 支持增量爬取，仅爬取新增或更新的文物记录
-- 记录每次爬取的时间、数量与变更详情
-- 对更新的实体数据自动触发三元组重建与图数据库同步
+基于 RAG (检索增强生成) 的知识图谱系统，专注于从海外博物馆网站爬取中国文物信息，构建结构化知识图谱，支持智能问答、混合检索与可视化展示。
 
 ## 技术栈
 
-| 类别 | 技术 |
+| 层级 | 技术 |
 |------|------|
-| 前端 | React |
-| 图数据库 | Apache AGE  |
-| 关系型数据库 | PostgreSQL |
-| 爬虫 | Python (Scrapy / BeautifulSoup) |
-| 数据建模 |CIDOC-CRM / Python (pydantic-ai,使用ai提取结构化数据) |
+| **后端** | Python 3.14, FastAPI, pydantic-ai, SQLModel, FastMCP |
+| **前端** | TypeScript, React 19, Ant Design 6, Vite 8 |
+| **数据库** | PostgreSQL 18 + vchord (向量) + vchord\_bm25 (全文检索) + Apache AGE (图数据库) |
+| **AI** | DeepSeek / OpenAI (pydantic-ai Agent), BGE-M3 (嵌入/重排序), SiliconFlow API |
+| **爬虫** | Scrapy, curl-cffi (Chrome 146 指纹, 突破 Cloudflare) |
+| **容器化** | Docker / Podman, docker-compose |
+| **包管理** | uv (Python), pnpm (Node.js) |
 
-## 数据格式
+## 功能特性
 
-### CSV字段说明
+- **数据爬取** — 从 8+ 海外博物馆 (大都会博物馆、史密森尼、克利夫兰艺术博物馆等) 采集中国文物数据，自动处理反爬机制
+- **AI 清洗** — 基于大模型实现字段标准化、去重、图片有效性验证
+- **知识图谱** — 参考 CIDOC-CRM 国际标准，将文物数据转化为实体-关系三元组
+- **混合检索** — 向量相似度 + BM25 全文检索 + 图遍历的 RAG 管道
+- **AI Agent** — 支持工具选择 (RAG 检索 / Python 代码执行 / 网页搜索)，SSE 流式响应
+- **MCP 协议** — 通过 `/mcp` 端点暴露工具，支持外部 LLM 集成
+- **用户认证** — JWT 认证体系
+- **管理后台** — React 前端仪表盘，支持文物检索、知识图谱可视化
 
-| 字段名 | 说明 | 示例 |
-|--------|------|------|
-| artifact_name | 文物名称 | 清乾隆粉彩花卉瓶 |
-| image_url | 文物图片URL | https://... |
-| dynasty | 朝代 | 清朝 |
-| type | 文物类型 | 瓷器 |
-| material | 材质 | 瓷 |
-| description | 介绍文本 | ... |
-| detail_url | 详情页URL | https://... |
-| museum | 博物馆 | 大英博物馆 |
+## 快速开始
+
+### 前置要求
+
+- Python 3.14+
+- Node.js 22+
+- pnpm
+- uv
+- Docker / Podman (用于数据库)
+
+### 1. 启动数据库
+
+```bash
+just database
+```
+
+或手动:
+
+```bash
+cd docker && docker-compose up database -d
+```
+
+### 2. 初始化数据库
+
+```bash
+just initdb
+```
+
+### 3. 启动后端
+
+```bash
+just web
+```
+
+后端运行在 `http://127.0.0.1:40001`
+
+### 4. 启动前端
+
+```bash
+just ui
+```
+
+前端运行在 `http://localhost:5173`
 
 ## 项目结构
 
 ```
 graph/
-├── README.md
-├── data/                    # 数据目录
-│   ├── raw/                # 原始爬取数据
-│   ├── cleaned/            # 清洗后数据
-│   └── triples/            # 三元组数据
-├── spider/                  # 爬虫代码
-├── backend/                 # 后端服务
-├── frontend/                # 前端界面
-└── docs/                    # 文档
+├── backend/                 # Python 后端
+│   └── knowgraph/
+│       ├── __main__.py      # CLI: knowgraph {start|database|spider}
+│       ├── routers/         # FastAPI 路由 (chat, rag, user)
+│       ├── chat/            # AI Agent (pydantic-ai)
+│       ├── database/        # 数据库层 (SQLModel, AGE, vchord)
+│       ├── documents/       # 文档处理 (转换/分块/嵌入)
+│       ├── graph/           # 知识图谱本体 (CIDOC-CRM)
+│       ├── spider/          # 博物馆爬虫 (Scrapy)
+│       ├── tools/           # FastMCP 工具
+│       └── utils/           # 配置与工具
+├── frontend/                # React + TypeScript 前端
+│   └── src/
+│       ├── App.tsx          # 主仪表盘
+│       └── main.tsx         # 入口
+├── docker/                  # 容器化部署
+│   ├── docker-compose.yaml
+│   ├── database/Dockerfile  # PG18 + vchord + AGE
+│   └── web/Dockerfile       # FastAPI 多阶段构建
+├── justfile                 # 命令快捷方式
+├── TODO.md                  # 开发计划
+└── pyproject.toml           # 根级工具配置
 ```
 
-## 附录
+## 命令参考
 
-### 附录1：博物馆列表
+| 命令 | 说明 |
+|------|------|
+| `just web` | 启动后端服务器 |
+| `just ui` | 启动前端开发服务器 |
+| `just initdb` | 初始化数据库 |
+| `just database` | 启动数据库容器 |
+| `just docker` | 启动所有容器 |
+| `just build-ui` | 构建前端并同步到 static/ |
+| `uv run knowgraph spider <博物馆名>` | 运行爬虫 |
+| `cd backend && pytest` | 运行后端测试 |
+| `cd backend && ruff check knowgraph/` | 代码检查 |
+| `cd backend && ty check knowgraph/` | 类型检查 |
 
-| 序号 | 博物馆名 | 网址 |
-|------|----------|------|
-| 1 | 克利夫兰艺术博物馆 | <https://www.clevelandart.org/art/collection/search> |
-| 2 | 大都会艺术博物馆 | <https://www.metmuseum.org/art/collection> |
-| 3 | 史密森尼学会 | <https://www.si.edu/openaccess> |
-| 4 | 弗利尔美术馆 | <https://www.freersackler.si.edu/collections/> |
-| 5 | 普林斯顿大学艺术博物馆 | <https://artmuseum.princeton.edu/search/collections> |
-| 6 | 纳尔逊-阿特金斯艺术博物馆 | <https://art.nelson-atkins.org/collections> |
-| 7 | 旧金山亚洲艺术博物馆 | <http://searchcollection.asianart.org/> |
-| 8 | 波士顿美术馆 | <https://www.mfa.org/collections/search> |
-| 9 | 明尼阿波利斯艺术博物馆 | <https://collections.artsmia.org/> |
-| 10 | 芝加哥艺术博物馆 | <https://www.artic.edu/collection> |
-| 11 | 宾夕法尼亚大学考古与人类学博物馆 | <https://www.penn.museum/> |
-| 12 | 费城艺术博物馆 | <https://www.philamuseum.org/collections/search.html> |
-| 13 | 哈佛大学艺术博物馆 | <https://harvardartmuseums.org/collections?q=chinese> |
-| 14 | 美国自然历史博物馆 | <https://anthro.amnh.org/collections> |
-| 15 | 布鲁克林艺术博物馆 | <https://www.brooklynmuseum.org/opencollection/collections> |
+## 已支持的博物馆
 
-**注：** 国外博物馆一般可在网站文物搜索栏中使用"chinese"、"china"等关键字进行筛选，还可通过 location 等字段筛选中国文物。
+- Cleveland Museum of Art (克利夫兰艺术博物馆)
+- Metropolitan Museum of Art (大都会艺术博物馆)
+- Smithsonian Institution (史密森尼学会)
+- Freer+Sackler Galleries (弗利尔+赛克勒美术馆)
+- Princeton University Art Museum (普林斯顿大学艺术博物馆)
+- Nelson-Atkins Museum of Art (纳尔逊-阿特金斯艺术博物馆)
+- Art Institute of Chicago (芝加哥艺术博物馆)
+- Philadelphia Museum of Art (费城艺术博物馆)
+- American Museum of Natural History (美国自然历史博物馆)
 
-### 附录2：数据爬取格式及要求
+## 环境变量
 
-#### （1）数据格式要求
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `FASTAPI_HOST` | `127.0.0.1` | 后端监听地址 |
+| `FASTAPI_PORT` | `40001` | 后端端口 |
+| `POSTGRES_HOST` | `127.0.0.1` | 数据库地址 |
+| `POSTGRES_PORT` | `40002` | 数据库端口 |
+| `POSTGRES_USER` | `postgres` | 数据库用户 |
+| `POSTGRES_PASSWORD` | `postgres` | 数据库密码 |
+| `JWT_SECRET` | `knowgraph-jwt-secret-...` | JWT 密钥 |
+| `RELEASE_MODE` | `True` | 发布模式开关 |
 
-- **编码格式：** 统一使用 UTF-8 编码保存，避免中文乱码
-- **文件格式：** 保存为 CSV 格式，建议使用 Python 的 csv 或 pandas 库进行读写
-- **文件命名：** 按博物馆命名，例如 `cleveland_museum.csv`、`metropolitan_museum.csv`
-- **图片存储：** 图片文件按博物馆分文件夹存放，文件名与 CSV 中的文物 ID 一一对应，例如 `images/cleveland/obj_12345.jpg`
-- **验证要求：** 须自行验证导出的 CSV 文件可在 Excel 或 pandas 中正常打开
+## 许可证
 
-#### （2）数据字段要求
-
-每条文物记录至少包含以下字段：
-
-| 字段名（英文） | 中文说明 | 是否必填 | 备注 |
-|----------------|----------|----------|------|
-| object_id | 文物唯一标识符 | 必填 | 使用博物馆原始ID或自行生成 |
-| title | 文物名称 | 必填 | 优先保留英文原名，有中文译名则补充 |
-| period | 年代/时期 | 必填 | 如"Tang Dynasty"或"618–907 AD" |
-| type | 文物类型 | 必填 | 如 Painting、Ceramics、Bronze 等 |
-| material | 材质 | 建议填写 | 如 Silk、Bronze、Jade 等 |
-| description | 文物介绍 | 必填 | 爬取网站提供的原始描述文本 |
-| dimensions | 尺寸 | 建议填写 | 如"H. 30 cm × W. 20 cm" |
-| museum | 所属博物馆 | 必填 | 填写博物馆完整英文名称 |
-| location | 博物馆所在地 | 必填 | 城市、国家 |
-| detail_url | 文物详情页URL | 必填 | 文物在博物馆网站上的原始页面链接 |
-| image_url | 图片原始下载链接 | 必填 | 须为原图地址，而非缩略图 |
-| image_path | 本地图片存储路径 | 必填 | 图片下载后的相对路径 |
-| credit_line | 版权/来源说明 | 建议填写 | 博物馆提供的版权声明 |
-| accession_number | 藏品编号 | 建议填写 | 博物馆馆藏编号 |
-| crawl_date | 爬取日期 | 必填 | 格式：YYYY-MM-DD |
-
-**注意事项：**
-
-- 图片爬取须注意解析原图地址，部分网站（如大都会博物馆）需要通过 API 获取高清原图链接，不可仅保存页面展示的缩略图
-- 对于缺失字段，用空字符串填充，不可省略该列
-- 文物介绍若为英文，建议同时保留原文，后续可通过翻译 API 补充中文描述
-
-#### （3）数据量要求
-
-- 每组须爬取指定的3家博物馆，筛选其中的中国文物
-- 最终提交数据总量不少于 5000 件文物的有效记录（含图片）
-
-#### （4）数据质量验收标准
-
-提交前须自行检查以下内容：
-
-- **必填字段完整率：** object_id、title、detail_url、image_url、crawl_date 五个必填字段不得有空值
-- **图片有效性：** 随机抽查 20 条记录，验证图片文件可正常打开，且为原图而非缩略图
-- **编码正确性：** 读取 CSV 后打印前 5 行，确认中文字符无乱码
-- **URL 有效性：** 随机抽查 10 条 detail_url，验证链接可正常访问
-
-#### （5）说明文档要求
-
-每组须提交一份数据说明文档（Markdown 或 Word 格式），内容包括：
-
-- **字段说明表：** 列出所有字段的英文名、中文含义、数据类型与示例值
-- **爬取说明：** 说明各博物馆爬取时遇到的技术难点及解决方案，如反爬处理方式、原图地址解析方法等
-- **数据统计：** 各博物馆爬取记录数、图片下载成功率、字段缺失情况统计
-- **数据质量自查报告：** 按照第（4）条验收标准的自查结果
-
-### 附录3：团组博物馆分配
-
-为平衡各组爬取数量，请按照下表进行分配。如需调换，需要两组组长同意后上报助教老师。
-
-| 团号 | 爬取博物馆序号 |
-|------|---------------|
-| 1团 | 1、6、11 |
-| 2团 | 2、7、12 |
-| 3团 | 3、8、13 |
-| 4团 | 4、9、14 |
-| 5团 | 5、10、15 |
-
-
+本项目未明确许可证。
