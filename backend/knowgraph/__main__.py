@@ -18,7 +18,7 @@ cmd = Typer(pretty_exceptions_enable=False)
 
 @cmd.command()
 @runnify
-async def run_client() -> None:
+async def start() -> None:
     config = uvicorn.Config(
         app,
         host=settings.FASTAPI_HOST,

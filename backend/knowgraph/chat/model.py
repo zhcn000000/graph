@@ -1,3 +1,5 @@
+import logging
+import os
 from datetime import UTC, datetime
 
 from pydantic_ai import Agent, RunContext
@@ -9,8 +11,13 @@ from knowgraph.utils.templete import FIRST_INPUT_TEMPLATE
 from .struct import ModelDeps
 from .tools import code_toolset, rag_toolset, web_toolset
 
+if os.environ.get("DEEPSEEK_API_KEY"):
+    model = OpenAIChatModel(model_name="deepseek-v4-flash", provider=DeepSeekProvider())
+else:
+    model = None
+    logging.warning("DEEPSEEK_API_KEY not found in environment variables. The agent will not function without a model.")
 agent: Agent[ModelDeps, str] = Agent(
-    model=OpenAIChatModel(model_name="deepseek-v4-flash", provider=DeepSeekProvider()),
+    model=model,
     deps_type=ModelDeps,
     toolsets=[rag_toolset, code_toolset, web_toolset],
     instructions=FIRST_INPUT_TEMPLATE,
