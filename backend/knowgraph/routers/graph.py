@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 
 from knowgraph.database.graph import AgeGraphManager
-from knowgraph.database.ragmode import RAGMode
 
 from .schema import (
     GraphContextRequest,
