@@ -5,10 +5,10 @@ initdb:
   cd backend && uv run knowgraph initdb
 
 ui:
-  cd frontend && vite dev
+  cd frontend && pnpm dev
 
 build-ui:
-  cd frontend && vite build
+  cd frontend && pnpm build
   rm -rf ../static
   cp -r dist ../static
   
