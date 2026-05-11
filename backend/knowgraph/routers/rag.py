@@ -1,4 +1,7 @@
+import logging
+import os
 import pathlib
+import tempfile
 
 from fastapi import APIRouter, UploadFile
 
@@ -13,7 +16,7 @@ router = APIRouter()
 # ── Search ──
 
 
-@router.post("/search", response_model=SearchResponse)
+@router.post("/search")
 async def api_search(request: SearchRequest) -> SearchResponse:
     try:
         rag_mode = RAGMode()
@@ -43,24 +46,22 @@ async def api_search(request: SearchRequest) -> SearchResponse:
         ]
         return SearchResponse(success=True, status="搜索成功", results=results, graph_entities=graph_data)
     except Exception as e:
+        logging.exception(e)
         return SearchResponse(success=False, status=f"搜索失败: {e!s}", results=[])
 
 
 # ── Document Ingestion ──
 
 
-@router.post("/documents/upload", response_model=DocumentUploadResponse)
+@router.post("/documents/upload")
 async def api_upload_document(file: UploadFile) -> DocumentUploadResponse:
     try:
-        import os
-        import tempfile
-
         suffix = os.path.splitext(file.filename or "")[1]  # noqa: PTH122
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
-        doc_store = DocumentStore()
-        doc_ids = await doc_store.aload_from_document(tmp_path)
+            doc_store = DocumentStore()
+            doc_ids = await doc_store.aload_from_document(tmp_path)
         pathlib.Path(tmp_path).unlink()  # noqa: ASYNC240
         return DocumentUploadResponse(
             success=True,
@@ -68,24 +69,32 @@ async def api_upload_document(file: UploadFile) -> DocumentUploadResponse:
             doc_ids=[str(d) for d in doc_ids],
         )
     except Exception as e:
+        logging.exception(e)
         return DocumentUploadResponse(success=False, status=f"文档上传失败: {e!s}", doc_ids=[])
 
 
-@router.post("/documents/load-csv", response_model=FileIngestResponse)
-async def api_load_csv(csv_path: str) -> FileIngestResponse:
+@router.post("/documents/load-csv")
+async def api_load_csv(file: UploadFile) -> FileIngestResponse:
     try:
-        doc_store = DocumentStore()
-        file_ids = await doc_store.aload_from_csv(csv_path)
+        suffix = os.path.splitext(file.filename or "")[1]  # noqa: PTH122
+        if suffix.lower() != ".csv":
+            return FileIngestResponse(success=False, status="仅支持 CSV 文件", file_ids=[])
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+            doc_store = DocumentStore()
+            file_ids = await doc_store.aload_from_csv(tmp_path)
         return FileIngestResponse(
             success=True,
             status="CSV 文档加载成功",
             file_ids=[str(f) for f in file_ids],
         )
     except Exception as e:
+        logging.exception(e)
         return FileIngestResponse(success=False, status=f"CSV 文档加载失败: {e!s}", file_ids=[])
 
 
-@router.post("/documents/ingest-artifacts", response_model=FileIngestResponse)
+@router.post("/documents/ingest-artifacts")
 async def api_ingest_artifacts(museum: str | None = None, limit: int | None = None) -> FileIngestResponse:
     try:
         doc_store = DocumentStore()
@@ -96,4 +105,5 @@ async def api_ingest_artifacts(museum: str | None = None, limit: int | None = No
             file_ids=[str(f) for f in file_ids],
         )
     except Exception as e:
+        logging.exception(e)
         return FileIngestResponse(success=False, status=f"文物数据提取失败: {e!s}", file_ids=[])
