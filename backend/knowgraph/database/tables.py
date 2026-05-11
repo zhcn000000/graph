@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     Uuid,
@@ -132,6 +133,7 @@ class ArtifactRawTable(SQLModel, table=True):
     location: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     detail_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=False, unique=True))]
     image_url: Annotated[str, Field(sa_column=Column(String(2048), nullable=True))]
+    image_data: Annotated[bytes | None, Field(sa_column=Column(LargeBinary, nullable=True))]
     credit_line: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     accession_number: Annotated[str, Field(sa_column=Column(String(256), nullable=True))]
     crawl_date: Annotated[

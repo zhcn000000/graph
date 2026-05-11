@@ -23,13 +23,14 @@ class ArtifactData:
     location: str = ""
     detail_url: str = ""
     image_url: str = ""
+    image_data: bytes | None = None
     credit_line: str = ""
     accession_number: str = ""
     crawl_date: date | None = None
     extra: dict = field(default_factory=dict)
 
-    def to_db_dict(self) -> dict[str, str | date]:
-        result: dict[str, str | date] = {
+    def to_db_dict(self) -> dict[str, str | date | bytes | None]:
+        result: dict[str, str | date | bytes | None] = {
             "object_id": self.object_id,
             "title": self.title,
             "period": self.period,
@@ -41,6 +42,7 @@ class ArtifactData:
             "location": self.location,
             "detail_url": self.detail_url,
             "image_url": self.image_url,
+            "image_data": self.image_data,
             "credit_line": self.credit_line,
             "accession_number": self.accession_number,
         }

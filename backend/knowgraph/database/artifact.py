@@ -27,12 +27,13 @@ class ArtifactStore:
         location: str = "",
         detail_url: str,
         image_url: str = "",
+        image_data: bytes | None = None,
         credit_line: str = "",
         accession_number: str = "",
         crawl_date: date | None = None,
     ) -> UUID | None:
         async with self.__db.asession() as session:
-            values: dict[str, str | date] = {
+            values: dict[str, str | date | bytes | None] = {
                 "object_id": object_id,
                 "title": title,
                 "period": period,
@@ -44,6 +45,7 @@ class ArtifactStore:
                 "location": location,
                 "detail_url": detail_url,
                 "image_url": image_url,
+                "image_data": image_data,
                 "credit_line": credit_line,
                 "accession_number": accession_number,
             }
@@ -65,6 +67,7 @@ class ArtifactStore:
                         "museum": museum,
                         "location": location,
                         "image_url": image_url,
+                        "image_data": image_data,
                         "credit_line": credit_line,
                         "accession_number": accession_number,
                         "updated_at": func.now(),
@@ -83,7 +86,7 @@ class ArtifactStore:
         async with self.__db.asession() as session:
             count = 0
             for artifact in artifacts:
-                values: dict[str, str | date] = {
+                values: dict[str, str | date | bytes | None] = {
                     "object_id": artifact.get("object_id", ""),
                     "title": artifact.get("title", ""),
                     "period": artifact.get("period", ""),
@@ -95,6 +98,7 @@ class ArtifactStore:
                     "location": artifact.get("location", ""),
                     "detail_url": artifact["detail_url"],
                     "image_url": artifact.get("image_url", ""),
+                    "image_data": artifact.get("image_data"),
                     "credit_line": artifact.get("credit_line", ""),
                     "accession_number": artifact.get("accession_number", ""),
                 }
@@ -116,6 +120,7 @@ class ArtifactStore:
                             "museum": artifact["museum"],
                             "location": artifact.get("location", ""),
                             "image_url": artifact.get("image_url", ""),
+                            "image_data": artifact.get("image_data"),
                             "credit_line": artifact.get("credit_line", ""),
                             "accession_number": artifact.get("accession_number", ""),
                             "updated_at": func.now(),
