@@ -123,7 +123,7 @@ export default function MainLayout() {
           }}
         >
           <Space>
-            <Avatar size={32} style={{ backgroundColor: tokenTheme.colorPrimary }}>
+            <Avatar size={32} style={{ backgroundColor: themeToken.colorPrimary }}>
               KG
             </Avatar>
             {!collapsed && (
@@ -146,7 +146,7 @@ export default function MainLayout() {
         <Header
           style={{
             padding: '0 24px',
-            background: tokenTheme.colorBgContainer,
+            background: themeToken.colorBgContainer,
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -166,7 +166,7 @@ export default function MainLayout() {
             {user ? (
               <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
                 <Space style={{ cursor: 'pointer' }}>
-                  <Avatar style={{ backgroundColor: tokenTheme.colorPrimary }}>
+                  <Avatar style={{ backgroundColor: themeToken.colorPrimary }}>
                     {user.username[0].toUpperCase()}
                   </Avatar>
                   <span>{user.username}</span>
@@ -182,7 +182,7 @@ export default function MainLayout() {
           style={{
             padding: 24,
             minHeight: 'calc(100vh - 64px)',
-            background: tokenTheme.colorBgLayout,
+            background: themeToken.colorBgLayout,
           }}
         >
           <Outlet />

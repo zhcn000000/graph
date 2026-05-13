@@ -1,13 +1,12 @@
 {
   "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsBuildInfo",
     "target": "ESNext",
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "esModuleInterop": true,
-    "jsx": "react",
+    "jsx": "react-jsx",
     "strict": true,
     "paths": {
       "@/*": ["./src/*"]

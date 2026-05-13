@@ -246,14 +246,14 @@ export default function DashboardPage() {
 
           <Card title="数据更新日志" style={{ marginTop: 24 }}>
             <Space direction="vertical" style={{ width: '100%' }}>
-              {recentLogs.map((log) => (
+              {recentLogs.map((log, index) => (
                 <div
                   key={log.text}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     padding: '8px 0',
-                    borderBottom: i < recentLogs.length - 1 ? '1px solid #f0f0f0' : 'none',
+                    borderBottom: index < recentLogs.length - 1 ? '1px solid #f0f0f0' : 'none',
                   }}
                 >
                   <WarningOutlined style={{ color: log.color }} />

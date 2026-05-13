@@ -144,3 +144,7 @@ export interface SessionListResponse extends StatusResponse {
 export interface HistoryResponse extends StatusResponse {
   messages?: unknown[]
 }
+
+export interface TranscriptionResponse extends StatusResponse {
+  text?: string
+}

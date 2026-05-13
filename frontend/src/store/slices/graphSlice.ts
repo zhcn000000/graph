@@ -23,7 +23,7 @@ export const fetchGraphTraverse = createAsyncThunk(
   async (params: { uri: string; maxHops?: number; direction?: string }, { rejectWithValue }) => {
     try {
       const res = await traverseGraph(params.uri, params.maxHops, params.direction)
-      return (res.data as GraphData) ?? { nodes: [], edges: [] }
+      return (res.data as unknown as GraphData) ?? { nodes: [], edges: [] }
     } catch (err) {
       return rejectWithValue(err instanceof Error ? err.message : '获取图谱数据失败')
     }
@@ -35,7 +35,7 @@ export const fetchGraphNeighbors = createAsyncThunk(
   async (params: { uri: string; direction?: string; maxHops?: number }, { rejectWithValue }) => {
     try {
       const res = await getNeighbors(params.uri, params.direction, params.maxHops)
-      return (res.data as GraphData) ?? { nodes: [], edges: [] }
+      return (res.data as unknown as GraphData) ?? { nodes: [], edges: [] }
     } catch (err) {
       return rejectWithValue(err instanceof Error ? err.message : '获取邻居节点失败')
     }
@@ -47,7 +47,7 @@ export const fetchGraphPaths = createAsyncThunk(
   async (params: { startUri: string; endUri: string; maxHops?: number }, { rejectWithValue }) => {
     try {
       const res = await findPaths(params.startUri, params.endUri, params.maxHops)
-      return (res.data as GraphData) ?? { nodes: [], edges: [] }
+      return (res.data as unknown as GraphData) ?? { nodes: [], edges: [] }
     } catch (err) {
       return rejectWithValue(err instanceof Error ? err.message : '查询路径失败')
     }
