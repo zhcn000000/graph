@@ -13,7 +13,36 @@ import DocumentUploadPage from './pages/DocumentUploadPage'
 import CsvImportPage from './pages/CsvImportPage'
 import SpiderPage from './pages/SpiderPage'
 import ChatPage from './pages/ChatPage'
-import './index.css'
+import { Global, css } from '@emotion/react'
+
+const globalStyles = css`
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+`
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('token')
@@ -25,6 +54,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    <Global styles={globalStyles} />
     <Provider store={store}>
       <ConfigProvider locale={zhCN}>
         <AntApp>
