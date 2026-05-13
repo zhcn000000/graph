@@ -34,6 +34,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
+    "@emotion/babel-plugin": "^11.13.5",
     "@rolldown/plugin-babel": "^0.2.3",
     "@types/node": "^25.7.0",
     "@types/react": "^19.2.14",
