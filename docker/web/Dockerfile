@@ -1,19 +1,19 @@
-#FROM node:24-trixie as build-webui
+FROM node:24-trixie as build-webui
 
-#COPY ./frontend /app/webui
+COPY ./frontend /app/webui
 
-#WORKDIR /app/webui
+WORKDIR /app/webui
 
-#ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
-#    CI=true
+ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
+    CI=true
 
-#RUN --mount=type=cache,target=/root/.cache/pnpm \
-#    --mount=type=cache,target=/root/.cache/node \
-#    --mount=type=cache,target=/root/.npm \
-#    corepack enable && \
-#    pnpm install --no-frozen-lockfile
+RUN --mount=type=cache,target=/root/.cache/pnpm \
+    --mount=type=cache,target=/root/.cache/node \
+    --mount=type=cache,target=/root/.npm \
+    corepack enable && \
+    pnpm install --no-frozen-lockfile
 
-#RUN pnpm build
+RUN pnpm build
 
 FROM python:3.14-trixie as builder
 
