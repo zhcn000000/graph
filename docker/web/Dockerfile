@@ -1,4 +1,4 @@
-FROM node:24-trixie as build-webui
+FROM node:26-trixie as build-webui
 
 COPY ./frontend /app/webui
 
