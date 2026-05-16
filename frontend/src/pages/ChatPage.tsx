@@ -4,8 +4,6 @@ import {
   CloudUploadOutlined,
   InboxOutlined,
   PaperClipOutlined,
-  PlusOutlined,
-  RobotOutlined,
   ToolOutlined,
 } from "@ant-design/icons";
 import {
@@ -22,11 +20,10 @@ import {
 } from "@ant-design/x";
 import type { ItemType } from "@ant-design/x/es/actions/interface";
 import type { BubbleListRef } from "@ant-design/x/es/bubble";
-import type { SenderRef } from "@ant-design/x/es/sender";
 import { useXChat, useXConversations } from "@ant-design/x-sdk";
 import styled from "@emotion/styled";
 import type { MenuProps, UploadFile, UploadProps } from "antd";
-import { Alert, Button, Card, Checkbox, Flex, Input, Modal, message, Tooltip } from "antd";
+import { Alert, Checkbox, Flex, Input, Modal, message, Tooltip } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ChatMessage,

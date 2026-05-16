@@ -1,12 +1,9 @@
 import {
-  BankOutlined,
   BugOutlined,
   CloudUploadOutlined,
   DashboardOutlined,
   DatabaseOutlined,
   FileAddOutlined,
-  FileImageOutlined,
-  GlobalOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,

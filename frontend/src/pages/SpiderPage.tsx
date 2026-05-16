@@ -6,7 +6,7 @@ import {
   PlayCircleOutlined,
   SyncOutlined,
 } from "@ant-design/icons";
-import { Alert, Button, Card, Col, List, message, Row, Space, Spin, Statistic, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, message, Row, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useState } from "react";
 import { ingestArtifacts } from "@/api/documents";
 

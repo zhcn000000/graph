@@ -4,7 +4,7 @@ import XMarkdown, { ComponentProps, XMarkdownProps } from "@ant-design/x-markdow
 import Latex from "@ant-design/x-markdown/plugins/Latex";
 import { Infographic } from "@antv/infographic";
 import { Skeleton } from "antd";
-import React, { FC, memo, ReactNode, useEffect, useRef, useState } from "react";
+import { FC, memo, ReactNode, useEffect, useRef, useState } from "react";
 
 type ReactInfographicProps = {
   children: ReactNode;

@@ -35,8 +35,7 @@
       "correctness": {
         "recommended": true,
         "noUnusedVariables": "off",
-        "noUnusedFunctionParameters": "off",
-        "noUnusedImports": "off"
+        "noUnusedFunctionParameters": "off"
       },
       "style": {
         "recommended": true,

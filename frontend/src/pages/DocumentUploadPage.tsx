@@ -1,6 +1,6 @@
 import { CloudUploadOutlined, FileTextOutlined, InboxOutlined } from "@ant-design/icons";
 import type { UploadProps } from "antd";
-import { Alert, Button, Card, message, Progress, Space, Table, Tag, Typography, Upload } from "antd";
+import { Alert, Card, message, Progress, Space, Table, Tag, Typography, Upload } from "antd";
 import { useState } from "react";
 import { uploadDocument } from "@/api/documents";
 
