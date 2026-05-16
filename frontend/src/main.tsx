@@ -1,19 +1,19 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { Provider } from 'react-redux'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { ConfigProvider, App as AntApp } from 'antd'
-import zhCN from 'antd/locale/zh_CN'
-import { store } from './store'
-import MainLayout from './layouts/MainLayout'
-import LoginPage from './pages/LoginPage'
-import DashboardPage from './pages/DashboardPage'
-import GraphPage from './pages/GraphPage'
-import DocumentUploadPage from './pages/DocumentUploadPage'
-import CsvImportPage from './pages/CsvImportPage'
-import SpiderPage from './pages/SpiderPage'
-import ChatPage from './pages/ChatPage'
-import { Global, css } from '@emotion/react'
+import { css, Global } from "@emotion/react";
+import { App as AntApp, ConfigProvider } from "antd";
+import zhCN from "antd/locale/zh_CN";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { Provider } from "react-redux";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import MainLayout from "./layouts/MainLayout";
+import ChatPage from "./pages/ChatPage";
+import CsvImportPage from "./pages/CsvImportPage";
+import DashboardPage from "./pages/DashboardPage";
+import DocumentUploadPage from "./pages/DocumentUploadPage";
+import GraphPage from "./pages/GraphPage";
+import LoginPage from "./pages/LoginPage";
+import SpiderPage from "./pages/SpiderPage";
+import { store } from "./store";
 
 const globalStyles = css`
   body {
@@ -42,17 +42,19 @@ const globalStyles = css`
   ::-webkit-scrollbar-track {
     background: transparent;
   }
-`
+`;
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = localStorage.getItem('token')
+  const token = localStorage.getItem("token");
   if (!token) {
-    return <Navigate to="/login" replace />
+    return <Navigate to="/login" replace />;
   }
-  return <>{children}</>
+  return <>{children}</>;
 }
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById("root");
+if (!rootElement) throw new Error("Root element not found");
+createRoot(rootElement).render(
   <StrictMode>
     <Global styles={globalStyles} />
     <Provider store={store}>
@@ -82,4 +84,4 @@ createRoot(document.getElementById('root')!).render(
       </ConfigProvider>
     </Provider>
   </StrictMode>,
-)
+);

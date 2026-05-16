@@ -1,112 +1,103 @@
-import { useState } from 'react'
-import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
-  Layout,
-  Menu,
-  Button,
-  Avatar,
-  Space,
-  Typography,
-  Dropdown,
-  theme,
-} from 'antd'
-import {
-  GlobalOutlined,
-  FileImageOutlined,
-  DatabaseOutlined,
   BankOutlined,
-  CloudUploadOutlined,
-  FileAddOutlined,
   BugOutlined,
-  RobotOutlined,
+  CloudUploadOutlined,
+  DashboardOutlined,
+  DatabaseOutlined,
+  FileAddOutlined,
+  FileImageOutlined,
+  GlobalOutlined,
+  LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  LogoutOutlined,
+  RobotOutlined,
   UserOutlined,
-  DashboardOutlined,
-} from '@ant-design/icons'
-import type { MenuProps } from 'antd'
-import { useAppDispatch, useAppSelector } from '@/store/hooks'
-import { logout } from '@/store/slices/authSlice'
+} from "@ant-design/icons";
+import type { MenuProps } from "antd";
+import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography, theme } from "antd";
+import { useState } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { logout } from "@/store/slices/authSlice";
 
-const { Header, Sider, Content } = Layout
-const { Title } = Typography
+const { Header, Sider, Content } = Layout;
+const { Title } = Typography;
 
-const menuItems: MenuProps['items'] = [
+const menuItems: MenuProps["items"] = [
   {
-    key: '/',
+    key: "/",
     icon: <DashboardOutlined />,
-    label: '首页',
+    label: "首页",
   },
   {
-    key: '/graph',
+    key: "/graph",
     icon: <DatabaseOutlined />,
-    label: '知识图谱',
+    label: "知识图谱",
   },
   {
-    key: '/chat',
+    key: "/chat",
     icon: <RobotOutlined />,
-    label: 'AI 问答',
+    label: "AI 问答",
   },
   {
-    type: 'divider',
+    type: "divider",
   },
   {
-    key: '/documents/upload',
+    key: "/documents/upload",
     icon: <CloudUploadOutlined />,
-    label: '文档上传',
+    label: "文档上传",
   },
   {
-    key: '/documents/csv',
+    key: "/documents/csv",
     icon: <FileAddOutlined />,
-    label: 'CSV 导入',
+    label: "CSV 导入",
   },
   {
-    key: '/spider',
+    key: "/spider",
     icon: <BugOutlined />,
-    label: '爬虫控制',
+    label: "爬虫控制",
   },
-]
+];
 
 export default function MainLayout() {
-  const [collapsed, setCollapsed] = useState(false)
-  const navigate = useNavigate()
-  const location = useLocation()
-  const dispatch = useAppDispatch()
-  const user = useAppSelector((state) => state.auth.user)
-  const { token: themeToken } = theme.useToken()
+  const [collapsed, setCollapsed] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.auth.user);
+  const { token: themeToken } = theme.useToken();
 
-  const selectedKeys = [location.pathname]
+  const selectedKeys = [location.pathname];
 
-  const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
-    navigate(key)
-  }
+  const handleMenuClick: MenuProps["onClick"] = ({ key }) => {
+    navigate(key);
+  };
 
   const handleLogout = () => {
-    dispatch(logout())
-    navigate('/login')
-  }
+    dispatch(logout());
+    navigate("/login");
+  };
 
-  const userMenuItems: MenuProps['items'] = [
+  const userMenuItems: MenuProps["items"] = [
     {
-      key: 'logout',
-      label: '退出登录',
+      key: "logout",
+      label: "退出登录",
       icon: <LogoutOutlined />,
       danger: true,
       onClick: handleLogout,
     },
-  ]
+  ];
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: "100vh" }}>
       <Sider
         trigger={null}
         collapsible
         collapsed={collapsed}
         style={{
-          overflow: 'auto',
-          height: '100vh',
-          position: 'fixed',
+          overflow: "auto",
+          height: "100vh",
+          position: "fixed",
           left: 0,
           top: 0,
           bottom: 0,
@@ -116,9 +107,9 @@ export default function MainLayout() {
         <div
           style={{
             height: 64,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             padding: 16,
           }}
         >
@@ -127,31 +118,25 @@ export default function MainLayout() {
               KG
             </Avatar>
             {!collapsed && (
-              <Title level={5} style={{ color: '#fff', margin: 0, whiteSpace: 'nowrap' }}>
+              <Title level={5} style={{ color: "#fff", margin: 0, whiteSpace: "nowrap" }}>
                 文物图谱
               </Title>
             )}
           </Space>
         </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={selectedKeys}
-          items={menuItems}
-          onClick={handleMenuClick}
-        />
+        <Menu theme="dark" mode="inline" selectedKeys={selectedKeys} items={menuItems} onClick={handleMenuClick} />
       </Sider>
 
-      <Layout style={{ marginLeft: collapsed ? 80 : 220, transition: 'margin-left 0.2s' }}>
+      <Layout style={{ marginLeft: collapsed ? 80 : 220, transition: "margin-left 0.2s" }}>
         <Header
           style={{
-            padding: '0 24px',
+            padding: "0 24px",
             background: themeToken.colorBgContainer,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
-            position: 'sticky',
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
+            position: "sticky",
             top: 0,
             zIndex: 99,
           }}
@@ -165,10 +150,8 @@ export default function MainLayout() {
           <Space>
             {user ? (
               <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-                <Space style={{ cursor: 'pointer' }}>
-                  <Avatar style={{ backgroundColor: themeToken.colorPrimary }}>
-                    {user.username[0].toUpperCase()}
-                  </Avatar>
+                <Space style={{ cursor: "pointer" }}>
+                  <Avatar style={{ backgroundColor: themeToken.colorPrimary }}>{user.username[0].toUpperCase()}</Avatar>
                   <span>{user.username}</span>
                 </Space>
               </Dropdown>
@@ -181,7 +164,7 @@ export default function MainLayout() {
         <Content
           style={{
             padding: 24,
-            minHeight: 'calc(100vh - 64px)',
+            minHeight: "calc(100vh - 64px)",
             background: themeToken.colorBgLayout,
           }}
         >
@@ -189,5 +172,5 @@ export default function MainLayout() {
         </Content>
       </Layout>
     </Layout>
-  )
+  );
 }

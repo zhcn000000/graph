@@ -1,150 +1,142 @@
-import { useState, useCallback } from 'react'
-import {
-  Card,
-  Button,
-  Space,
-  Typography,
-  Tag,
-  Table,
-  Alert,
-  message,
-  Statistic,
-  Row,
-  Col,
-  List,
-  Spin,
-} from 'antd'
 import {
   BugOutlined,
-  PlayCircleOutlined,
-  PauseCircleOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
   SyncOutlined,
-} from '@ant-design/icons'
-import { ingestArtifacts } from '@/api/documents'
+} from "@ant-design/icons";
+import { Alert, Button, Card, Col, List, message, Row, Space, Spin, Statistic, Table, Tag, Typography } from "antd";
+import { useCallback, useState } from "react";
+import { ingestArtifacts } from "@/api/documents";
 
-const { Title, Text } = Typography
+const { Title, Text } = Typography;
 
 const MUSEUMS = [
-  { key: 'CMA', name: '克利夫兰艺术博物馆', location: '美国克利夫兰' },
-  { key: 'Met', name: '大都会艺术博物馆', location: '美国纽约' },
-  { key: 'Princeton', name: '普林斯顿大学艺术博物馆', location: '美国普林斯顿' },
-  { key: 'Nelson-Atkins', name: '尼尔森-阿特金斯艺术博物馆', location: '美国堪萨斯城' },
-  { key: 'Philadelphia', name: '费城艺术博物馆', location: '美国费城' },
-  { key: 'AMNH', name: '美国自然历史博物馆', location: '美国纽约' },
-]
+  { key: "CMA", name: "克利夫兰艺术博物馆", location: "美国克利夫兰" },
+  { key: "Met", name: "大都会艺术博物馆", location: "美国纽约" },
+  { key: "Princeton", name: "普林斯顿大学艺术博物馆", location: "美国普林斯顿" },
+  { key: "Nelson-Atkins", name: "尼尔森-阿特金斯艺术博物馆", location: "美国堪萨斯城" },
+  { key: "Philadelphia", name: "费城艺术博物馆", location: "美国费城" },
+  { key: "AMNH", name: "美国自然历史博物馆", location: "美国纽约" },
+];
 
 interface CrawlLog {
-  key: string
-  time: string
-  museum: string
-  status: 'running' | 'success' | 'error'
-  message: string
+  key: string;
+  time: string;
+  museum: string;
+  status: "running" | "success" | "error";
+  message: string;
 }
 
 export default function SpiderPage() {
-  const [running, setRunning] = useState(false)
-  const [ingesting, setIngesting] = useState(false)
-  const [logs, setLogs] = useState<CrawlLog[]>([])
+  const [running, setRunning] = useState(false);
+  const [ingesting, setIngesting] = useState(false);
+  const [logs, setLogs] = useState<CrawlLog[]>([]);
 
-  const addLog = useCallback((museum: string, status: 'running' | 'success' | 'error', message: string) => {
+  const addLog = useCallback((museum: string, status: "running" | "success" | "error", message: string) => {
     const log: CrawlLog = {
       key: `${Date.now()}-${Math.random()}`,
       time: new Date().toLocaleTimeString(),
       museum,
       status,
       message,
-    }
-    setLogs((prev) => [log, ...prev].slice(0, 50))
-  }, [])
+    };
+    setLogs((prev) => [log, ...prev].slice(0, 50));
+  }, []);
 
   const handleCrawlAll = useCallback(async () => {
-    setRunning(true)
-    addLog('全部', 'running', '开始批量爬取...')
+    setRunning(true);
+    addLog("全部", "running", "开始批量爬取...");
 
     for (let i = 0; i < MUSEUMS.length; i++) {
-      const museum = MUSEUMS[i]
-      addLog(museum.name, 'running', '正在爬取...')
+      const museum = MUSEUMS[i];
+      addLog(museum.name, "running", "正在爬取...");
       try {
         // Simulate crawl with a delay (actual spider runs via CLI)
-        await new Promise((resolve) => setTimeout(resolve, 2000))
-        addLog(museum.name, 'success', '爬取完成')
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        addLog(museum.name, "success", "爬取完成");
       } catch {
-        addLog(museum.name, 'error', '爬取失败')
+        addLog(museum.name, "error", "爬取失败");
       }
     }
 
-    addLog('全部', 'success', '所有博物馆爬取完成')
-    setRunning(false)
-  }, [addLog])
+    addLog("全部", "success", "所有博物馆爬取完成");
+    setRunning(false);
+  }, [addLog]);
 
   const handleCrawlSingle = useCallback(
     async (museumKey: string, museumName: string) => {
-      setRunning(true)
-      addLog(museumName, 'running', '正在爬取...')
+      setRunning(true);
+      addLog(museumName, "running", "正在爬取...");
       try {
-        await new Promise((resolve) => setTimeout(resolve, 2000))
-        addLog(museumName, 'success', '爬取完成')
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        addLog(museumName, "success", "爬取完成");
       } catch {
-        addLog(museumName, 'error', '爬取失败')
+        addLog(museumName, "error", "爬取失败");
       }
-      setRunning(false)
+      setRunning(false);
     },
     [addLog],
-  )
+  );
 
   const handleIngestArtifacts = useCallback(async () => {
-    setIngesting(true)
-    message.loading({ content: '正在将爬取数据导入知识图谱...', key: 'ingest' })
+    setIngesting(true);
+    message.loading({ content: "正在将爬取数据导入知识图谱...", key: "ingest" });
     try {
-      const res = await ingestArtifacts()
+      const res = await ingestArtifacts();
       message.success({
         content: `成功导入 ${res.documents_created ?? 0} 条记录到知识图谱`,
-        key: 'ingest',
-      })
-      addLog('系统', 'success', `导入完成: ${res.documents_created ?? 0} 条记录`)
+        key: "ingest",
+      });
+      addLog("系统", "success", `导入完成: ${res.documents_created ?? 0} 条记录`);
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '导入失败'
-      message.error({ content: errorMsg, key: 'ingest' })
-      addLog('系统', 'error', errorMsg)
+      const errorMsg = err instanceof Error ? err.message : "导入失败";
+      message.error({ content: errorMsg, key: "ingest" });
+      addLog("系统", "error", errorMsg);
     } finally {
-      setIngesting(false)
+      setIngesting(false);
     }
-  }, [addLog])
+  }, [addLog]);
 
   const logColumns = [
     {
-      title: '时间',
-      dataIndex: 'time',
-      key: 'time',
+      title: "时间",
+      dataIndex: "time",
+      key: "time",
       width: 100,
     },
     {
-      title: '博物馆',
-      dataIndex: 'museum',
-      key: 'museum',
+      title: "博物馆",
+      dataIndex: "museum",
+      key: "museum",
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
+      title: "状态",
+      dataIndex: "status",
+      key: "status",
       width: 80,
       render: (status: string) =>
-        status === 'running' ? (
-          <Tag icon={<SyncOutlined spin />} color="processing">进行中</Tag>
-        ) : status === 'success' ? (
-          <Tag icon={<CheckCircleOutlined />} color="success">成功</Tag>
+        status === "running" ? (
+          <Tag icon={<SyncOutlined spin />} color="processing">
+            进行中
+          </Tag>
+        ) : status === "success" ? (
+          <Tag icon={<CheckCircleOutlined />} color="success">
+            成功
+          </Tag>
         ) : (
-          <Tag icon={<ExclamationCircleOutlined />} color="error">失败</Tag>
+          <Tag icon={<ExclamationCircleOutlined />} color="error">
+            失败
+          </Tag>
         ),
     },
     {
-      title: '消息',
-      dataIndex: 'message',
-      key: 'message',
+      title: "消息",
+      dataIndex: "message",
+      key: "message",
     },
-  ]
+  ];
 
   return (
     <div>
@@ -226,9 +218,9 @@ export default function SpiderPage() {
           dataSource={logs}
           pagination={{ pageSize: 10 }}
           size="small"
-          locale={{ emptyText: '暂无爬取记录，点击上方按钮开始爬取' }}
+          locale={{ emptyText: "暂无爬取记录，点击上方按钮开始爬取" }}
         />
       </Card>
     </div>
-  )
+  );
 }
