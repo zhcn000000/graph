@@ -66,7 +66,7 @@ export default function SpiderPage() {
   }, [addLog]);
 
   const handleCrawlSingle = useCallback(
-    async (museumKey: string, museumName: string) => {
+    async (_museumKey: string, museumName: string) => {
       setRunning(true);
       addLog(museumName, "running", "正在爬取...");
       try {

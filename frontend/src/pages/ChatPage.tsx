@@ -12,7 +12,7 @@ import {
   Bubble,
   Conversations,
   FileCard,
-  FileCardProps,
+  type FileCardProps,
   Sender,
   Think,
   ThoughtChain,
@@ -37,8 +37,6 @@ import type {
 import { createChatProvider, generateSessionTitle, getHistoryMessages, transcribeAudio } from "@/api/chat";
 import { createSession, deleteSession, getSessionList, renameSession } from "@/api/session";
 import { SuperMarkdown } from "@/components/SuperMarkdown";
-
-const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 
 const defaultTypingConfig = {
   effect: "typing" as const,
@@ -91,7 +89,7 @@ export default function ChatPage() {
   const [isDeepThinking, setIsDeepThinking] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [speechRecording, setSpeechRecording] = useState(false);
-  const [isTranscribingSpeech, setIsTranscribingSpeech] = useState(false);
+  const [, setIsTranscribingSpeech] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const speechChunksRef = useRef<BlobPart[]>([]);
@@ -135,7 +133,6 @@ export default function ChatPage() {
     requestPlaceholder: { role: "assistant", content: [] },
   });
 
-  const hasMessages = messageInfos.length > 0;
   const hasUploadingAttachments = attachments.some((item) => item.status === "uploading");
   const listRef = useRef<BubbleListRef>(null);
 

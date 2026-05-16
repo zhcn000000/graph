@@ -33,13 +33,10 @@
         "recommended": true
       },
       "correctness": {
-        "recommended": true,
-        "noUnusedVariables": "off",
-        "noUnusedFunctionParameters": "off"
+        "recommended": true
       },
       "style": {
-        "recommended": true,
-        "useImportType": "off"
+        "recommended": true
       },
       "complexity": {
         "recommended": true
@@ -47,7 +44,9 @@
       "suspicious": {
         "recommended": true
       },
-      "a11y": "warn"
+      "a11y": {
+        "recommended": true
+      }
     }
   }
 }

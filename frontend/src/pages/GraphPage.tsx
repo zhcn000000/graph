@@ -169,7 +169,7 @@ export default function GraphPage() {
               >
                 <svg width="100%" height="100%" style={{ minWidth: 800, minHeight: 500 }}>
                   <title>知识图谱可视化</title>
-                  {data.edges?.map((edge, i) => {
+                  {data.edges?.map((edge, _i) => {
                     const sourceNode = data.nodes?.find((n) => n.id === edge.source);
                     const targetNode = data.nodes?.find((n) => n.id === edge.target);
                     if (!sourceNode || !targetNode || !data.nodes) return null;

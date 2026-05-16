@@ -1,10 +1,10 @@
 import { Line } from "@ant-design/charts";
 import { CodeHighlighter, FileCard, Mermaid, Think } from "@ant-design/x";
-import XMarkdown, { ComponentProps, XMarkdownProps } from "@ant-design/x-markdown";
+import XMarkdown, { type ComponentProps, type XMarkdownProps } from "@ant-design/x-markdown";
 import Latex from "@ant-design/x-markdown/plugins/Latex";
 import { Infographic } from "@antv/infographic";
 import { Skeleton } from "antd";
-import { FC, memo, ReactNode, useEffect, useRef, useState } from "react";
+import { type FC, memo, type ReactNode, useEffect, useRef, useState } from "react";
 
 type ReactInfographicProps = {
   children: ReactNode;
