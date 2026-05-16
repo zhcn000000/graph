@@ -12,8 +12,6 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "rootDir": "./src",
     "outDir": "./dist"
   },
-  "include": ["src", "vite.config.ts"]
 }
