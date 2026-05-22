@@ -11,7 +11,7 @@ build-ui:
   cd frontend && pnpm build
   rm -rf ../static
   cp -r dist ../static
-  
+
 
 database:
   cd docker && podman-compose up database
@@ -21,3 +21,14 @@ web-docker:
 
 docker:
   cd docker && podman-compose up
+
+backend-format:
+  cd backend && uv run ruff format
+backend-lint:
+  cd backend && uv run ruff check --fix
+backend-typecheck:
+  cd backend && uv run ty check --fix
+frontend-check:
+  cd frontend && pnpm check --write
+frontend-typecheck:
+  cd frontend && pnpm type-check
