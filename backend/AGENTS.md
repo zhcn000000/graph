@@ -41,7 +41,7 @@ backend/
 │   ├── graph/                   # 知识图谱模块
 │   │   ├── __init__.py          # 导出图谱组件
 │   │   ├── schema.py            # EntityType, RelationshipType, ExtractedEntity 等本体
-│   │   └── triples.py           # LLMExtractor 三元组提取, CSVRowInput
+│   │   └── triples.py           # LLMExtractor 三元组提取
 │   ├── documents/               # 文档处理管道
 │   │   ├── __init__.py          # (空)
 │   │   ├── models.py            # Document 数据模型 + spacy NLP
@@ -187,7 +187,7 @@ agent: Agent[ModelDeps, str] = Agent(
 
 **三元组提取** (`knowgraph/graph/triples.py`):
 - `LLMExtractor`: 从文物记录中用 LLM (复用 Agent) 提取三元组, 自动 web 搜索补充
-- `CSVRowInput`: CSV 行数据模型, `to_artifact_triples()` 自动提取 5 类关系 (collected_by, belongs_to_dynasty, made_of_material, is_type_of, located_at)
+- CSV 数据通过 `knowgraph/adapters/` 下的适配器读取，再写入 `ArtifactRawTable`
 - `compute_triples_strength`: 用重排序打分计算边强度
 - 支持 CSV 文件/DataFrame/单行/文档多种输入
 

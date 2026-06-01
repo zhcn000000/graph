@@ -2,7 +2,7 @@ web:
   cd backend && uv run knowgraph start
 
 initdb:
-  cd backend && uv run knowgraph initdb
+  cd backend && uv run knowgraph database init
 
 ui:
   cd frontend && pnpm dev

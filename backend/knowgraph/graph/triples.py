@@ -1,8 +1,3 @@
-import json
-import warnings
-
-import pandas as pd
-from pydantic import BaseModel
 from pydantic_ai import ModelSettings
 
 from ..chat.model import agent
@@ -10,84 +5,8 @@ from ..chat.struct import ModelDeps
 from ..documents.embedder import arerank_documents
 from ..documents.models import Document
 from .schema import (
-    EntityType,
-    ExtractedEntity,
     ExtractedTriple,
-    RelationshipInfo,
-    RelationshipType,
 )
-
-
-class CSVRowInput(BaseModel):
-    object_id: str
-    title: str
-    period: str | None = None
-    type: str | None = None
-    material: str | None = None
-    description: str | None = None
-    dimensions: str | None = None
-    museum: str
-    location: str | None = None
-    detail_url: str | None = None
-    image_url: str | None = None
-    credit_line: str | None = None
-    accession_number: str | None = None
-    crawl_date: str | None = None
-
-    def to_artifact_triples(self) -> list[ExtractedTriple]:
-        triples: list[ExtractedTriple] = []
-
-        if self.museum:
-            triples.append(
-                ExtractedTriple(
-                    subject=ExtractedEntity(name=self.title, entity_type=EntityType.ARTIFACT),
-                    predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY),
-                    object=ExtractedEntity(name=self.museum, entity_type=EntityType.MUSEUM),
-                    description=self.description or f"{self.title} 收藏于 {self.museum}",
-                ),
-            )
-
-        if self.period:
-            triples.append(
-                ExtractedTriple(
-                    subject=ExtractedEntity(name=self.title, entity_type=EntityType.ARTIFACT),
-                    predicate=RelationshipInfo(predicate=RelationshipType.BELONGS_TO_DYNASTY),
-                    object=ExtractedEntity(name=self.period, entity_type=EntityType.DYNASTY),
-                    description=f"{self.title} 属于 {self.period}",
-                ),
-            )
-
-        if self.material:
-            triples.append(
-                ExtractedTriple(
-                    subject=ExtractedEntity(name=self.title, entity_type=EntityType.ARTIFACT),
-                    predicate=RelationshipInfo(predicate=RelationshipType.MADE_OF_MATERIAL),
-                    object=ExtractedEntity(name=self.material, entity_type=EntityType.MATERIAL),
-                    description=f"{self.title} 材质为 {self.material}",
-                ),
-            )
-
-        if self.type:
-            triples.append(
-                ExtractedTriple(
-                    subject=ExtractedEntity(name=self.title, entity_type=EntityType.ARTIFACT),
-                    predicate=RelationshipInfo(predicate=RelationshipType.IS_TYPE_OF),
-                    object=ExtractedEntity(name=self.type, entity_type=EntityType.ARTIFACT_TYPE),
-                    description=f"{self.title} 类型为 {self.type}",
-                ),
-            )
-
-        if self.location and self.museum:
-            triples.append(
-                ExtractedTriple(
-                    subject=ExtractedEntity(name=self.museum, entity_type=EntityType.MUSEUM),
-                    predicate=RelationshipInfo(predicate=RelationshipType.LOCATED_AT),
-                    object=ExtractedEntity(name=self.location, entity_type=EntityType.LOCATION),
-                    description=f"{self.museum} 位于 {self.location}",
-                ),
-            )
-
-        return triples
 
 
 def _format_pre_extracted_triples(triples: list[ExtractedTriple]) -> str:
@@ -176,12 +95,6 @@ class LLMExtractor:
 
 只输出JSON，不要包含其他文字。"""
 
-    async def aextract_from_csv_row(self, row: CSVRowInput) -> list[ExtractedTriple]:
-        record_str = json.dumps(row.model_dump(), ensure_ascii=False, indent=2)
-        user_prompt = self._build_user_prompt(record_str, [])
-        triples = await self._run_agent_with_prompt(user_prompt)
-        return await compute_triples_strength(triples)
-
     async def aextract_from_document(self, doc: Document) -> list[ExtractedTriple]:
         pre_triples = [t for t in doc.triples if t.predicate.strength is None]
         if pre_triples:
@@ -204,22 +117,3 @@ class LLMExtractor:
             output_type=list[ExtractedTriple],
         )
         return result.output
-
-    async def aextract_from_csv(self, csv_path: str) -> list[ExtractedTriple]:
-        df = pd.read_csv(csv_path)
-        return await self.aextract_from_dataframe(df)
-
-    async def aextract_from_dataframe(self, df: pd.DataFrame) -> list[ExtractedTriple]:
-        all_triples = []
-
-        for _, row in df.iterrows():
-            try:
-                row_dict = row.to_dict()
-                row_input = CSVRowInput(**{k: v for k, v in row_dict.items() if pd.notna(v)})
-                triples = await self.aextract_from_csv_row(row_input)
-                all_triples.extend(triples)
-            except Exception as e:
-                warnings.warn(f"Skipping row due to extraction failure: {e}", UserWarning, stacklevel=2)
-                continue
-
-        return all_triples

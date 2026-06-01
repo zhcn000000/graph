@@ -3,7 +3,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from uuid import UUID
 
-import pandas as pd
 from networkx import DiGraph
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -14,13 +13,110 @@ from knowgraph.documents.embedder import aembed_documents
 from knowgraph.documents.models import Document
 from knowgraph.documents.splitter import asplit_document
 from knowgraph.documents.tokenizer import atokenize_document
-from knowgraph.graph.schema import ExtractedTriple
-from knowgraph.graph.triples import CSVRowInput, LLMExtractor
+from knowgraph.graph.schema import (
+    EntityType,
+    ExtractedEntity,
+    ExtractedTriple,
+    RelationshipInfo,
+    RelationshipType,
+)
+from knowgraph.graph.triples import LLMExtractor
 
 from .database import DatabaseManager
 from .graph import AgeGraphManager
 from .source import SourceStore
 from .tables import ArtifactRawTable, DocumentTable
+
+
+def build_artifact_triples(artifact: dict) -> list[ExtractedTriple]:
+    title = artifact.get("title", "")
+    description = artifact.get("description")
+    museum = artifact.get("museum", "")
+    period = artifact.get("period")
+    material = artifact.get("material")
+    atype = artifact.get("type")
+    location = artifact.get("location")
+
+    triples: list[ExtractedTriple] = []
+
+    if museum and title:
+        triples.append(
+            ExtractedTriple(
+                subject=ExtractedEntity(name=title, entity_type=EntityType.ARTIFACT),
+                predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY),
+                object=ExtractedEntity(name=museum, entity_type=EntityType.MUSEUM),
+                description=description or f"{title} 收藏于 {museum}",
+            ),
+        )
+
+    if period:
+        triples.append(
+            ExtractedTriple(
+                subject=ExtractedEntity(name=title, entity_type=EntityType.ARTIFACT),
+                predicate=RelationshipInfo(predicate=RelationshipType.BELONGS_TO_DYNASTY),
+                object=ExtractedEntity(name=period, entity_type=EntityType.DYNASTY),
+                description=f"{title} 属于 {period}",
+            ),
+        )
+
+    if material:
+        triples.append(
+            ExtractedTriple(
+                subject=ExtractedEntity(name=title, entity_type=EntityType.ARTIFACT),
+                predicate=RelationshipInfo(predicate=RelationshipType.MADE_OF_MATERIAL),
+                object=ExtractedEntity(name=material, entity_type=EntityType.MATERIAL),
+                description=f"{title} 材质为 {material}",
+            ),
+        )
+
+    if atype:
+        triples.append(
+            ExtractedTriple(
+                subject=ExtractedEntity(name=title, entity_type=EntityType.ARTIFACT),
+                predicate=RelationshipInfo(predicate=RelationshipType.IS_TYPE_OF),
+                object=ExtractedEntity(name=atype, entity_type=EntityType.ARTIFACT_TYPE),
+                description=f"{title} 类型为 {atype}",
+            ),
+        )
+
+    if location and museum:
+        triples.append(
+            ExtractedTriple(
+                subject=ExtractedEntity(name=museum, entity_type=EntityType.MUSEUM),
+                predicate=RelationshipInfo(predicate=RelationshipType.LOCATED_AT),
+                object=ExtractedEntity(name=location, entity_type=EntityType.LOCATION),
+                description=f"{museum} 位于 {location}",
+            ),
+        )
+
+    return triples
+
+
+def _build_doc_from_artifact(artifact: dict) -> Document:
+    triples = build_artifact_triples(artifact)
+    entity_uris = list({uri for t in triples for uri in (t.subject.uri, t.object.uri)})
+
+    title = artifact.get("title", "")
+    content_parts = [title]
+    if artifact.get("museum"):
+        content_parts.append(artifact["museum"])
+    if artifact.get("period"):
+        content_parts.append(artifact["period"])
+    if artifact.get("type"):
+        content_parts.append(artifact["type"])
+    if artifact.get("material"):
+        content_parts.append(artifact["material"])
+    if artifact.get("description"):
+        content_parts.append(artifact["description"])
+
+    return Document(
+        content="\n".join(content_parts),
+        name=title,
+        link=artifact.get("detail_url"),
+        metadata={k: v for k, v in artifact.items() if k != "artifact_id" and v is not None},
+        entities=entity_uris,
+        triples=triples,
+    )
 
 
 class DocumentStore:
@@ -106,6 +202,7 @@ class DocumentStore:
     async def aadd_documents(
         self,
         documents: list[Document],
+        use_llm: bool = False,
     ) -> list[UUID]:
         if not documents:
             return []
@@ -125,8 +222,9 @@ class DocumentStore:
                 continue
 
             entity_uris: set[str] = set()
-            doc_llm_triples = await self._extract_llm_triples(doc)
-            doc.triples = doc.triples + doc_llm_triples
+            if use_llm:
+                doc_llm_triples = await self._extract_llm_triples(doc)
+                doc.triples = doc.triples + doc_llm_triples
             entity_uris |= self._triples_to_networkx(doc.triples, full_graph)
             entity_uris |= set(doc.entities)
 
@@ -201,6 +299,7 @@ class DocumentStore:
     async def ainsert_documents(
         self,
         documents: list[Document],
+        use_llm: bool = False,
     ) -> list[UUID]:
         if not documents:
             return []
@@ -214,42 +313,12 @@ class DocumentStore:
             if doc.file_id is None:
                 doc.file_id = (await self.__source.aget_id_by_names([doc.name]))[0]
 
-        await self.aadd_documents(documents)
+        await self.aadd_documents(documents, use_llm=use_llm)
 
         source_names = list({d.name for d in documents if d.name})
         if not source_names:
             return []
         return await self.__source.aget_id_by_names(source_names)
-
-    @staticmethod
-    def _build_doc_from_row_input(
-        row_input: CSVRowInput,
-    ) -> Document:
-        triples = row_input.to_artifact_triples()
-
-        structured_entities: list[str] = list({uri for t in triples for uri in (t.subject.uri, t.object.uri)})
-
-        content_parts = [row_input.title]
-        if row_input.museum:
-            content_parts.append(row_input.museum)
-        if row_input.period:
-            content_parts.append(row_input.period)
-        if row_input.type:
-            content_parts.append(row_input.type)
-        if row_input.material:
-            content_parts.append(row_input.material)
-        if row_input.description:
-            content_parts.append(row_input.description)
-        content_str = "\n".join(content_parts)
-
-        return Document(
-            content=content_str,
-            name=row_input.title,
-            link=row_input.detail_url,
-            metadata=row_input.model_dump(),
-            entities=structured_entities,
-            triples=triples,
-        )
 
     async def aload_from_document(self, file_path: str | Path) -> list[UUID]:
         file_path = Path(file_path)
@@ -258,29 +327,13 @@ class DocumentStore:
         doc.link = f"file://{file_path.absolute()}"
         doc.metadata = {"file_name": file_path.name}
 
-        return await self.ainsert_documents([doc])
-
-    async def aload_from_csv(self, csv_path: str) -> list[UUID]:
-        documents: list[Document] = []
-
-        df = pd.read_csv(csv_path)
-        for _, row in df.iterrows():
-            try:
-                row_dict = row.to_dict()
-                row_input = CSVRowInput(**{str(k): v for k, v in row_dict.items() if pd.notna(v)})
-            except Exception as e:
-                warnings.warn(f"Skipping invalid CSV row: {e}", UserWarning, stacklevel=2)
-                continue
-
-            doc = self._build_doc_from_row_input(row_input)
-            documents.append(doc)
-
-        return await self.ainsert_documents(documents)
+        return await self.ainsert_documents([doc], use_llm=True)
 
     async def alingest_artifacts(
         self,
         museum: str | None = None,
         limit: int | None = None,
+        use_llm: bool = False,
     ) -> list[UUID]:
 
         async with self.__db.asession() as session:
@@ -290,43 +343,39 @@ class DocumentStore:
             if limit:
                 stmt = stmt.limit(limit)
             result = await session.execute(stmt)
-            artifacts = list(result.scalars().all())
+            artifact_rows = list(result.scalars().all())
 
-        if not artifacts:
+            artifact_dicts: list[dict] = []
+            for a in artifact_rows:
+                artifact_dicts.append({
+                    "object_id": a.object_id or "",
+                    "title": a.title or "Untitled",
+                    "period": a.period or "",
+                    "type": a.type or "",
+                    "material": a.material or "",
+                    "description": a.description or "",
+                    "dimensions": a.dimensions or "",
+                    "museum": a.museum or "",
+                    "location": a.location or "",
+                    "detail_url": a.detail_url or "",
+                    "image_url": a.image_url or "",
+                    "credit_line": a.credit_line or "",
+                    "accession_number": a.accession_number or "",
+                    "crawl_date": str(a.crawl_date) if a.crawl_date else "",
+                    "artifact_id": str(a.id),
+                })
+
+        if not artifact_dicts:
             return []
 
         documents: list[Document] = []
 
-        for artifact in artifacts:
-            row_dict = {
-                "object_id": artifact.object_id or "",
-                "title": artifact.title or "Untitled",
-                "period": artifact.period or None,
-                "type": artifact.type or None,
-                "material": artifact.material or None,
-                "description": artifact.description or None,
-                "dimensions": artifact.dimensions or None,
-                "museum": artifact.museum,
-                "location": artifact.location or None,
-                "detail_url": artifact.detail_url or None,
-                "image_url": artifact.image_url or None,
-                "credit_line": artifact.credit_line or None,
-                "accession_number": artifact.accession_number or None,
-                "crawl_date": str(artifact.crawl_date) if artifact.crawl_date else None,
-            }
-            cleaned = {k: v for k, v in row_dict.items() if v is not None}
-
-            try:
-                row_input = CSVRowInput(**cleaned)
-            except Exception as e:
-                warnings.warn(f"Skipping artifact {artifact.id}: {e}", UserWarning, stacklevel=2)
-                continue
-
-            doc = self._build_doc_from_row_input(row_input)
-            doc.metadata["artifact_id"] = str(artifact.id)
+        for artifact_dict in artifact_dicts:
+            doc = _build_doc_from_artifact(artifact_dict)
+            doc.metadata["artifact_id"] = artifact_dict["artifact_id"]
             documents.append(doc)
 
-        return await self.ainsert_documents(documents)
+        return await self.ainsert_documents(documents, use_llm=use_llm)
 
     async def aremove_documents(self, file_ids: list[UUID] | UUID | None = None) -> list[UUID]:
         if isinstance(file_ids, UUID):

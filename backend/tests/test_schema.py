@@ -1,4 +1,3 @@
-import pytest
 
 from knowgraph.graph import RelationshipType
 from knowgraph.graph.schema import (
@@ -65,15 +64,15 @@ class TestGetEntityURI:
 
     def test_uri_invalid_characters(self):
         invalid_names = [
-            "test:name",
-            "test{name}",
-            "test[name]",
-            'test"name',
-            "test\nname",
+            ("test:name", "cidoc:artifact/test_name"),
+            ("test{name}", "cidoc:artifact/test_name"),
+            ("test[name]", "cidoc:artifact/test_name"),
+            ('test"name', "cidoc:artifact/test_name"),
+            ("test\nname", "cidoc:artifact/test_name"),
         ]
-        for name in invalid_names:
-            with pytest.raises(ValueError):
-                get_entity_uri(EntityType.ARTIFACT, name)
+        for name, expected in invalid_names:
+            uri = get_entity_uri(EntityType.ARTIFACT, name)
+            assert uri == expected
 
 
 class TestRelationshipInfo:

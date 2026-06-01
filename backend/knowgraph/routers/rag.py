@@ -2,13 +2,22 @@ import logging
 import os
 import pathlib
 import tempfile
+from typing import Annotated
 
-from fastapi import APIRouter, UploadFile
+from fastapi import APIRouter, Body, UploadFile
 
+from knowgraph.adapters import PhilaMuseumAdapter, PhilaMuseumRawAdapter
+from knowgraph.database.artifact import ArtifactStore
 from knowgraph.database.document import DocumentStore
 from knowgraph.database.ragmode import RAGMode
 
-from .schema import DocumentUploadResponse, FileIngestResponse, SearchRequest, SearchResponse
+from .schema import (
+    CsvLoadResponse,
+    DocumentUploadResponse,
+    FileIngestResponse,
+    SearchRequest,
+    SearchResponse,
+)
 
 router = APIRouter()
 
@@ -74,31 +83,52 @@ async def api_upload_document(file: UploadFile) -> DocumentUploadResponse:
 
 
 @router.post("/documents/load-csv")
-async def api_load_csv(file: UploadFile) -> FileIngestResponse:
+async def api_load_csv(
+    file: UploadFile,
+    adapter: Annotated[str, Body(embed=True)] = "philamuseum_raw",
+) -> CsvLoadResponse:
     try:
         suffix = os.path.splitext(file.filename or "")[1]  # noqa: PTH122
         if suffix.lower() != ".csv":
-            return FileIngestResponse(success=False, status="仅支持 CSV 文件", file_ids=[])
+            return CsvLoadResponse(success=False, status="仅支持 CSV 文件", artifact_count=0)
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
-            doc_store = DocumentStore()
-            file_ids = await doc_store.aload_from_csv(tmp_path)
-        return FileIngestResponse(
+
+        if adapter == "philamuseum":
+            adp = PhilaMuseumAdapter()
+        elif adapter == "philamuseum_raw":
+            adp = PhilaMuseumRawAdapter()
+        else:
+            return CsvLoadResponse(success=False, status=f"未知适配器: {adapter}", artifact_count=0)
+
+        rows = adp.load_csv(tmp_path)
+        pathlib.Path(tmp_path).unlink()  # noqa: ASYNC240
+
+        if not rows:
+            return CsvLoadResponse(success=False, status="CSV 中没有有效数据行", artifact_count=0)
+
+        artifact_store = ArtifactStore()
+        count = await artifact_store.ainsert_artifacts(rows)
+        return CsvLoadResponse(
             success=True,
-            status="CSV 文档加载成功",
-            file_ids=[str(f) for f in file_ids],
+            status=f"已导入 {count} 条文物记录到 ArtifactStore",
+            artifact_count=count,
         )
     except Exception as e:
         logging.exception(e)
-        return FileIngestResponse(success=False, status=f"CSV 文档加载失败: {e!s}", file_ids=[])
+        return CsvLoadResponse(success=False, status=f"CSV 加载失败: {e!s}", artifact_count=0)
 
 
 @router.post("/documents/ingest-artifacts")
-async def api_ingest_artifacts(museum: str | None = None, limit: int | None = None) -> FileIngestResponse:
+async def api_ingest_artifacts(
+    museum: str | None = None,
+    limit: int | None = None,
+    use_llm: bool = False,
+) -> FileIngestResponse:
     try:
         doc_store = DocumentStore()
-        file_ids = await doc_store.alingest_artifacts(museum=museum, limit=limit)
+        file_ids = await doc_store.alingest_artifacts(museum=museum, limit=limit, use_llm=use_llm)
         return FileIngestResponse(
             success=True,
             status="文物数据提取成功",

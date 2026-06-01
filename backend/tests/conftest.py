@@ -4,6 +4,7 @@ import pytest
 from pydantic_ai.models.test import TestModel
 from pytest_mock import MockerFixture
 
+from knowgraph.database.document import build_artifact_triples
 from knowgraph.documents.models import Document
 from knowgraph.graph import RelationshipType
 from knowgraph.graph.schema import (
@@ -12,7 +13,7 @@ from knowgraph.graph.schema import (
     ExtractedTriple,
     RelationshipInfo,
 )
-from knowgraph.graph.triples import CSVRowInput, LLMExtractor
+from knowgraph.graph.triples import LLMExtractor
 from knowgraph.utils.environments import settings
 
 TEST_CSV_ROWS = [
@@ -152,9 +153,7 @@ def sample_entities() -> list[ExtractedTriple]:
 def sample_entities_from_csv() -> list[ExtractedTriple]:
     triples: list[ExtractedTriple] = []
     for row_dict in TEST_CSV_ROWS:
-        clean_row = {k: v for k, v in row_dict.items() if v is not None}
-        csv_input = CSVRowInput(**clean_row)
-        triples.extend(csv_input.to_artifact_triples())
+        triples.extend(build_artifact_triples(row_dict))
     return triples
 
 

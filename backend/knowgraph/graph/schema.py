@@ -22,9 +22,7 @@ _INVALID_URI_CHARS = {":", "{", "}", "[", "]", '"', "'", "\n", "\r", "\t"}
 def get_entity_uri(entity_type: EntityType, name: str) -> str:
     safe_name = name.strip().replace(" ", "_").replace("/", "_").replace("\\", "_")
     for ch in _INVALID_URI_CHARS:
-        if ch in safe_name:
-            msg = f"Entity name '{name}' contains invalid character '{ch}' for URI"
-            raise ValueError(msg)
+        safe_name = safe_name.replace(ch, "_")
     return f"cidoc:{entity_type.value}/{safe_name}"
 
 

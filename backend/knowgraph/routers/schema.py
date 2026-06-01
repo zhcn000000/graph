@@ -107,6 +107,10 @@ class FileIngestResponse(StatusResponse):
     file_ids: list[str]
 
 
+class CsvLoadResponse(StatusResponse):
+    artifact_count: int
+
+
 # ── Chat ──
 
 

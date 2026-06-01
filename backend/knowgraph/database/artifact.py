@@ -70,7 +70,6 @@ class ArtifactStore:
                         "image_data": image_data,
                         "credit_line": credit_line,
                         "accession_number": accession_number,
-                        "updated_at": func.now(),
                     },
                 )
                 .returning(col(ArtifactRawTable.id))
@@ -123,7 +122,6 @@ class ArtifactStore:
                             "image_data": artifact.get("image_data"),
                             "credit_line": artifact.get("credit_line", ""),
                             "accession_number": artifact.get("accession_number", ""),
-                            "updated_at": func.now(),
                         },
                     )
                 )
@@ -184,7 +182,7 @@ class ArtifactStore:
             stmt = (
                 update(ArtifactRawTable)
                 .where(col(ArtifactRawTable.detail_url) == detail_url)
-                .values(**{field: value, "updated_at": func.now()})
+                .values(**{field: value})
                 .returning(col(ArtifactRawTable.id))
             )
             result = await session.execute(stmt)

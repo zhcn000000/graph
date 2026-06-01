@@ -1,0 +1,29 @@
+﻿id,name_zh,name_en,start_year,end_year,description,created_at
+1,商朝,Shang Dynasty,-1600,-1050,,2026-06-01
+2,周朝,Zhou Dynasty,-1100,-256,,2026-06-01
+3,西周,Western Zhou Dynasty,-1100,-771,,2026-06-01
+4,东周,Eastern Zhou Dynasty,-770,-256,,2026-06-01
+5,战国,Warring States Period,-476,-221,,2026-06-01
+6,秦朝,Qin Dynasty,-221,-206,,2026-06-01
+7,汉朝,Han Dynasty,-206,220,,2026-06-01
+8,西汉,Western Han Dynasty,-206,9,,2026-06-01
+9,东汉,Eastern Han Dynasty,25,220,,2026-06-01
+10,六朝,Six Dynasties Period,220,589,,2026-06-01
+11,西晋,Western Jin Dynasty,265,317,,2026-06-01
+12,南北朝,Northern and Southern Dynasties,317,589,,2026-06-01
+13,北朝,Northern Dynasties,386,581,,2026-06-01
+14,南朝,Southern Dynasties,317,589,,2026-06-01
+15,北魏,Northern Wei Dynasty,386,535,,2026-06-01
+16,北齐,Northern Qi Dynasty,550,577,,2026-06-01
+17,隋朝,Sui Dynasty,581,618,,2026-06-01
+18,唐朝,Tang Dynasty,618,907,,2026-06-01
+19,五代,Five Dynasties,907,960,,2026-06-01
+20,辽朝,Liao Dynasty,907,1125,,2026-06-01
+21,宋朝,Song Dynasty,960,1279,,2026-06-01
+22,北宋,Northern Song Dynasty,960,1127,,2026-06-01
+23,南宋,Southern Song Dynasty,1127,1279,,2026-06-01
+24,金朝,Jin Dynasty,1115,1234,,2026-06-01
+25,元朝,Yuan Dynasty,1271,1368,,2026-06-01
+26,明朝,Ming Dynasty,1368,1644,,2026-06-01
+27,清朝,Qing Dynasty,1644,1911,,2026-06-01
+28,中华民国,Republican Period,1912,1949,,2026-06-01
