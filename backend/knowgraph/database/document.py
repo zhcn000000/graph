@@ -20,7 +20,7 @@ from knowgraph.graph.schema import (
     RelationshipInfo,
     RelationshipType,
 )
-from knowgraph.graph.triples import LLMExtractor
+from knowgraph.graph.triples import LLMExtractor, compute_triples_strength
 
 from .database import DatabaseManager
 from .graph import AgeGraphManager
@@ -225,6 +225,8 @@ class DocumentStore:
             if use_llm:
                 doc_llm_triples = await self._extract_llm_triples(doc)
                 doc.triples = doc.triples + doc_llm_triples
+            if doc.triples:
+                doc.triples = await compute_triples_strength(doc.triples)
             entity_uris |= self._triples_to_networkx(doc.triples, full_graph)
             entity_uris |= set(doc.entities)
 
@@ -333,12 +335,15 @@ class DocumentStore:
         self,
         museum: str | None = None,
         limit: int | None = None,
+        artifact_ids: list[UUID] | None = None,
         use_llm: bool = False,
     ) -> list[UUID]:
 
         async with self.__db.asession() as session:
             stmt = select(ArtifactRawTable)
-            if museum:
+            if artifact_ids:
+                stmt = stmt.where(col(ArtifactRawTable.id).in_(artifact_ids))
+            elif museum:
                 stmt = stmt.where(col(ArtifactRawTable.museum) == museum)
             if limit:
                 stmt = stmt.limit(limit)

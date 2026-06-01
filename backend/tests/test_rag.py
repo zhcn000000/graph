@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from sqlalchemy import func, select
 from sqlmodel import col
@@ -18,7 +20,7 @@ from knowgraph.graph.schema import (
 TEST_DB_NAME = "test_data"
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestAaddDocuments:
     @pytest.fixture
     def doc_store(self):
@@ -165,7 +167,7 @@ class TestAaddDocuments:
         assert pre_scored_triple.object.uri in all_entities
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestIntegrationFlow:
     @pytest.fixture
     def doc_store(self):
@@ -219,3 +221,67 @@ class TestIntegrationFlow:
             )
             result = await session.execute(cnt_stmt)
             assert (result.scalar() or 0) >= 2
+
+
+@pytest.mark.skipif(not os.environ.get("DEEPSEEK_API_KEY"), reason="DEEPSEEK_API_KEY not set")
+@pytest.mark.usefixtures("setup_test_database")
+class TestAaddDocumentsWithLLM:
+    @pytest.fixture
+    def doc_store(self):
+        return DocumentStore(dbname=TEST_DB_NAME)
+
+    @pytest.mark.usefixtures("clean_tables")
+    async def test_aadd_documents_with_llm_produces_triples(self, doc_store):
+        source_store = SourceStore(dbname=TEST_DB_NAME)
+        source_id = await source_store.ainsert_source(name="llm_artifact_test")
+        assert source_id is not None
+
+        doc = Document(
+            content="青花瓷瓶是明朝景德镇制作的著名瓷器，现收藏于克利夫兰艺术博物馆。",
+            name="llm_artifact_test",
+            file_id=source_id,
+        )
+
+        result = await doc_store.aadd_documents([doc], use_llm=True)
+        assert len(result) > 0
+
+        db = DatabaseManager(TEST_DB_NAME)
+        async with db.asession() as session:
+            stmt = select(col(DocumentTable.entities)).where(
+                col(DocumentTable.file_id) == source_id,
+            )
+            result = await session.execute(stmt)
+            all_entities: set[str] = set()
+            for row in result.fetchall():
+                if row[0]:
+                    all_entities.update(row[0])
+
+        assert len(all_entities) >= 2, f"Expected at least 2 entities from LLM extraction, got {len(all_entities)}"
+
+    @pytest.mark.usefixtures("clean_tables")
+    async def test_aadd_documents_with_llm_and_structural_triples(self, doc_store):
+        source_store = SourceStore(dbname=TEST_DB_NAME)
+        source_id = await source_store.ainsert_source(name="llm_combined_test")
+        assert source_id is not None
+
+        structural_triple = ExtractedTriple(
+            subject=ExtractedEntity(name="青铜鼎", entity_type=EntityType.ARTIFACT),
+            predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY),
+            object=ExtractedEntity(name="大都会博物馆", entity_type=EntityType.MUSEUM),
+            description="青铜鼎收藏于大都会博物馆",
+        )
+
+        doc = Document(
+            content="商代青铜鼎收藏于大都会博物馆。器身饰有饕餮纹和云雷纹，是中国古代青铜艺术的代表。",
+            name="llm_combined_test",
+            triples=[structural_triple],
+            file_id=source_id,
+        )
+
+        result = await doc_store.aadd_documents([doc], use_llm=True)
+        assert len(result) > 0
+
+        assert structural_triple.predicate.strength is not None, (
+            "Structural triple should have strength after processing"
+        )
+        assert 0.0 <= structural_triple.predicate.strength <= 1.0

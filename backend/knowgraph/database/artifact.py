@@ -79,12 +79,30 @@ class ArtifactStore:
             row = result.fetchone()
             return row[0] if row else None
 
-    async def ainsert_artifacts(self, artifacts: list[dict]) -> int:
+    async def _aget_existing_urls(self, urls: list[str], session) -> set[str]:
+        if not urls:
+            return set()
+        stmt = select(col(ArtifactRawTable.detail_url)).where(col(ArtifactRawTable.detail_url).in_(urls))
+        result = await session.execute(stmt)
+        return {row[0] for row in result.fetchall()}
+
+    async def ainsert_artifacts(self, artifacts: list[dict], skip_existing: bool = False) -> list[UUID]:
         if not artifacts:
-            return 0
+            return []
         async with self.__db.asession() as session:
-            count = 0
+            if skip_existing:
+                urls = [a["detail_url"] for a in artifacts if a.get("detail_url")]
+                existing = await self._aget_existing_urls(urls, session)
+            else:
+                existing: set[str] = set()
+
+            ids: list[UUID] = []
             for artifact in artifacts:
+                detail_url = artifact.get("detail_url", "")
+                if not detail_url:
+                    continue
+                if skip_existing and detail_url in existing:
+                    continue
                 values: dict[str, str | date | bytes | None] = {
                     "object_id": artifact.get("object_id", ""),
                     "title": artifact.get("title", ""),
@@ -124,11 +142,14 @@ class ArtifactStore:
                             "accession_number": artifact.get("accession_number", ""),
                         },
                     )
+                    .returning(col(ArtifactRawTable.id))
                 )
-                await session.execute(stmt)
-                count += 1
+                result = await session.execute(stmt)
+                row = result.fetchone()
+                if row:
+                    ids.append(row[0])
             await session.commit()
-            return count
+            return ids
 
     async def acheck_url_exists(self, detail_url: str) -> bool:
         async with self.__db.asession() as session:

@@ -6,7 +6,7 @@ from knowgraph.database.graph import AgeGraphManager
 TEST_DB_NAME = "test_data"
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestVertexCRUD:
     """Tests for vertex create-read-update-delete — requires database."""
 
@@ -132,7 +132,7 @@ class TestVertexCRUD:
         assert final is None
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestEdgeCRUD:
     """Tests for edge create-read-update-delete — requires database."""
 
@@ -309,7 +309,7 @@ class TestEdgeCRUD:
         assert gone is None
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestTraverse:
     """Tests for graph traversal — requires database."""
 
@@ -390,7 +390,7 @@ class TestTraverse:
         assert len(graph.nodes) >= 2
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestFindPaths:
     """Tests for path-finding — requires database."""
 
@@ -454,7 +454,7 @@ class TestFindPaths:
         assert result["edges"] == []
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestContextExpansion:
     """Tests for context expansion — requires database."""
 
@@ -494,7 +494,7 @@ class TestContextExpansion:
         assert ctx["paths"] == []
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestNetworkXInterop:
     """Tests for NetworkX <-> AGE graph conversion — requires database."""
 
@@ -570,7 +570,7 @@ class TestNetworkXInterop:
         assert edge["relationship_type"] == "belongs_to_dynasty"
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestEdgeConnections:
     """Tests for edge connection queries — requires database."""
 
@@ -676,7 +676,7 @@ class TestEdgeConnections:
         assert results == []
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestGetVerticesByUris:
     """Tests for batch vertex retrieval — requires database."""
 
@@ -732,7 +732,7 @@ class TestGetVerticesByUris:
         assert results[0]["name"] == "混合"
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestGraphLifecycle:
     """Tests for graph creation and deletion — requires database."""
 

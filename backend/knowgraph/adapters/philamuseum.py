@@ -14,21 +14,17 @@ REQUIRED_FIELDS = ("title_en", "detail_url", "museum_id")
 
 class PhilaMuseumAdapter(BaseAdapter):
     name = "philamuseum"
+    default_csv = "clean_artifacts.csv"
 
-    def __init__(self, data_dir: str | Path | None = None) -> None:
-        super().__init__()
+    def __init__(self, data_dir: str | Path) -> None:
+        super().__init__(data_dir)
         self._dynasties: dict[int, str] = {}
         self._museums: dict[int, str] = {}
-        if data_dir is not None:
-            self._base = Path(data_dir)
-        else:
-            self._base = Path(__file__).resolve().parent.parent.parent / "philamuseum"
 
-    def load_references(self) -> None:
-        df_dyn = pd.read_csv(self._base / "clean_dynasties.csv")
+        df_dyn = pd.read_csv(self.data_dir / "clean_dynasties.csv")
         self._dynasties = dict(zip(df_dyn["id"], df_dyn["name_en"], strict=False))
 
-        df_mus = pd.read_csv(self._base / "clean_museums.csv")
+        df_mus = pd.read_csv(self.data_dir / "clean_museums.csv")
         self._museums = dict(zip(df_mus["id"], df_mus["name"], strict=False))
 
     def validate_row(self, row: dict) -> bool:
@@ -63,7 +59,3 @@ class PhilaMuseumAdapter(BaseAdapter):
             "accession_number": safe_str(row.get("accession_number")),
             "crawl_date": safe_str(row.get("crawl_date")),
         }
-
-    def load_csv(self, path: str | Path) -> list[dict]:
-        self.load_references()
-        return super().load_csv(path)

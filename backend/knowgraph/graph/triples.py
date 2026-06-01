@@ -96,13 +96,8 @@ class LLMExtractor:
 只输出JSON，不要包含其他文字。"""
 
     async def aextract_from_document(self, doc: Document) -> list[ExtractedTriple]:
-        pre_triples = [t for t in doc.triples if t.predicate.strength is None]
-        if pre_triples:
-            await compute_triples_strength(pre_triples)
-
         user_prompt = self._build_user_prompt(doc.content, doc.triples)
-        triples = await self._run_agent_with_prompt(user_prompt)
-        return await compute_triples_strength(triples)
+        return await self._run_agent_with_prompt(user_prompt)
 
     def _build_user_prompt(self, record: str, pre_triples: list[ExtractedTriple]) -> str:
         known_str = _format_pre_extracted_triples(pre_triples)

@@ -25,7 +25,7 @@ def _load_artifacts(n: int, *, offset: int = 0) -> list[dict]:
 
 
 @pytest.mark.skipif(not NEEDS_EMBEDDING, reason="SILICONFLOW_API_KEY not set")
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestRealDataInsertion:
     @pytest.fixture
     def doc_store(self):
@@ -41,16 +41,14 @@ class TestRealDataInsertion:
 
     @pytest.fixture
     def adapter(self):
-        a = PhilaMuseumAdapter(data_dir=DATA_DIR)
-        a.load_references()
-        return a
+        return PhilaMuseumAdapter(data_dir=DATA_DIR)
 
     async def _stage1_insert(self, adapter, artifact_store, n: int = INSERT_COUNT):
         rows = _load_artifacts(n)
         dicts = [adapter.row_to_dict(r) for r in rows if adapter.validate_row(r)]
         assert len(dicts) > 0
-        count = await artifact_store.ainsert_artifacts(dicts)
-        assert count > 0
+        ids = await artifact_store.ainsert_artifacts(dicts)
+        assert len(ids) > 0
 
     async def _stage2_ingest(self, doc_store, n: int = INGEST_COUNT) -> list:
         file_ids = await doc_store.alingest_artifacts(limit=n)
@@ -146,7 +144,7 @@ class TestRealDataInsertion:
 
 
 @pytest.mark.skipif(not NEEDS_EMBEDDING, reason="SILICONFLOW_API_KEY not set")
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestRealDataSearchQuality:
     @pytest.fixture
     def doc_store(self):
@@ -162,16 +160,14 @@ class TestRealDataSearchQuality:
 
     @pytest.fixture
     def adapter(self):
-        a = PhilaMuseumAdapter(data_dir=DATA_DIR)
-        a.load_references()
-        return a
+        return PhilaMuseumAdapter(data_dir=DATA_DIR)
 
     async def _stage1_insert(self, adapter, artifact_store, n: int = INSERT_COUNT):
         rows = _load_artifacts(n)
         dicts = [adapter.row_to_dict(r) for r in rows if adapter.validate_row(r)]
         assert len(dicts) > 0
-        count = await artifact_store.ainsert_artifacts(dicts)
-        assert count > 0
+        ids = await artifact_store.ainsert_artifacts(dicts)
+        assert len(ids) > 0
 
     async def _stage2_ingest(self, doc_store, n: int = INGEST_COUNT) -> list:
         file_ids = await doc_store.alingest_artifacts(limit=n)

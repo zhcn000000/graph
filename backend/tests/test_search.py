@@ -33,7 +33,7 @@ PAINTING_SEARCH_CONTENT = (
 )
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestInsertAndSearch:
     """Insert real documents then search using real embedding + reranking APIs."""
 
@@ -146,7 +146,7 @@ class TestInsertAndSearch:
         assert len(graph_entities) > 0
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestGetAndDelete:
     @pytest.fixture
     def doc_store(self):
@@ -262,7 +262,7 @@ class TestGetAndDelete:
         assert result == []
 
 
-@pytest.mark.usefixtures("setup_test_database", "mock_llm_extractor")
+@pytest.mark.usefixtures("setup_test_database")
 class TestGraphContext:
     @pytest.fixture
     def doc_store(self):

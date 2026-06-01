@@ -1,3 +1,4 @@
+from pathlib import Path
 
 import pandas as pd
 
@@ -8,9 +9,10 @@ REQUIRED_FIELDS = ("详情链接", "藏品名称")
 
 class PhilaMuseumRawAdapter(BaseAdapter):
     name = "philamuseum_raw"
+    default_csv = "Philamuseum_chinese_made_artworks_final.csv"
 
-    def __init__(self, museum: str = "Philadelphia Museum of Art") -> None:
-        super().__init__()
+    def __init__(self, data_dir: str | Path, museum: str = "Philadelphia Museum of Art") -> None:
+        super().__init__(data_dir)
         self.museum = museum
 
     def validate_row(self, row: dict) -> bool:

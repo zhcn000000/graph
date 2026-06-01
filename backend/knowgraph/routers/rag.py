@@ -109,11 +109,11 @@ async def api_load_csv(
             return CsvLoadResponse(success=False, status="CSV 中没有有效数据行", artifact_count=0)
 
         artifact_store = ArtifactStore()
-        count = await artifact_store.ainsert_artifacts(rows)
+        ids = await artifact_store.ainsert_artifacts(rows)
         return CsvLoadResponse(
             success=True,
-            status=f"已导入 {count} 条文物记录到 ArtifactStore",
-            artifact_count=count,
+            status=f"已导入 {len(ids)} 条文物记录到 ArtifactStore",
+            artifact_count=len(ids),
         )
     except Exception as e:
         logging.exception(e)

@@ -1,23 +1,29 @@
 import logging
+from pathlib import Path
 from typing import Annotated, Literal
 
 import uvicorn
 import uvloop
 from asyncer import runnify
+from rich import print as rprint
 from rich import traceback
 from rich.logging import RichHandler
+from rich.table import Table
 from typer import Argument, Option, Typer
 
 from knowgraph.adapters import PhilaMuseumAdapter, PhilaMuseumRawAdapter
 from knowgraph.database.artifact import ArtifactStore
 from knowgraph.database.document import DocumentStore
 from knowgraph.database.initdb import clean_db, init_db, reset_db
+from knowgraph.database.ragmode import RAGMode
 from knowgraph.routers import app
 from knowgraph.spider.runner import ScrapyCrawler
-from knowgraph.utils.environments import settings
+from knowgraph.utils.environments import find_project_directory, settings
 
 cmd = Typer(pretty_exceptions_enable=False)
 ingest_cmd = Typer(pretty_exceptions_enable=False, help="数据摄入命令")
+
+DEFAULT_DATA_DIR = find_project_directory() / "backend" / "philamuseum"
 
 
 @cmd.command()
@@ -63,35 +69,95 @@ async def spider(museum: Annotated[list[str], Argument(help="List of museums to 
     await crawler.acrawl_museums(museum)
 
 
+@cmd.command()
+@runnify
+async def search(
+    query: Annotated[str, Argument(help="Search query")],
+    k: Annotated[int, Option("--top", "-k", help="Number of results")] = 5,
+    graph: Annotated[bool, Option("--graph/--no-graph", help="Enable/disable graph search")] = True,
+    max_hops: Annotated[int, Option("--max-hops", "-h", help="Max graph traversal hops")] = 2,
+    vector_weight: Annotated[float, Option("--vector-weight", help="Vector search weight")] = 0.4,
+    bm25_weight: Annotated[float, Option("--bm25-weight", help="BM25 search weight")] = 0.3,
+    graph_weight: Annotated[float, Option("--graph-weight", help="Graph search weight")] = 0.3,
+) -> None:
+    rag = RAGMode()
+    docs, graph_entities = await rag.ahyprid_search(
+        queries=[query],
+        k=k,
+        use_graph=graph,
+        max_hops=max_hops,
+        vector_weight=vector_weight,
+        bm25_weight=bm25_weight,
+        graph_weight=graph_weight,
+    )
+
+    if docs:
+        table = Table(title=f'搜索结果: "{query}"', title_style="bold")
+        table.add_column("score", style="cyan", width=8)
+        table.add_column("title", style="green", width=30)
+        table.add_column("content", style="white")
+        for doc in docs:
+            score = f"{doc.query_score:.4f}" if doc.query_score else "N/A"
+            name = doc.name or "Untitled"
+            content = doc.content[:100].replace("\n", " ") + ("..." if len(doc.content) > 100 else "")
+            table.add_row(score, name, content)
+        rprint(table)
+    else:
+        rprint("无搜索结果")
+
+    if graph_entities:
+        gtable = Table(title="图谱实体", title_style="bold")
+        gtable.add_column("score", style="cyan", width=8)
+        gtable.add_column("name", style="green")
+        gtable.add_column("type", style="yellow")
+        gtable.add_column("uri", style="dim")
+        for g in graph_entities:
+            gtable.add_row(f"{g.score:.4f}", g.entity_name, g.entity_type, g.entity_uri)
+        rprint(gtable)
+
+
 @ingest_cmd.command("csv")
 @runnify
 async def ingest_csv(
-    csv_path: Annotated[str, Argument(help="Path to CSV file")],
+    data_dir: Annotated[
+        Path,
+        Option("--data-dir", "-d", help="Data directory for CSV files and reference tables"),
+    ] = DEFAULT_DATA_DIR,
     adapter: Annotated[
         str,
-        Option("--adapter", "-a", help="Adapter name: philamuseum, philamuseum_raw"),
-    ] = "philamuseum_raw",
-    data_dir: Annotated[
-        str | None,
-        Option("--data-dir", "-d", help="Directory with reference tables (dynasties, museums)"),
-    ] = None,
+        Option("--adapter", "-a", help="Adapter/template: philamuseum, philamuseum_raw"),
+    ] = "philamuseum",
+    do_ingest: Annotated[
+        bool,
+        Option("--ingest/--no-ingest", help="Also ingest new artifacts into DocumentTable"),
+    ] = False,
+    use_llm: Annotated[
+        bool,
+        Option("--llm/--no-llm", help="Enable/disable LLM triple extraction (only with --ingest)"),
+    ] = False,
 ) -> None:
+    data_dir = data_dir.resolve()
     if adapter == "philamuseum":
         adp = PhilaMuseumAdapter(data_dir=data_dir)
     elif adapter == "philamuseum_raw":
-        adp = PhilaMuseumRawAdapter()
+        adp = PhilaMuseumRawAdapter(data_dir=data_dir)
     else:
         logging.error("未知适配器: %s", adapter)
         raise SystemExit(1)
 
-    rows = adp.load_csv(csv_path)
+    rows = adp.load_csv()
     if not rows:
         logging.warning("CSV 中没有有效数据行")
         return
 
     store = ArtifactStore()
-    count = await store.ainsert_artifacts(rows)
-    logging.info("已导入 %d 条文物记录到 ArtifactStore", count)
+    ids = await store.ainsert_artifacts(rows, skip_existing=True)
+    logging.info("已导入 %d 条新文物记录，跳过 %d 条已存在", len(ids), len(rows) - len(ids))
+
+    if do_ingest and ids:
+        doc_store = DocumentStore()
+        file_ids = await doc_store.alingest_artifacts(artifact_ids=ids, use_llm=use_llm)
+        logging.info("已提取 %d 个文档到 DocumentTable", len(file_ids))
 
 
 @ingest_cmd.command("artifacts")
@@ -116,6 +182,7 @@ def main():
 
     logging.basicConfig(
         handlers=[RichHandler(rich_tracebacks=True)],
+        level=logging.INFO,
     )
     cmd()
 
