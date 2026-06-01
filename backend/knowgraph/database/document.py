@@ -1,10 +1,11 @@
+import logging
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
 from uuid import UUID
 
 from networkx import DiGraph
-from sqlalchemy import delete, func, select
+from sqlalchemy import Float, cast, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
 
@@ -25,7 +26,8 @@ from knowgraph.graph.triples import LLMExtractor, compute_triples_strength
 from .database import DatabaseManager
 from .graph import AgeGraphManager
 from .source import SourceStore
-from .tables import ArtifactRawTable, DocumentTable
+from .tables import ArtifactRawTable, DocumentTable, Source
+from .types import BM25Vector
 
 
 def build_artifact_triples(artifact: dict) -> list[ExtractedTriple]:
@@ -111,7 +113,7 @@ def _build_doc_from_artifact(artifact: dict) -> Document:
 
     return Document(
         content="\n".join(content_parts),
-        name=title,
+        name=artifact.get("detail_url") or title,
         link=artifact.get("detail_url"),
         metadata={k: v for k, v in artifact.items() if k != "artifact_id" and v is not None},
         entities=entity_uris,
@@ -137,6 +139,43 @@ class DocumentStore:
         if self._extractor is None:
             self._extractor = LLMExtractor()
         return self._extractor
+
+    async def _check_duplicate(
+        self,
+        vectors: list[list[float]],
+        bmvector: dict[int, int],
+        threshold: float,
+    ) -> bool:
+        async with self.__db.asession() as session:
+            stmt = (
+                select(
+                    col(DocumentTable.file_id),
+                    col(DocumentTable.vector).op("@#", return_type=Float)(vectors).label("sim"),
+                    col(DocumentTable.bmvector)
+                    .neg_bm25_rank(  # type: ignore
+                        func.to_bm25query("idx_documents_bmvector", cast(bmvector, BM25Vector))
+                    )
+                    .label("bm25_sim"),
+                )
+                .order_by(
+                    col(DocumentTable.bmvector)
+                    .neg_bm25_rank(  # type: ignore
+                        func.to_bm25query("idx_documents_bmvector", cast(bmvector, BM25Vector))
+                    )
+                    .label("bm25_sim")
+                    .desc()
+                )
+                .limit(5)
+            )
+            result = await session.execute(stmt)
+            rows = result.fetchall()
+            if rows:
+                best_row = max(rows, key=lambda r: r[1] or 0)
+                sim = best_row[1] or 0
+                bm25_sim = best_row[2] or 0
+                logging.info("与最近文档相似度: vector=%.4f, bm25=%.4f", sim, bm25_sim)
+                return sim >= threshold
+            return False
 
     async def _extract_llm_triples(self, doc: Document) -> list[ExtractedTriple]:
         try:
@@ -203,6 +242,7 @@ class DocumentStore:
         self,
         documents: list[Document],
         use_llm: bool = False,
+        dedup_threshold: float = 0.95,
     ) -> list[UUID]:
         if not documents:
             return []
@@ -211,57 +251,70 @@ class DocumentStore:
         full_graph = DiGraph()
         insert_values: list[dict] = []
         start_idx = await self._next_document_index()
-        for doc_idx, doc in enumerate(documents, start_idx):
-            file_id = doc.file_id
-            if file_id is None and doc.name:
-                warnings.warn(
-                    f"Source not found for name '{doc.name}', skipping document.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                continue
+        skipped = 0
+        async with self.__db.asession() as session:
+            for doc_idx, doc in enumerate(documents, start_idx):
+                file_id = doc.file_id
+                if file_id is None and doc.name:
+                    warnings.warn(
+                        f"Source not found for name '{doc.name}', skipping document.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    continue
 
-            entity_uris: set[str] = set()
-            if use_llm:
-                doc_llm_triples = await self._extract_llm_triples(doc)
-                doc.triples = doc.triples + doc_llm_triples
-            if doc.triples:
-                doc.triples = await compute_triples_strength(doc.triples)
-            entity_uris |= self._triples_to_networkx(doc.triples, full_graph)
-            entity_uris |= set(doc.entities)
+                entity_uris: set[str] = set()
+                if use_llm:
+                    doc_llm_triples = await self._extract_llm_triples(doc)
+                    doc.triples = doc.triples + doc_llm_triples
+                if doc.triples:
+                    doc.triples = await compute_triples_strength(doc.triples)
+                entity_uris |= self._triples_to_networkx(doc.triples, full_graph)
+                entity_uris |= set(doc.entities)
 
-            chunk_idx = 0
-            async for chunk in asplit_document(doc, chunk_size=4096, chunk_overlap=128):
-                chunk_idx += 1
-                sub_chunks = []
-                async for sub_doc in asplit_document(chunk, chunk_size=512, chunk_overlap=32):
-                    sub_chunks.append(sub_doc)
-                vectors = await aembed_documents(sub_chunks)
-                bmvector = await atokenize_document(chunk)
+                doc_chunks: list[dict] = []
+                chunk_idx = 0
+                async for chunk in asplit_document(doc, chunk_size=4096, chunk_overlap=128):
+                    chunk_idx += 1
+                    sub_chunks = []
+                    async for sub_doc in asplit_document(chunk, chunk_size=512, chunk_overlap=32):
+                        sub_chunks.append(sub_doc)
+                    vectors = await aembed_documents(sub_chunks)
+                    bmvector = await atokenize_document(chunk)
 
-                insert_values.append({
-                    "file_id": file_id,
-                    "content": chunk.content,
-                    "vector": vectors,
-                    "bmvector": bmvector,
-                    "entities": list(entity_uris),
-                    "meta": doc.metadata,
-                    "document_index": doc_idx,
-                    "chunk_index": chunk_idx,
-                })
+                    if dedup_threshold > 0 and chunk_idx == 1:
+                        if await self._check_duplicate(vectors, bmvector, dedup_threshold):
+                            skipped += 1
+                            doc_chunks = []
+                            break
 
-        if insert_values:
-            async with self.__db.asession() as session:
+                    doc_chunks.append({
+                        "file_id": file_id,
+                        "content": chunk.content,
+                        "vector": vectors,
+                        "bmvector": bmvector,
+                        "entities": list(entity_uris),
+                        "meta": doc.metadata,
+                        "document_index": doc_idx,
+                        "chunk_index": chunk_idx,
+                    })
+
+                insert_values.extend(doc_chunks)
+
+            if skipped:
+                logging.info("去重跳过 %d 个重复文档", skipped)
+
+            if insert_values:
                 stmt = insert(DocumentTable).values(insert_values).returning(col(DocumentTable.id))
                 result = await session.execute(stmt)
                 await session.commit()
                 all_doc_ids = [row[0] for row in result.fetchall()]
-        elif documents:
-            warnings.warn(
-                f"No documents were inserted out of {len(documents)} provided.",
-                UserWarning,
-                stacklevel=2,
-            )
+            elif documents:
+                warnings.warn(
+                    f"No documents were inserted out of {len(documents)} provided.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
         if full_graph.number_of_nodes() > 0:
             await self.graph_manager.afrom_networkx(full_graph)
@@ -302,6 +355,7 @@ class DocumentStore:
         self,
         documents: list[Document],
         use_llm: bool = False,
+        dedup_threshold: float = 0.95,
     ) -> list[UUID]:
         if not documents:
             return []
@@ -315,7 +369,7 @@ class DocumentStore:
             if doc.file_id is None:
                 doc.file_id = (await self.__source.aget_id_by_names([doc.name]))[0]
 
-        await self.aadd_documents(documents, use_llm=use_llm)
+        await self.aadd_documents(documents, use_llm=use_llm, dedup_threshold=dedup_threshold)
 
         source_names = list({d.name for d in documents if d.name})
         if not source_names:
@@ -337,6 +391,8 @@ class DocumentStore:
         limit: int | None = None,
         artifact_ids: list[UUID] | None = None,
         use_llm: bool = False,
+        skip_ingested: bool = True,
+        dedup_threshold: float = 0.95,
     ) -> list[UUID]:
 
         async with self.__db.asession() as session:
@@ -349,6 +405,17 @@ class DocumentStore:
                 stmt = stmt.limit(limit)
             result = await session.execute(stmt)
             artifact_rows = list(result.scalars().all())
+
+            skipped = 0
+            if skip_ingested:
+                row_ids = [a.id for a in artifact_rows]
+                ingested_stmt = select(col(Source.artifact_id)).where(col(Source.artifact_id).in_(row_ids))
+                ingested_result = await session.execute(ingested_stmt)
+                ingested_ids = {row[0] for row in ingested_result.fetchall() if row[0]}
+                skipped = sum(1 for a in artifact_rows if a.id in ingested_ids)
+                artifact_rows = [a for a in artifact_rows if a.id not in ingested_ids]
+                if skipped:
+                    logging.info("跳过 %d 个已摄入文物", skipped)
 
             artifact_dicts: list[dict] = []
             for a in artifact_rows:
@@ -380,7 +447,7 @@ class DocumentStore:
             doc.metadata["artifact_id"] = artifact_dict["artifact_id"]
             documents.append(doc)
 
-        return await self.ainsert_documents(documents, use_llm=use_llm)
+        return await self.ainsert_documents(documents, use_llm=use_llm, dedup_threshold=dedup_threshold)
 
     async def aremove_documents(self, file_ids: list[UUID] | UUID | None = None) -> list[UUID]:
         if isinstance(file_ids, UUID):

@@ -97,12 +97,16 @@ class ArtifactStore:
                 existing: set[str] = set()
 
             ids: list[UUID] = []
+            seen: set[str] = set()
             for artifact in artifacts:
                 detail_url = artifact.get("detail_url", "")
                 if not detail_url:
                     continue
                 if skip_existing and detail_url in existing:
                     continue
+                if detail_url in seen:
+                    continue
+                seen.add(detail_url)
                 values: dict[str, str | date | bytes | None] = {
                     "object_id": artifact.get("object_id", ""),
                     "title": artifact.get("title", ""),

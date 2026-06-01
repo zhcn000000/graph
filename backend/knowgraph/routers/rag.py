@@ -85,7 +85,8 @@ async def api_upload_document(file: UploadFile) -> DocumentUploadResponse:
 @router.post("/documents/load-csv")
 async def api_load_csv(
     file: UploadFile,
-    adapter: Annotated[str, Body(embed=True)] = "philamuseum_raw",
+    adapter: Annotated[str, Body(embed=True)] = "philamuseum",
+    data_dir: Annotated[str, Body(embed=True)] = "philamuseum",
 ) -> CsvLoadResponse:
     try:
         suffix = os.path.splitext(file.filename or "")[1]  # noqa: PTH122
@@ -96,9 +97,9 @@ async def api_load_csv(
             tmp_path = tmp.name
 
         if adapter == "philamuseum":
-            adp = PhilaMuseumAdapter()
+            adp = PhilaMuseumAdapter(data_dir=data_dir)
         elif adapter == "philamuseum_raw":
-            adp = PhilaMuseumRawAdapter()
+            adp = PhilaMuseumRawAdapter(data_dir=data_dir)
         else:
             return CsvLoadResponse(success=False, status=f"未知适配器: {adapter}", artifact_count=0)
 
@@ -125,10 +126,18 @@ async def api_ingest_artifacts(
     museum: str | None = None,
     limit: int | None = None,
     use_llm: bool = False,
+    skip_ingested: bool = True,
+    dedup_threshold: float = 0.95,
 ) -> FileIngestResponse:
     try:
         doc_store = DocumentStore()
-        file_ids = await doc_store.alingest_artifacts(museum=museum, limit=limit, use_llm=use_llm)
+        file_ids = await doc_store.alingest_artifacts(
+            museum=museum,
+            limit=limit,
+            use_llm=use_llm,
+            skip_ingested=skip_ingested,
+            dedup_threshold=dedup_threshold,
+        )
         return FileIngestResponse(
             success=True,
             status="文物数据提取成功",

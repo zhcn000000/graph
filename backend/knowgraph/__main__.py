@@ -135,6 +135,10 @@ async def ingest_csv(
         bool,
         Option("--llm/--no-llm", help="Enable/disable LLM triple extraction (only with --ingest)"),
     ] = False,
+    dedup_threshold: Annotated[
+        float,
+        Option("--dedup", help="Vector/BM25 dedup threshold (0=disabled, 0.95 recommended)"),
+    ] = 0,
 ) -> None:
     data_dir = data_dir.resolve()
     if adapter == "philamuseum":
@@ -156,7 +160,11 @@ async def ingest_csv(
 
     if do_ingest and ids:
         doc_store = DocumentStore()
-        file_ids = await doc_store.alingest_artifacts(artifact_ids=ids, use_llm=use_llm)
+        file_ids = await doc_store.alingest_artifacts(
+            artifact_ids=ids,
+            use_llm=use_llm,
+            dedup_threshold=dedup_threshold,
+        )
         logging.info("已提取 %d 个文档到 DocumentTable", len(file_ids))
 
 
@@ -166,13 +174,49 @@ async def ingest_artifacts(
     museum: Annotated[str | None, Option("--museum", "-m", help="Filter by museum name")] = None,
     limit: Annotated[int | None, Option("--limit", "-n", help="Max artifacts to ingest")] = None,
     use_llm: Annotated[bool, Option("--llm/--no-llm", help="Enable/disable LLM triple extraction")] = False,
+    skip_ingested: Annotated[
+        bool,
+        Option("--skip-ingested/--no-skip-ingested", help="Skip already ingested artifacts"),
+    ] = True,
+    dedup_threshold: Annotated[
+        float,
+        Option("--dedup", help="Vector/BM25 dedup threshold (0=disabled, 0.95 recommended)"),
+    ] = 0.95,
 ) -> None:
     store = DocumentStore()
-    file_ids = await store.alingest_artifacts(museum=museum, limit=limit, use_llm=use_llm)
+    file_ids = await store.alingest_artifacts(
+        museum=museum,
+        limit=limit,
+        use_llm=use_llm,
+        skip_ingested=skip_ingested,
+        dedup_threshold=dedup_threshold,
+    )
     logging.info("已从 ArtifactStore 提取 %d 个文档到 DocumentTable", len(file_ids))
 
 
 cmd.add_typer(ingest_cmd, name="ingest")
+
+
+@cmd.command()
+@runnify
+async def check_similar(
+    content: Annotated[str, Argument(help="Content to check for similarity")],
+    threshold: Annotated[float, Option("--threshold", "-t", help="Similarity threshold (0-1)")] = 0.95,
+    topn: Annotated[int, Option("--top", "-n", help="Max results")] = 5,
+) -> None:
+    rag = RAGMode()
+    results = await rag.acheck_similar_documents(content=content, threshold=threshold, topn=topn)
+    if not results:
+        rprint("未找到相似文档")
+        return
+
+    table = Table(title=f"相似文档检查 (threshold≥{threshold})", title_style="bold")
+    table.add_column("similarity", style="cyan", width=10)
+    table.add_column("source", style="green", width=25)
+    table.add_column("content", style="white")
+    for r in results:
+        table.add_row(str(r["similarity"]), str(r["source_name"]), str(r["content_preview"]))
+    rprint(table)
 
 
 def main():

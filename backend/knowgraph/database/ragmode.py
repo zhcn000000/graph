@@ -634,3 +634,51 @@ class RAGMode:
             "document_index": document_index,
             "entities": entity_details,
         }
+
+    async def acheck_similar_documents(
+        self,
+        content: str,
+        threshold: float = 0.95,
+        topn: int = 5,
+    ) -> list[dict]:
+        async with self.__db.asession() as session:
+            query_vector = await aembed_documents([content])
+            stmt = (
+                select(
+                    col(DocumentTable.id),
+                    col(DocumentTable.content),
+                    col(DocumentTable.file_id),
+                    col(DocumentTable.vector).op("@#", return_type=Float)(query_vector).label("similarity"),
+                )
+                .order_by(col("similarity").desc())
+                .limit(topn * 2)
+            )
+            result = await session.execute(stmt)
+            rows = result.fetchall()
+
+        if not rows:
+            return []
+
+        file_ids = list({row[2] for row in rows if row[2]})
+        source_map: dict[UUID, str] = {}
+        if file_ids:
+            async with self.__db.asession() as session:
+                src_stmt = select(col(Source.id), col(Source.name)).where(col(Source.id).in_(file_ids))
+                src_result = await session.execute(src_stmt)
+                source_map = {row[0]: row[1] for row in src_result.fetchall()}
+
+        results: list[dict] = []
+        for doc_id, content_text, file_id, similarity in rows:
+            if float(similarity) < threshold:
+                continue
+            results.append({
+                "document_id": str(doc_id),
+                "file_id": str(file_id) if file_id else None,
+                "source_name": source_map.get(file_id, "") if file_id else "",
+                "content_preview": content_text[:100].replace("\n", " ") if content_text else "",
+                "similarity": round(float(similarity), 4),
+            })
+            if len(results) >= topn:
+                break
+
+        return results
