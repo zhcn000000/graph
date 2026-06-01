@@ -138,7 +138,7 @@ async def ingest_csv(
     dedup_threshold: Annotated[
         float,
         Option("--dedup", help="Vector/BM25 dedup threshold (0=disabled, 0.95 recommended)"),
-    ] = 0,
+    ] = 0.95,
 ) -> None:
     data_dir = data_dir.resolve()
     if adapter == "philamuseum":

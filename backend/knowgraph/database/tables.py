@@ -154,8 +154,8 @@ class Source(SQLModel, table=True):
             ),
         ),
     ]
-    name: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True, unique=True))]
-    link: Annotated[str | None, Field(sa_column=Column(String, nullable=True))]
+    name: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True))]
+    link: Annotated[str, Field(sa_column=Column(String, nullable=False, unique=True))]
     artifact_id: Annotated[
         UUID | None,
         Field(

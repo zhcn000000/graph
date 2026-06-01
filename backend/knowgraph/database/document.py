@@ -113,7 +113,7 @@ def _build_doc_from_artifact(artifact: dict) -> Document:
 
     return Document(
         content="\n".join(content_parts),
-        name=artifact.get("detail_url") or title,
+        name=title or "Untitled",
         link=artifact.get("detail_url"),
         metadata={k: v for k, v in artifact.items() if k != "artifact_id" and v is not None},
         entities=entity_uris,
@@ -238,6 +238,26 @@ class DocumentStore:
             result = await session.execute(stmt)
             return (result.scalar() or 0) + 1
 
+    async def _ensure_source(
+        self,
+        session,
+        name: str,
+        link: str,
+        artifact_id: UUID | None = None,
+    ) -> UUID | None:
+        stmt = (
+            insert(Source)
+            .values(name=name, link=link, artifact_id=artifact_id)
+            .on_conflict_do_update(
+                index_elements=[col(Source.link)],
+                set_={"name": name, "artifact_id": artifact_id},
+            )
+            .returning(col(Source.id))
+        )
+        result = await session.execute(stmt)
+        row = result.fetchone()
+        return row[0] if row else None
+
     async def aadd_documents(
         self,
         documents: list[Document],
@@ -253,14 +273,32 @@ class DocumentStore:
         start_idx = await self._next_document_index()
         skipped = 0
         async with self.__db.asession() as session:
+            file_ids_with_docs: set[UUID] = set()
+            candidate_ids = [d.file_id for d in documents if d.file_id]
+            if candidate_ids:
+                exist_stmt = select(col(DocumentTable.file_id)).where(
+                    col(DocumentTable.file_id).in_(candidate_ids),
+                ).distinct()
+                exist_result = await session.execute(exist_stmt)
+                file_ids_with_docs = {row[0] for row in exist_result.fetchall()}
+
             for doc_idx, doc in enumerate(documents, start_idx):
-                file_id = doc.file_id
-                if file_id is None and doc.name:
+                if doc.file_id is None and doc.name and doc.link:
+                    artifact_id_str = doc.metadata.get("artifact_id")
+                    artifact_id = UUID(artifact_id_str) if artifact_id_str else None
+                    doc.file_id = await self._ensure_source(
+                        session, doc.name, doc.link, artifact_id,
+                    )
+                if doc.file_id is None:
                     warnings.warn(
                         f"Source not found for name '{doc.name}', skipping document.",
                         UserWarning,
                         stacklevel=2,
                     )
+                    continue
+
+                if doc.file_id in file_ids_with_docs:
+                    skipped += 1
                     continue
 
                 entity_uris: set[str] = set()
@@ -289,7 +327,7 @@ class DocumentStore:
                             break
 
                     doc_chunks.append({
-                        "file_id": file_id,
+                        "file_id": doc.file_id,
                         "content": chunk.content,
                         "vector": vectors,
                         "bmvector": bmvector,
@@ -360,21 +398,9 @@ class DocumentStore:
         if not documents:
             return []
 
-        for doc in documents:
-            if not doc.name:
-                continue
-            artifact_id_str = doc.metadata.get("artifact_id")
-            artifact_id = UUID(artifact_id_str) if artifact_id_str else None
-            doc.file_id = await self.__source.ainsert_source(name=doc.name, link=doc.link, artifact_id=artifact_id)
-            if doc.file_id is None:
-                doc.file_id = (await self.__source.aget_id_by_names([doc.name]))[0]
-
         await self.aadd_documents(documents, use_llm=use_llm, dedup_threshold=dedup_threshold)
 
-        source_names = list({d.name for d in documents if d.name})
-        if not source_names:
-            return []
-        return await self.__source.aget_id_by_names(source_names)
+        return list({d.file_id for d in documents if d.file_id})
 
     async def aload_from_document(self, file_path: str | Path) -> list[UUID]:
         file_path = Path(file_path)

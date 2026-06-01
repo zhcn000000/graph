@@ -28,7 +28,10 @@ class SourceStore:
             stmt = (
                 insert(Source)
                 .values(name=name, link=link, artifact_id=artifact_id)
-                .on_conflict_do_nothing(index_elements=[col(Source.name)])
+                .on_conflict_do_update(
+                    index_elements=[col(Source.link)],
+                    set_={"name": name, "artifact_id": artifact_id},
+                )
                 .returning(col(Source.id))
             )
             result = await session.execute(stmt)
