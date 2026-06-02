@@ -1,3 +1,4 @@
+import logging
 import os
 from collections.abc import Sequence
 from copy import deepcopy
@@ -11,6 +12,22 @@ MODEL_URL = "https://api.siliconflow.cn"
 EMBEDDING_UID = "BAAI/bge-m3"
 RERANKER_UID = "BAAI/bge-reranker-v2-m3"
 API_KEY = os.environ.get("SILICONFLOW_API_KEY")
+
+_MAX_RETRIES = 3
+
+
+async def _retry_post(url: str, json: dict, headers: dict, time_out: float = 60.0) -> dict:
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            async with httpx.AsyncClient(timeout=time_out) as client:
+                response = await client.post(url, json=json, headers=headers)
+                response.raise_for_status()
+                return response.json()
+        except Exception as exc:
+            if attempt == _MAX_RETRIES:
+                raise
+            logging.warning("HTTP 请求失败 (第 %d/%d 次): %s，重试中", attempt, _MAX_RETRIES, exc)
+    raise RuntimeError("unreachable")
 
 
 async def aembed_documents(documents: Sequence[Document | str]) -> list[list[float]]:
@@ -26,15 +43,7 @@ async def aembed_documents(documents: Sequence[Document | str]) -> list[list[flo
         "encoding_format": "float",
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
-            f"{MODEL_URL}/v1/embeddings",
-            json=payload,
-            headers=headers,
-        )
-        response.raise_for_status()
-        results = response.json()
-
+    results = await _retry_post(f"{MODEL_URL}/v1/embeddings", json=payload, headers=headers)
     return [obj["embedding"] for obj in results["data"]]
 
 
@@ -60,14 +69,7 @@ async def arerank_documents(
         "return_documents": False,
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
-            f"{MODEL_URL}/v1/rerank",
-            json=payload,
-            headers=headers,
-        )
-        response.raise_for_status()
-        results = response.json()
+    results = await _retry_post(f"{MODEL_URL}/v1/rerank", json=payload, headers=headers)
 
     results_list = results["results"]
     if skip_sorting:
