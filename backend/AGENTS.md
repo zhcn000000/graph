@@ -327,3 +327,4 @@ knowgraph spider cleveland metropolitan
 - Spider 使用 curl_cffi 浏览器指纹绕过 Cloudflare 保护
 - 文档分块使用 spacy 中文分句,双级分块 (先 4096 再 512)
 - 向量嵌入和重排序使用 SiliconFlow API,需设置 SILICONFLOW_API_KEY 环境变量
+- 请总是修复你所见到的可以简单修复的lint/typecheck错误，即使和你的修改无关，但如果是你修改的部分，则应该修复所有lint错误
