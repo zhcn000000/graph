@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 from typing import Annotated, Literal
+from uuid import UUID
 
 import uvicorn
 import uvloop
@@ -182,16 +183,50 @@ async def ingest_artifacts(
         float,
         Option("--dedup", help="Vector/BM25 dedup threshold (0=disabled, 0.95 recommended)"),
     ] = 0.95,
+    offset: Annotated[
+        int,
+        Option("--offset", "-o", help="Skip the first N artifacts before ingesting"),
+    ] = 0,
+    batch_size: Annotated[
+        int,
+        Option("--batch-size", "-b", help="Batch size for incremental ingest (0=all at once)"),
+    ] = 0,
 ) -> None:
     store = DocumentStore()
-    file_ids = await store.alingest_artifacts(
-        museum=museum,
-        limit=limit,
-        use_llm=use_llm,
-        skip_ingested=skip_ingested,
-        dedup_threshold=dedup_threshold,
-    )
-    logging.info("已从 ArtifactStore 提取 %d 个文档到 DocumentTable", len(file_ids))
+    total_file_ids: list[UUID] = []
+    current_offset = offset
+
+    while True:
+        batch_limit = batch_size if batch_size > 0 else limit
+        try:
+            batch_ids = await store.alingest_artifacts(
+                museum=museum,
+                limit=batch_limit,
+                offset=current_offset,
+                use_llm=use_llm,
+                skip_ingested=skip_ingested,
+                dedup_threshold=dedup_threshold,
+            )
+        except Exception:
+            logging.exception("批次 offset=%d 失败，跳过", current_offset)
+            current_offset += max(0, batch_size)
+            if batch_size <= 0:
+                break
+            continue
+        if not batch_ids:
+            break
+        total_file_ids.extend(batch_ids)
+        current_offset += batch_size if batch_size > 0 else len(batch_ids)
+        logging.info(
+            "批次 offset=%d 完成，提取 %d 个文档，累计 %d",
+            current_offset - (batch_size if batch_size > 0 else len(batch_ids)),
+            len(batch_ids),
+            len(total_file_ids),
+        )
+        if batch_size <= 0:
+            break
+
+    logging.info("已从 ArtifactStore 提取 %d 个文档到 DocumentTable", len(total_file_ids))
 
 
 cmd.add_typer(ingest_cmd, name="ingest")

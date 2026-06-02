@@ -415,6 +415,7 @@ class DocumentStore:
         self,
         museum: str | None = None,
         limit: int | None = None,
+        offset: int = 0,
         artifact_ids: list[UUID] | None = None,
         use_llm: bool = False,
         skip_ingested: bool = True,
@@ -427,6 +428,9 @@ class DocumentStore:
                 stmt = stmt.where(col(ArtifactRawTable.id).in_(artifact_ids))
             elif museum:
                 stmt = stmt.where(col(ArtifactRawTable.museum) == museum)
+            stmt = stmt.order_by(col(ArtifactRawTable.id))
+            if offset:
+                stmt = stmt.offset(offset)
             if limit:
                 stmt = stmt.limit(limit)
             result = await session.execute(stmt)
