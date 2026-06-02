@@ -101,6 +101,22 @@ graph/
 
 ## 命令参考
 
+### CLI
+
+所有命令通过 `uv run knowgraph` 调用。
+
+| 命令 | 选项 | 说明 |
+|------|------|------|
+| `start` | — | 启动 FastAPI 服务器 |
+| `database <mode>` | `--dbname, -d` | 数据库管理：`init` 初始化, `reset` 重建, `clean` 清理 |
+| `spider <museum...>` | — | 运行爬虫采集指定博物馆数据 |
+| `search <query>` | `--top, -k` 结果数 (默认 5)<br>`--graph/--no-graph` 图谱搜索 (默认 on)<br>`--max-hops, -h` 最大跳数 (默认 2)<br>`--vector-weight` 向量权重 (默认 0.4)<br>`--bm25-weight` BM25 权重 (默认 0.3)<br>`--graph-weight` 图谱权重 (默认 0.3) | 混合检索 (向量+BM25+图谱) |
+| `ingest csv` | `--data-dir, -d` CSV 目录<br>`--adapter, -a` 适配器 (philamuseum / philamuseum_raw)<br>`--ingest/--no-ingest` 是否同时提取文档<br>`--llm/--no-llm` LLM 三元组提取<br>`--dedup` 去重阈值 (默认 0.95) | 从 CSV 导入文物原始数据 |
+| `ingest artifacts` | `--museum, -m` 按博物馆筛选<br>`--limit, -n` 最大数量<br>`--llm/--no-llm` LLM 三元组提取<br>`--skip-ingested/--no-skip-ingested` 跳过已摄入<br>`--dedup` 去重阈值 (默认 0.95) | 从文物表提取文档到 DocumentTable |
+| `check-similar <content>` | `--threshold, -t` 相似度阈值 (默认 0.95)<br>`--top, -n` 最大结果数 (默认 5) | 检查文档相似度 |
+
+### just 快捷命令
+
 | 命令 | 说明 |
 |------|------|
 | `just web` | 启动后端服务器 |
@@ -109,7 +125,11 @@ graph/
 | `just database` | 启动数据库容器 |
 | `just docker` | 启动所有容器 |
 | `just build-ui` | 构建前端并同步到 static/ |
-| `uv run knowgraph spider <博物馆名>` | 运行爬虫 |
+
+### 开发命令
+
+| 命令 | 说明 |
+|------|------|
 | `cd backend && pytest` | 运行后端测试 |
 | `cd backend && ruff check knowgraph/` | 代码检查 |
 | `cd backend && ty check knowgraph/` | 类型检查 |
