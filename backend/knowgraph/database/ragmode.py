@@ -1,8 +1,10 @@
+import logging
 import operator
 from collections import Counter
 from typing import NamedTuple
 from uuid import UUID
 
+from asyncer import create_task_group
 from networkx import DiGraph, ego_graph, pagerank
 from sqlalchemy import Float, cast, func, select
 from sqlmodel import col
@@ -16,6 +18,16 @@ from .database import DatabaseManager
 from .graph import AgeGraphManager
 from .tables import DocumentTable, Source
 from .types import BM25Vector
+
+
+def _merge_graphs(graph_a: DiGraph, graph_b: DiGraph) -> DiGraph:
+    for node, data in graph_b.nodes(data=True):
+        if node not in graph_a:
+            graph_a.add_node(node, **data)
+    for u, v, data in graph_b.edges(data=True):
+        if not graph_a.has_edge(u, v):
+            graph_a.add_edge(u, v, **data)
+    return graph_a
 
 
 class QueryDocumentResult(NamedTuple):
@@ -94,10 +106,11 @@ class RAGMode:
         bm25_result = await session.execute(bm25_stmt)
         return [row[0] for row in bm25_result.fetchall()]
 
+    @staticmethod
     async def _collect_entity_uris(
-        self,
         doc_ids: list[UUID],
         session,
+        max_entities: int = 500,
     ) -> list[str]:
         if not doc_ids:
             return []
@@ -110,17 +123,19 @@ class RAGMode:
                 counter[uri] = counter.get(uri, 0) + 1
 
         ranked = sorted(counter.items(), key=operator.itemgetter(1), reverse=True)
-        return [uri for uri, _ in ranked]
+        return [uri for uri, _ in ranked[:max_entities]]
 
     async def _graph_pagerank(
         self,
         entity_uris: list[str],
         max_hops: int = 2,
+        max_results: int | None = None,
     ) -> list[GraphSearchResult]:
         if not entity_uris:
             return []
 
         vertex_rows = await self.graph_manager.aget_vertices_by_uris(entity_uris)
+        logging.debug(f"Fetched {len(vertex_rows)} vertices for PageRank computation")
         vertex_map: dict[str, dict[str, object]] = {}
         for r in vertex_rows:
             entity_type = str(r.get("entity_type", ""))
@@ -132,8 +147,19 @@ class RAGMode:
 
         unified_graph = DiGraph()
         traverse_uris = [uri for uri in entity_uris if uri in vertex_map]
-        if traverse_uris:
-            unified_graph = await self.graph_manager.atraverse_multi(traverse_uris, max_hops=max_hops)
+        batch_size = 10
+        for i in range(0, len(traverse_uris), batch_size):
+            batch = traverse_uris[i : i + batch_size]
+            logging.debug(
+                f"Traversing batch {i // batch_size + 1}/{(len(traverse_uris) + batch_size - 1) // batch_size}"
+                f" with {len(batch)} start URIs (max_hops={max_hops})"
+            )
+            batch_graph = await self.graph_manager.atraverse_multi(batch, max_hops=max_hops)
+            unified_graph = _merge_graphs(unified_graph, batch_graph)
+        logging.debug(
+            f"Constructed unified graph with {unified_graph.number_of_nodes()} nodes"
+            f" and {unified_graph.number_of_edges()} edges"
+        )
 
         if unified_graph.number_of_nodes() == 0:
             return []
@@ -164,7 +190,7 @@ class RAGMode:
 
         pr_scores = pagerank(unified_graph, weight="weight")
 
-        graph_results: list[GraphSearchResult] = []
+        scored_entities: list[tuple[str, str, str, float, object | None]] = []
         seen_uris: set[str] = set()
 
         sorted_by_pr = sorted(pr_scores.items(), key=operator.itemgetter(1), reverse=True)
@@ -190,11 +216,19 @@ class RAGMode:
                 entity_name = str(vertex.get("name", entity_uri))
                 entity_type = str(vertex.get("entity_type", ""))
 
-            final_score = pr_score
-
-            path_graph: DiGraph | None = None
             entity_node_key = uri_to_node_key.get(entity_uri)
-            if entity_node_key is not None:
+            scored_entities.append(
+                (entity_uri, entity_name, entity_type, pr_score, entity_node_key),
+            )
+
+        scored_entities.sort(key=operator.itemgetter(3), reverse=True)
+
+        ego_graph_limit = max_results if max_results is not None else len(scored_entities)
+
+        graph_results: list[GraphSearchResult] = []
+        for idx, (entity_uri, entity_name, entity_type, score, entity_node_key) in enumerate(scored_entities):
+            path_graph: DiGraph | None = None
+            if idx < ego_graph_limit and entity_node_key is not None:
                 path_graph = ego_graph(unified_graph, entity_node_key, radius=max_hops, undirected=True)
 
             graph_results.append(
@@ -202,12 +236,11 @@ class RAGMode:
                     entity_uri=entity_uri,
                     entity_name=entity_name,
                     entity_type=entity_type,
-                    score=final_score,
+                    score=score,
                     path=path_graph,
                 ),
             )
 
-        graph_results.sort(key=lambda x: x.score, reverse=True)
         return graph_results
 
     async def _graph_search(
@@ -220,12 +253,18 @@ class RAGMode:
         graph_entities = await self._graph_pagerank(
             entity_uris=entity_uris,
             max_hops=max_hops,
+            max_results=topn,
         )
+        logging.info(f"Graph PageRank identified {len(graph_entities)} relevant entities for graph search")
 
         if not graph_entities:
             return [], []
 
-        all_entity_uris = [gsr.entity_uri for gsr in graph_entities]
+        max_graph_entities = topn * 10
+        all_entity_uris = [gsr.entity_uri for gsr in graph_entities[:max_graph_entities]]
+
+        if not all_entity_uris:
+            return [], []
 
         stmt = select(col(DocumentTable.id), col(DocumentTable.entities)).where(
             col(DocumentTable.entities).op("&&")(all_entity_uris),
@@ -298,7 +337,7 @@ class RAGMode:
         file_ids: list[UUID] | None = None,
         regex: str | None = None,
         use_graph: bool = True,
-        max_hops: int = 3,
+        max_hops: int = 2,
         graph_weight: float = 0.3,
         vector_weight: float = 0.4,
         bm25_weight: float = 0.3,
@@ -309,33 +348,43 @@ class RAGMode:
         rrf_k = 60
 
         async with self.__db.asession() as session:
-            vector_results = await self._vector_search(
-                queries=queries,
-                topn=topn,
-                session=session,
-                file_ids=file_ids,
-                regex=regex,
-            )
+            async with create_task_group() as tg:
+                vector_task = tg.soonify(self._vector_search)(
+                    queries=queries,
+                    topn=topn,
+                    session=session,
+                    file_ids=file_ids,
+                    regex=regex,
+                )
 
-            bm25_results = await self._bm25_search(
-                queries=queries,
-                topn=topn,
-                session=session,
-                file_ids=file_ids,
-                regex=regex,
-            )
+                bm25_task = tg.soonify(self._bm25_search)(
+                    queries=queries,
+                    topn=topn,
+                    session=session,
+                    file_ids=file_ids,
+                    regex=regex,
+                )
 
+            vector_results = vector_task.value
+            bm25_results = bm25_task.value
+            logging.info(f"Vector search returned {len(vector_results)} results")
+            logging.info(f"BM25 search returned {len(bm25_results)} results")
             graph_entities: list[GraphSearchResult] = []
             graph_results: list[UUID] | None = None
             if use_graph:
                 all_search_doc_ids = list(set(vector_results + bm25_results))
                 entity_stats = await self._collect_entity_uris(all_search_doc_ids, session)
+                logging.debug(f"Collected {len(entity_stats)} unique entity URIs from top search results")
 
                 graph_results, graph_entities = await self._graph_search(
                     topn=topn,
                     entity_uris=entity_stats,
                     session=session,
                     max_hops=max_hops,
+                )
+                logging.info(
+                    f"Graph search returned {len(graph_results)} document results "
+                    f"and {len(graph_entities)} graph entities"
                 )
 
             doc_ids = self._rrf_fusion(
@@ -430,7 +479,7 @@ class RAGMode:
         regex: str | None = None,
         file_ids: list[UUID] | None = None,
         use_graph: bool = False,
-        max_hops: int = 3,
+        max_hops: int = 2,
         graph_weight: float = 0.3,
         vector_weight: float = 0.4,
         bm25_weight: float = 0.3,
@@ -459,18 +508,17 @@ class RAGMode:
     async def aquery_graph_context(
         self,
         queries: list[str],
-        max_hops: int = 3,
+        max_hops: int = 2,
     ) -> dict:
         async with self.__db.asession() as session:
             doc_ids = await self._vector_search(queries=queries, topn=30, session=session)
             entity_stats = await self._collect_entity_uris(doc_ids, session)
 
-            graph_entities = (
-                await self._graph_pagerank(
-                    entity_uris=entity_stats,
-                    max_hops=max_hops,
-                )
-            )[:10]
+            graph_entities = await self._graph_pagerank(
+                entity_uris=entity_stats,
+                max_hops=max_hops,
+                max_results=10,
+            )
 
         context = {
             "entities": [],

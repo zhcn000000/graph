@@ -2,7 +2,8 @@ from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from warnings import warn
 
-from psycopg import AsyncConnection, AsyncCursor, Connection, Cursor, IsolationLevel
+import anyio
+from psycopg import AsyncConnection, AsyncCursor, Cursor, IsolationLevel
 from sqlalchemy import Engine, MetaData, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import Session
@@ -103,40 +104,11 @@ class DatabaseManager:
                 yield session
                 if session.in_transaction():
                     await session.commit()
+            except anyio.get_cancelled_exc_class():
+                raise
             except Exception:
                 if session.in_transaction():
                     await session.rollback()
-                raise
-
-    @contextmanager
-    def connection(
-        self,
-        schema: str = "public",
-        read_only: bool = False,
-        autocommit: bool = True,
-        deferrable: bool = False,
-        isolation: IsolationLevel = IsolationLevel.READ_COMMITTED,
-    ) -> Generator[Connection]:
-        pool = self.pool()
-        with pool.connection() as conn:
-            conn.set_read_only(read_only)
-            conn.set_isolation_level(isolation)
-            conn.set_autocommit(autocommit if not read_only else False)
-            conn.set_deferrable(deferrable if read_only and isolation == IsolationLevel.SERIALIZABLE else False)
-            try:
-                with conn.cursor() as cursor:
-                    if schema == "public":
-                        cursor.execute(
-                            "SET search_path TO public,bm25_catalog,tokenizer_catalog,ag_catalog;",
-                        )
-                    else:
-                        cursor.execute(
-                            t"SET search_path TO '{schema:i}',public,bm25_catalog,tokenizer_catalog,ag_catalog;",
-                        )
-                yield conn
-                conn.commit()
-            except Exception:
-                conn.rollback()
                 raise
 
     @asynccontextmanager
@@ -168,6 +140,8 @@ class DatabaseManager:
                         )
                 yield conn
                 await conn.commit()
+            except anyio.get_cancelled_exc_class():
+                raise
             except Exception:
                 await conn.rollback()
                 raise
