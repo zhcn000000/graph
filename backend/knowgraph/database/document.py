@@ -5,7 +5,7 @@ from uuid import UUID
 
 from asyncer import create_task_group
 from networkx import DiGraph
-from sqlalchemy import cast, delete, func, select
+from sqlalchemy import cast, delete, exists, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
 
@@ -413,7 +413,6 @@ class DocumentStore:
         self,
         museum: str | None = None,
         limit: int | None = None,
-        offset: int = 0,
         artifact_ids: list[UUID] | None = None,
         use_llm: bool = False,
         skip_ingested: bool = True,
@@ -426,26 +425,17 @@ class DocumentStore:
                 stmt = stmt.where(col(ArtifactRawTable.id).in_(artifact_ids))
             elif museum:
                 stmt = stmt.where(col(ArtifactRawTable.museum) == museum)
+            if skip_ingested:
+                stmt = stmt.where(
+                    ~exists().where(
+                        col(DocumentTable.artifact_id) == col(ArtifactRawTable.id),
+                    ),
+                )
             stmt = stmt.order_by(col(ArtifactRawTable.id))
-            if offset:
-                stmt = stmt.offset(offset)
             if limit:
                 stmt = stmt.limit(limit)
             result = await session.execute(stmt)
             artifact_rows = list(result.scalars().all())
-
-            skipped = 0
-            if skip_ingested:
-                row_ids = [a.id for a in artifact_rows]
-                ingested_stmt = select(col(DocumentTable.artifact_id)).where(
-                    col(DocumentTable.artifact_id).in_(row_ids),
-                )
-                ingested_result = await session.execute(ingested_stmt)
-                ingested_ids = {row[0] for row in ingested_result.fetchall() if row[0]}
-                skipped = sum(1 for a in artifact_rows if a.id in ingested_ids)
-                artifact_rows = [a for a in artifact_rows if a.id not in ingested_ids]
-                if skipped:
-                    logging.info("跳过 %d 个已摄入文物", skipped)
 
             artifact_dicts: list[dict] = []
             for a in artifact_rows:

@@ -3,7 +3,7 @@ import os
 from collections.abc import Sequence
 
 import httpx
-from httpx import HTTPError, HTTPStatusError
+from httpx import HTTPError
 
 from .models import Document
 

@@ -36,7 +36,7 @@ class EnvironmentSettings(BaseSettings):
     POSTGRES_HOST: str = "nw.lonwell.cn"
     POSTGRES_PORT: int = 10004
     POSTGRES_USER: str = "postgres"
-    POSTGRES_DB: str = "new_data"
+    POSTGRES_DB: str = "data"
     POSTGRES_DSN: PostgresDsn | None = None
     POSTGRES_PASSWORD: SecretStr = SecretStr("postgresgraph")
     DATA_ROOT: Annotated[Path, Field(alias="RAG_DATA_ROOT")] = find_project_directory() / "data"
