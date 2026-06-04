@@ -3,6 +3,7 @@ import os
 from collections.abc import Sequence
 
 import httpx
+from httpx import HTTPError
 
 from .models import Document
 
@@ -12,7 +13,7 @@ RERANKER_UID = "qwen3-reranker"
 EMBEDDING_DIMS = 4096
 API_KEY = os.environ.get("SILICONFLOW_API_KEY")
 
-_MAX_RETRIES = 3
+_MAX_RETRIES = 10
 
 
 async def _retry_post(url: str, json: dict, headers: dict, time_out: float = 60.0) -> dict:
@@ -22,7 +23,7 @@ async def _retry_post(url: str, json: dict, headers: dict, time_out: float = 60.
                 response = await client.post(url, json=json, headers=headers)
                 response.raise_for_status()
                 return response.json()
-        except Exception as exc:
+        except HTTPError as exc:
             if attempt == _MAX_RETRIES:
                 raise
             logging.warning("HTTP 请求失败 (第 %d/%d 次): %s，重试中", attempt, _MAX_RETRIES, exc)
@@ -32,6 +33,7 @@ async def _retry_post(url: str, json: dict, headers: dict, time_out: float = 60.
 def _build_embedding_input(
     documents: Sequence[Document | str],
     image_urls: Sequence[str | None] | None = None,
+    force_text: bool = False,
 ) -> tuple[str, list[str] | list[dict]]:
     texts: list[str] = []
     images: list[str | None] = []
@@ -40,7 +42,7 @@ def _build_embedding_input(
         text = d.content if isinstance(d, Document) else d
         img_url = image_urls[i] if image_urls and i < len(image_urls) else None
 
-        if not img_url and isinstance(d, Document) and d.image_url:
+        if not force_text and not img_url and isinstance(d, Document) and d.image_url:
             img_url = d.image_url
 
         texts.append(text)
@@ -62,12 +64,13 @@ def _build_embedding_input(
 async def aembed_documents(
     documents: Sequence[Document | str],
     image_urls: Sequence[str | None] | None = None,
+    force_text: bool = False,
 ) -> list[list[float]]:
     headers = {"Content-Type": "application/json"}
     if API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
 
-    field_name, field_value = _build_embedding_input(documents, image_urls)
+    field_name, field_value = _build_embedding_input(documents, image_urls, force_text=force_text)
     payload: dict = {
         "model": EMBEDDING_UID,
         field_name: field_value,

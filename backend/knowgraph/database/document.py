@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import UUID
 
 from networkx import DiGraph
-from sqlalchemy import Float, cast, delete, func, select
+from sqlalchemy import cast, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
 
@@ -280,7 +280,18 @@ class DocumentStore:
                 entity_uris |= self._triples_to_networkx(doc.triples, full_graph)
                 entity_uris |= set(doc.entities)
 
-                vectors = await aembed_documents([doc])
+                try:
+                    vectors = await aembed_documents([doc])
+                except Exception:
+                    if not doc.image_url:
+                        raise
+                    warnings.warn(
+                        f"图片嵌入失败,回退到文本嵌入: image_url={doc.image_url}",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    doc.image_url = None
+                    vectors = await aembed_documents([doc], force_text=True)
                 bmvector = await atokenize_document(doc.content)
 
                 if dedup_threshold > 0:

@@ -33,12 +33,12 @@ if not env_file.exists():
 class EnvironmentSettings(BaseSettings):
     FASTAPI_HOST: str = "127.0.0.1"
     FASTAPI_PORT: int = 40001
-    POSTGRES_HOST: str = "127.0.0.1"
-    POSTGRES_PORT: int = 40002
+    POSTGRES_HOST: str = "nw.lonwell.cn"
+    POSTGRES_PORT: int = 10004
     POSTGRES_USER: str = "postgres"
     POSTGRES_DB: str = "data"
     POSTGRES_DSN: PostgresDsn | None = None
-    POSTGRES_PASSWORD: SecretStr = SecretStr("postgres")
+    POSTGRES_PASSWORD: SecretStr = SecretStr("postgresgraph")
     DATA_ROOT: Annotated[Path, Field(alias="RAG_DATA_ROOT")] = find_project_directory() / "data"
     UUID_SEED: Annotated[UUID, Field(alias="RAG_UUID_SEED")] = UUID("11fa063e-b366-41a9-ac97-439b0a561846")
     RELEASE_MODE: Annotated[bool, Field(alias="RAG_RELEASE_MODE")] = True
