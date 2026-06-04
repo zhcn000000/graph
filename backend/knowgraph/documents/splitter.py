@@ -58,4 +58,6 @@ async def asplit_document(
             metadata=document.metadata,
             entities=document.entities,
             triples=document.triples,
+            artifact_id=document.artifact_id,
+            image_url=document.image_url,
         )

@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, UploadFile
 
-from knowgraph.adapters import PhilaMuseumAdapter, PhilaMuseumRawAdapter
+from knowgraph.adapters import AsianArtAdapter, MetMuseumAdapter, PhilaMuseumAdapter
 from knowgraph.database.artifact import ArtifactStore
 from knowgraph.database.document import DocumentStore
 from knowgraph.database.ragmode import RAGMode
@@ -33,7 +33,7 @@ async def api_search(request: SearchRequest) -> SearchResponse:
             queries=request.queries,
             k=request.k,
             regex=request.regex,
-            file_ids=request.file_ids,
+            artifact_ids=request.artifact_ids,
             use_graph=request.use_graph,
             max_hops=request.max_hops,
             graph_weight=request.graph_weight,
@@ -86,7 +86,7 @@ async def api_upload_document(file: UploadFile) -> DocumentUploadResponse:
 async def api_load_csv(
     file: UploadFile,
     adapter: Annotated[str, Body(embed=True)] = "philamuseum",
-    data_dir: Annotated[str, Body(embed=True)] = "philamuseum",
+    data_dir: Annotated[str, Body(embed=True)] = "../doc",
 ) -> CsvLoadResponse:
     try:
         suffix = os.path.splitext(file.filename or "")[1]  # noqa: PTH122
@@ -98,8 +98,10 @@ async def api_load_csv(
 
         if adapter == "philamuseum":
             adp = PhilaMuseumAdapter(data_dir=data_dir)
-        elif adapter == "philamuseum_raw":
-            adp = PhilaMuseumRawAdapter(data_dir=data_dir)
+        elif adapter == "metmuseum":
+            adp = MetMuseumAdapter(data_dir=data_dir)
+        elif adapter == "asianart":
+            adp = AsianArtAdapter(data_dir=data_dir)
         else:
             return CsvLoadResponse(success=False, status=f"未知适配器: {adapter}", artifact_count=0)
 
@@ -131,7 +133,7 @@ async def api_ingest_artifacts(
 ) -> FileIngestResponse:
     try:
         doc_store = DocumentStore()
-        file_ids = await doc_store.alingest_artifacts(
+        doc_ids = await doc_store.alingest_artifacts(
             museum=museum,
             limit=limit,
             use_llm=use_llm,
@@ -141,8 +143,8 @@ async def api_ingest_artifacts(
         return FileIngestResponse(
             success=True,
             status="文物数据提取成功",
-            file_ids=[str(f) for f in file_ids],
+            doc_ids=[str(d) for d in doc_ids],
         )
     except Exception as e:
         logging.exception(e)
-        return FileIngestResponse(success=False, status=f"文物数据提取失败: {e!s}", file_ids=[])
+        return FileIngestResponse(success=False, status=f"文物数据提取失败: {e!s}", doc_ids=[])

@@ -18,16 +18,16 @@ rag_mode = RAGMode()
 async def search_documents_base(
     queries: list[str],
     regex: str | None = None,
-    file_ids: list[str] | None = None,
+    artifact_ids: list[str] | None = None,
     offset: int = 0,
     use_graph: bool = True,
 ) -> str:
-    uuids = [UUID(fid) for fid in file_ids] if file_ids else None
+    uuids = [UUID(fid) for fid in artifact_ids] if artifact_ids else None
     docs, graph_entities = await rag_mode.ahyprid_search(
         queries=queries,
         k=8,
         regex=regex,
-        file_ids=uuids,
+        artifact_ids=uuids,
         use_graph=use_graph,
         max_hops=2,
         offset=offset,
@@ -50,7 +50,6 @@ async def search_documents_base(
         }
         if doc.document_index is not None:
             row["文档ID"] = str(doc.document_index)
-            row["分块"] = doc.chunk_index if doc.chunk_index is not None else "-"
         data.append(row)
 
     md = "## 搜索结果\n\n"
@@ -68,7 +67,7 @@ async def search_documents_base(
     dff = pd.DataFrame(data)
     md += dff.to_markdown(index=False)
     md += f"\n\n> 提示: 使用 `offset={offset + len(docs)}` 翻页查看更多结果。"
-    md += "\n> 使用 `get_document_context` 通过文档ID获取更多上下文分块。"
+    md += "\n> 使用 `get_document_context` 通过文档ID获取文档内容。"
     md += "\n> 使用 `get_document_entities` 通过文档ID查询相关图实体。"
 
     return md
@@ -201,33 +200,27 @@ async def get_document_context_base(
 ) -> str:
     context = await rag_mode.aget_document_context(
         document_index=document_index,
-        chunk_index=chunk_index,
-        before=before,
-        after=after,
     )
 
-    total = context["total_chunks"]
     chunks = context["chunks"]
     doc_id = context["document_index"]
 
     md = f"## 文档上下文 (ID: {doc_id})\n\n"
-    md += f"总块数: {total} | 获取: {len(chunks)} 块\n\n"
 
-    if chunk_index is not None:
-        md += f"当前块索引: {chunk_index} (前后各 {before}/{after} 块)\n\n"
+    if not chunks:
+        md += "未找到该文档。"
+        return md
 
     for chunk in chunks:
-        ci = chunk["chunk_index"]
         cid = chunk["id"]
         content = chunk["content"]
         preview = content[:500] + "..." if len(content) > 500 else content
-        md += f"### 分块 {ci}\n"
         md += f"- ID: `{cid}`\n"
         md += f"- 内容:\n```\n{preview}\n```\n\n"
+        if chunk.get("image_url"):
+            md += f"- 图片: {chunk['image_url']}\n\n"
 
-    if total > len(chunks):
-        md += "> 提示: 设置 `chunk_index` 和 `before`/`after` 参数查看更多分块。"
-        md += f"\n> 使用 `get_document_entities` 工具通过 `document_index={doc_id}` 查询该文档的相关图实体。"
+    md += f"> 使用 `get_document_entities` 工具通过 `document_index={doc_id}` 查询该文档的相关图实体。"
 
     return md
 

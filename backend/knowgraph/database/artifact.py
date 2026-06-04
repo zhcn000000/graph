@@ -30,6 +30,7 @@ class ArtifactStore:
         image_data: bytes | None = None,
         credit_line: str = "",
         accession_number: str = "",
+        artist: str = "",
         crawl_date: date | None = None,
     ) -> UUID | None:
         async with self.__db.asession() as session:
@@ -48,6 +49,7 @@ class ArtifactStore:
                 "image_data": image_data,
                 "credit_line": credit_line,
                 "accession_number": accession_number,
+                "artist": artist,
             }
             if crawl_date is not None:
                 values["crawl_date"] = crawl_date
@@ -70,6 +72,7 @@ class ArtifactStore:
                         "image_data": image_data,
                         "credit_line": credit_line,
                         "accession_number": accession_number,
+                        "artist": artist,
                     },
                 )
                 .returning(col(ArtifactRawTable.id))
@@ -122,6 +125,7 @@ class ArtifactStore:
                     "image_data": artifact.get("image_data"),
                     "credit_line": artifact.get("credit_line", ""),
                     "accession_number": artifact.get("accession_number", ""),
+                    "artist": artifact.get("artist", ""),
                 }
                 if "crawl_date" in artifact:
                     values["crawl_date"] = artifact["crawl_date"]
@@ -144,6 +148,7 @@ class ArtifactStore:
                             "image_data": artifact.get("image_data"),
                             "credit_line": artifact.get("credit_line", ""),
                             "accession_number": artifact.get("accession_number", ""),
+                            "artist": artifact.get("artist", ""),
                         },
                     )
                     .returning(col(ArtifactRawTable.id))

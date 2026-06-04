@@ -1,4 +1,3 @@
-import logging
 import operator
 from functools import reduce
 from typing import Any
@@ -412,7 +411,6 @@ class AgeGraphManager:  # noqa: PLR0904
         uris: list[str],
         max_hops: int = 3,
         direction: str = "both",
-        max_paths: int = 5000,
     ) -> DiGraph:
         if not uris:
             return DiGraph()
@@ -438,26 +436,8 @@ class AgeGraphManager:  # noqa: PLR0904
             .rel("", length=f"1..{max_hops}", direction=rel_dir)
             .node("end_node")
         )
-        cypher = (
-            unwind("$infos", "info")
-            .match(f"path = {path_pattern}")
-            .return_(("path", "path"))
-            .limit(max_paths)
-        )
-        logging.info(
-            "Traversing multi: %d start URIs, max_hops=%d, direction=%s, max_paths=%d",
-            len(infos),
-            max_hops,
-            direction,
-            max_paths,
-        )
-        result = await self.ato_networkx(cypher, params={"infos": infos})
-        logging.info(
-            "Traverse multi returned graph with %d nodes and %d edges",
-            result.number_of_nodes(),
-            result.number_of_edges(),
-        )
-        return result
+        cypher = unwind("$infos", "info").match(f"path = {path_pattern}").return_(("path", "path"))
+        return await self.ato_networkx(cypher, params={"infos": infos})
 
     async def afind_paths(
         self,

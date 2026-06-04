@@ -7,7 +7,7 @@ from sqlmodel import col
 from knowgraph.database.database import DatabaseManager
 from knowgraph.database.document import DocumentStore
 from knowgraph.database.ragmode import RAGMode
-from knowgraph.database.tables import DocumentTable, Source
+from knowgraph.database.tables import DocumentTable
 from knowgraph.documents.models import Document
 
 TEST_DB_NAME = "test_data"
@@ -48,15 +48,14 @@ class TestInsertAndSearch:
     @pytest.mark.usefixtures("clean_tables")
     async def test_insert_then_vector_search(self, doc_store, rag_mode):
         """Insert a document and verify vector search finds it."""
-        source_ids = await doc_store.ainsert_documents([
+        doc_ids = await doc_store.ainsert_documents([
             Document(
                 name="bronze_art.md",
                 content=ARTIFACT_SEARCH_CONTENT,
                 metadata={"name": "bronze_art.md", "link": ""},
             ),
         ])
-        source_id = source_ids[0]
-        assert source_id is not None
+        assert len(doc_ids) > 0
 
         results, _ = await rag_mode.ahyprid_search(
             queries=["中国青铜器 古代 纹饰"],
@@ -159,28 +158,17 @@ class TestGetAndDelete:
     @pytest.mark.usefixtures("clean_tables")
     async def test_aget_by_ids(self, doc_store, rag_mode):
         """aget_by_ids should return documents for given IDs."""
-        source_ids = await doc_store.ainsert_documents([
+        doc_ids = await doc_store.ainsert_documents([
             Document(
                 name="get_by_id_test.md",
                 content="测试获取文档内容。青铜鼎是商代重要祭祀礼器。",
                 metadata={"name": "get_by_id_test.md", "link": ""},
             ),
         ])
-        source_id = source_ids[0]
-        assert source_id is not None
+        assert len(doc_ids) > 0
 
-        db = DatabaseManager(TEST_DB_NAME)
-        async with db.asession() as session:
-            stmt = (
-                select(col(DocumentTable.id))
-                .where(
-                    col(DocumentTable.file_id) == source_id,
-                )
-                .limit(1)
-            )
-            result = await session.execute(stmt)
-            doc_id = result.scalar_one()
-            doc_id_str = str(doc_id)
+        doc_id = doc_ids[0]
+        doc_id_str = str(doc_id)
 
         documents = await rag_mode.aget_by_ids([doc_id_str])
         assert len(documents) == 1
@@ -199,23 +187,13 @@ class TestGetAndDelete:
     @pytest.mark.usefixtures("clean_tables")
     async def test_adelete_documents_success(self, doc_store):
         """Delete documents by ID and verify removal."""
-        source_ids = await doc_store.ainsert_documents([
+        doc_ids = await doc_store.ainsert_documents([
             Document(
                 name="delete_test.md",
                 content="待删除的文档内容。青花瓷是景德镇的代表性瓷器。",
                 metadata={"name": "delete_test.md", "link": ""},
             ),
         ])
-        source_id = source_ids[0]
-        assert source_id is not None
-
-        db = DatabaseManager(TEST_DB_NAME)
-        async with db.asession() as session:
-            stmt = select(col(DocumentTable.id)).where(
-                col(DocumentTable.file_id) == source_id,
-            )
-            result = await session.execute(stmt)
-            doc_ids = [row[0] for row in result.fetchall()]
         assert len(doc_ids) > 0
 
         result = await doc_store.adelete_documents(doc_ids)
@@ -238,28 +216,6 @@ class TestGetAndDelete:
     async def test_adelete_documents_none(self, doc_store):
         result = await doc_store.adelete_documents(None)
         assert result is False
-
-    @pytest.mark.usefixtures("clean_tables")
-    async def test_aremove_documents_success(self, doc_store):
-        """Remove documents by file_id."""
-        source_ids = await doc_store.ainsert_documents([
-            Document(
-                name="remove_test.md",
-                content="待移除的文档内容。清代绘画以山水花鸟为主题。",
-                metadata={"name": "remove_test.md", "link": ""},
-            ),
-        ])
-        source_id = source_ids[0]
-        assert source_id is not None
-
-        result = await doc_store.aremove_documents(source_id)
-        assert isinstance(result, list)
-        assert len(result) > 0
-
-    @pytest.mark.usefixtures("clean_tables")
-    async def test_aremove_documents_empty(self, doc_store):
-        result = await doc_store.aremove_documents([])
-        assert result == []
 
 
 @pytest.mark.usefixtures("setup_test_database")
@@ -296,8 +252,8 @@ class TestGraphContext:
 
     @pytest.mark.usefixtures("clean_tables")
     async def test_aget_document_context(self, doc_store, rag_mode):
-        """aget_document_context should return chunks with surrounding context."""
-        await doc_store.ainsert_documents([
+        """aget_document_context should return document content."""
+        doc_ids = await doc_store.ainsert_documents([
             Document(
                 name="doc_context.md",
                 content="中国青铜器历史悠久。商周青铜器工艺精湛。大都会博物馆收藏丰富。"
@@ -308,22 +264,14 @@ class TestGraphContext:
 
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:
-            stmt = (
-                select(col(DocumentTable.document_index))
-                .where(
-                    col(Source.name) == "doc_context.md",
-                )
-                .join(Source, col(Source.id) == col(DocumentTable.file_id))
-                .limit(1)
-            )
+            stmt = select(col(DocumentTable.document_index)).where(
+                col(DocumentTable.id).in_(doc_ids),
+            ).limit(1)
             result = await session.execute(stmt)
             doc_index = result.scalar_one()
 
         context = await rag_mode.aget_document_context(
             document_index=doc_index,
-            chunk_index=0,
-            before=1,
-            after=1,
         )
 
         assert context["document_index"] == doc_index
@@ -332,7 +280,7 @@ class TestGraphContext:
     @pytest.mark.usefixtures("clean_tables")
     async def test_aget_document_entities(self, doc_store, rag_mode, sample_entities):
         """aget_document_entities should return non-empty entities when triples are attached."""
-        await doc_store.ainsert_documents([
+        doc_ids = await doc_store.ainsert_documents([
             Document(
                 name="entities_context.md",
                 content="景德镇青花瓷工艺精湛。大都会博物馆收藏了大量中国瓷器。青花瓷以其蓝色釉料闻名于世。",
@@ -343,14 +291,9 @@ class TestGraphContext:
 
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:
-            stmt = (
-                select(col(DocumentTable.document_index))
-                .where(
-                    col(Source.name) == "entities_context.md",
-                )
-                .join(Source, col(Source.id) == col(DocumentTable.file_id))
-                .limit(1)
-            )
+            stmt = select(col(DocumentTable.document_index)).where(
+                col(DocumentTable.id).in_(doc_ids),
+            ).limit(1)
             result = await session.execute(stmt)
             doc_index = result.scalar_one()
 

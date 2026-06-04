@@ -10,7 +10,7 @@ from knowgraph.database.document import DocumentStore
 from knowgraph.database.ragmode import RAGMode
 
 TEST_DB_NAME = "test_data"
-DATA_DIR = Path(__file__).resolve().parent.parent / "philamuseum"
+DATA_DIR = Path(__file__).resolve().parent.parent / "doc"
 
 NEEDS_EMBEDDING = bool(os.environ.get("SILICONFLOW_API_KEY"))
 
@@ -51,9 +51,9 @@ class TestRealDataInsertion:
         assert len(ids) > 0
 
     async def _stage2_ingest(self, doc_store, n: int = INGEST_COUNT) -> list:
-        file_ids = await doc_store.alingest_artifacts(limit=n)
-        assert len(file_ids) > 0
-        return file_ids
+        doc_ids = await doc_store.alingest_artifacts(limit=n)
+        assert len(doc_ids) > 0
+        return doc_ids
 
     @pytest.mark.usefixtures("clean_tables")
     async def test_insert_then_vector_search(self, artifact_store, doc_store, rag_mode, adapter):
@@ -124,7 +124,7 @@ class TestRealDataInsertion:
     @pytest.mark.usefixtures("clean_tables")
     async def test_delete_then_search_empty(self, artifact_store, doc_store, rag_mode, adapter):
         await self._stage1_insert(adapter, artifact_store)
-        file_ids = await self._stage2_ingest(doc_store)
+        doc_ids = await self._stage2_ingest(doc_store)
 
         results_before, _ = await rag_mode.ahyprid_search(
             queries=["Philadelphia Museum"],
@@ -133,7 +133,7 @@ class TestRealDataInsertion:
         )
         assert len(results_before) > 0
 
-        await doc_store.aremove_documents(file_ids)
+        await doc_store.aremove_documents(doc_ids)
 
         results_after, _ = await rag_mode.ahyprid_search(
             queries=["Philadelphia Museum"],
@@ -170,9 +170,9 @@ class TestRealDataSearchQuality:
         assert len(ids) > 0
 
     async def _stage2_ingest(self, doc_store, n: int = INGEST_COUNT) -> list:
-        file_ids = await doc_store.alingest_artifacts(limit=n)
-        assert len(file_ids) > 0
-        return file_ids
+        doc_ids = await doc_store.alingest_artifacts(limit=n)
+        assert len(doc_ids) > 0
+        return doc_ids
 
     @pytest.mark.usefixtures("clean_tables")
     async def test_relevance_scores_are_valid(self, artifact_store, doc_store, rag_mode, adapter):
@@ -202,13 +202,9 @@ class TestRealDataSearchQuality:
         assert len(results) > 0
         doc = results[0]
         assert doc.document_index is not None
-        assert doc.chunk_index is not None
 
         context = await rag_mode.aget_document_context(
             document_index=doc.document_index,
-            chunk_index=doc.chunk_index,
-            before=1,
-            after=1,
         )
         assert context["document_index"] == doc.document_index
         assert len(context["chunks"]) > 0

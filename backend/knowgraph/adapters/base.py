@@ -24,8 +24,7 @@ class BaseAdapter(ABC):
         self.data_dir = Path(data_dir)
 
     @abstractmethod
-    def row_to_dict(self, row: dict) -> dict:
-        ...
+    def row_to_dict(self, row: dict) -> dict: ...
 
     def validate_row(self, row: dict) -> bool:
         return True

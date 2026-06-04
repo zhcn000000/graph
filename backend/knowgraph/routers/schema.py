@@ -81,7 +81,7 @@ class GraphOperationResponse(StatusResponse):
 class SearchRequest(BaseModel):
     queries: list[str]
     regex: str | None = None
-    file_ids: list[UUID] | None = None
+    artifact_ids: list[UUID] | None = None
     use_graph: bool = True
     max_hops: int = 2
     graph_weight: float = 0.3
@@ -104,7 +104,7 @@ class DocumentUploadResponse(StatusResponse):
 
 
 class FileIngestResponse(StatusResponse):
-    file_ids: list[str]
+    doc_ids: list[str]
 
 
 class CsvLoadResponse(StatusResponse):

@@ -1,6 +1,5 @@
 import logging
 import warnings
-from collections.abc import Sequence
 from pathlib import Path
 from uuid import UUID
 
@@ -12,7 +11,6 @@ from sqlmodel import col
 from knowgraph.documents.converter import aconvert_file
 from knowgraph.documents.embedder import aembed_documents
 from knowgraph.documents.models import Document
-from knowgraph.documents.splitter import asplit_document
 from knowgraph.documents.tokenizer import atokenize_document
 from knowgraph.graph.schema import (
     EntityType,
@@ -25,8 +23,7 @@ from knowgraph.graph.triples import LLMExtractor, compute_triples_strength
 
 from .database import DatabaseManager
 from .graph import AgeGraphManager
-from .source import SourceStore
-from .tables import ArtifactRawTable, DocumentTable, Source
+from .tables import ArtifactRawTable, DocumentTable
 from .types import BM25Vector
 
 
@@ -111,20 +108,25 @@ def _build_doc_from_artifact(artifact: dict) -> Document:
     if artifact.get("description"):
         content_parts.append(artifact["description"])
 
+    image_url = artifact.get("image_url") or None
+    artifact_id_str = artifact.get("artifact_id")
+    artifact_id = UUID(artifact_id_str) if artifact_id_str else None
+
     return Document(
         content="\n".join(content_parts),
         name=title or "Untitled",
         link=artifact.get("detail_url"),
-        metadata={k: v for k, v in artifact.items() if k != "artifact_id" and v is not None},
+        metadata={k: v for k, v in artifact.items() if k not in ("artifact_id", "image_data") and v is not None},
         entities=entity_uris,
         triples=triples,
+        artifact_id=artifact_id,
+        image_url=image_url,
     )
 
 
 class DocumentStore:
     def __init__(self, dbname: str | None = None) -> None:
         self.__db = DatabaseManager(dbname)
-        self.__source = SourceStore(dbname)
         self._graph_manager: AgeGraphManager | None = None
         self._extractor: LLMExtractor | None = None
 
@@ -142,28 +144,28 @@ class DocumentStore:
 
     async def _check_duplicate(
         self,
-        vectors: list[list[float]],
+        vector: list[float],
         bmvector: dict[int, int],
         threshold: float,
     ) -> bool:
         async with self.__db.asession() as session:
             stmt = (
                 select(
-                    col(DocumentTable.file_id),
-                    col(DocumentTable.vector).op("@#", return_type=Float)(vectors).label("sim"),
+                    col(DocumentTable.id),
+                    col(DocumentTable.vector).op("@#", return_type=Float)(vector).label("sim"),
                     col(DocumentTable.bmvector)
                     .neg_bm25_rank(  # type: ignore
-                        func.to_bm25query("idx_documents_bmvector", cast(bmvector, BM25Vector))
+                        func.to_bm25query("idx_documents_bmvector", cast(bmvector, BM25Vector)),
                     )
                     .label("bm25_sim"),
                 )
                 .order_by(
                     col(DocumentTable.bmvector)
                     .neg_bm25_rank(  # type: ignore
-                        func.to_bm25query("idx_documents_bmvector", cast(bmvector, BM25Vector))
+                        func.to_bm25query("idx_documents_bmvector", cast(bmvector, BM25Vector)),
                     )
                     .label("bm25_sim")
-                    .desc()
+                    .desc(),
                 )
                 .limit(5)
             )
@@ -238,26 +240,6 @@ class DocumentStore:
             result = await session.execute(stmt)
             return (result.scalar() or 0) + 1
 
-    async def _ensure_source(
-        self,
-        session,
-        name: str,
-        link: str,
-        artifact_id: UUID | None = None,
-    ) -> UUID | None:
-        stmt = (
-            insert(Source)
-            .values(name=name, link=link, artifact_id=artifact_id)
-            .on_conflict_do_update(
-                index_elements=[col(Source.link)],
-                set_={"name": name, "artifact_id": artifact_id},
-            )
-            .returning(col(Source.id))
-        )
-        result = await session.execute(stmt)
-        row = result.fetchone()
-        return row[0] if row else None
-
     async def aadd_documents(
         self,
         documents: list[Document],
@@ -273,31 +255,19 @@ class DocumentStore:
         start_idx = await self._next_document_index()
         skipped = 0
         async with self.__db.asession() as session:
-            file_ids_with_docs: set[UUID] = set()
-            candidate_ids = [d.file_id for d in documents if d.file_id]
-            if candidate_ids:
-                exist_stmt = select(col(DocumentTable.file_id)).where(
-                    col(DocumentTable.file_id).in_(candidate_ids),
-                ).distinct()
+            existing_artifact_ids: set[UUID] = set()
+            cand_ids = [d.artifact_id for d in documents if d.artifact_id]
+            if cand_ids:
+                exist_stmt = (
+                    select(col(DocumentTable.artifact_id))
+                    .where(col(DocumentTable.artifact_id).in_(cand_ids))
+                    .distinct()
+                )
                 exist_result = await session.execute(exist_stmt)
-                file_ids_with_docs = {row[0] for row in exist_result.fetchall()}
+                existing_artifact_ids = {row[0] for row in exist_result.fetchall()}
 
             for doc_idx, doc in enumerate(documents, start_idx):
-                if doc.file_id is None and doc.name and doc.link:
-                    artifact_id_str = doc.metadata.get("artifact_id")
-                    artifact_id = UUID(artifact_id_str) if artifact_id_str else None
-                    doc.file_id = await self._ensure_source(
-                        session, doc.name, doc.link, artifact_id,
-                    )
-                if doc.file_id is None:
-                    warnings.warn(
-                        f"Source not found for name '{doc.name}', skipping document.",
-                        UserWarning,
-                        stacklevel=2,
-                    )
-                    continue
-
-                if doc.file_id in file_ids_with_docs:
+                if doc.artifact_id and doc.artifact_id in existing_artifact_ids:
                     skipped += 1
                     continue
 
@@ -310,34 +280,24 @@ class DocumentStore:
                 entity_uris |= self._triples_to_networkx(doc.triples, full_graph)
                 entity_uris |= set(doc.entities)
 
-                doc_chunks: list[dict] = []
-                chunk_idx = 0
-                async for chunk in asplit_document(doc, chunk_size=4096, chunk_overlap=128):
-                    chunk_idx += 1
-                    sub_chunks = []
-                    async for sub_doc in asplit_document(chunk, chunk_size=512, chunk_overlap=32):
-                        sub_chunks.append(sub_doc)
-                    vectors = await aembed_documents(sub_chunks)
-                    bmvector = await atokenize_document(chunk)
+                vectors = await aembed_documents([doc])
+                bmvector = await atokenize_document(doc.content)
 
-                    if dedup_threshold > 0 and chunk_idx == 1:
-                        if await self._check_duplicate(vectors, bmvector, dedup_threshold):
-                            skipped += 1
-                            doc_chunks = []
-                            break
+                if dedup_threshold > 0:
+                    if await self._check_duplicate(vectors[0], bmvector, dedup_threshold):
+                        skipped += 1
+                        continue
 
-                    doc_chunks.append({
-                        "file_id": doc.file_id,
-                        "content": chunk.content,
-                        "vector": vectors,
-                        "bmvector": bmvector,
-                        "entities": list(entity_uris),
-                        "meta": doc.metadata,
-                        "document_index": doc_idx,
-                        "chunk_index": chunk_idx,
-                    })
-
-                insert_values.extend(doc_chunks)
+                insert_values.append({
+                    "artifact_id": doc.artifact_id,
+                    "content": doc.content,
+                    "vector": vectors[0],
+                    "bmvector": bmvector,
+                    "entities": list(entity_uris),
+                    "meta": doc.metadata,
+                    "image_url": doc.image_url,
+                    "document_index": doc_idx,
+                })
 
             if skipped:
                 logging.info("去重跳过 %d 个重复文档", skipped)
@@ -359,26 +319,6 @@ class DocumentStore:
 
         return all_doc_ids
 
-    async def adelete_by_file_ids(self, file_ids: Sequence[UUID]) -> int:
-        file_ids = list(file_ids)
-        if not file_ids:
-            return 0
-        async with self.__db.asession() as session:
-            stmt = delete(DocumentTable).where(col(DocumentTable.file_id).in_(file_ids))
-            result = await session.execute(stmt)
-            await session.commit()
-            return result.rowcount or 0  # type: ignore
-
-    async def adelete_orphan_by_file_ids(self, file_ids: Sequence[UUID]) -> int:
-        file_ids = list(file_ids)
-        if not file_ids:
-            return 0
-        async with self.__db.asession() as session:
-            stmt = delete(DocumentTable).where(col(DocumentTable.file_id).in_(file_ids))
-            result = await session.execute(stmt)
-            await session.commit()
-            return result.rowcount or 0  # type: ignore
-
     async def adelete_documents(self, ids: list[UUID] | None = None) -> bool | None:
         if not ids:
             return False
@@ -398,9 +338,12 @@ class DocumentStore:
         if not documents:
             return []
 
-        await self.aadd_documents(documents, use_llm=use_llm, dedup_threshold=dedup_threshold)
+        for doc in documents:
+            if doc.name and doc.link:
+                doc.metadata.setdefault("name", doc.name)
+                doc.metadata.setdefault("link", doc.link)
 
-        return list({d.file_id for d in documents if d.file_id})
+        return await self.aadd_documents(documents, use_llm=use_llm, dedup_threshold=dedup_threshold)
 
     async def aload_from_document(self, file_path: str | Path) -> list[UUID]:
         file_path = Path(file_path)
@@ -439,7 +382,9 @@ class DocumentStore:
             skipped = 0
             if skip_ingested:
                 row_ids = [a.id for a in artifact_rows]
-                ingested_stmt = select(col(Source.artifact_id)).where(col(Source.artifact_id).in_(row_ids))
+                ingested_stmt = select(col(DocumentTable.artifact_id)).where(
+                    col(DocumentTable.artifact_id).in_(row_ids),
+                )
                 ingested_result = await session.execute(ingested_stmt)
                 ingested_ids = {row[0] for row in ingested_result.fetchall() if row[0]}
                 skipped = sum(1 for a in artifact_rows if a.id in ingested_ids)
@@ -463,6 +408,7 @@ class DocumentStore:
                     "image_url": a.image_url or "",
                     "credit_line": a.credit_line or "",
                     "accession_number": a.accession_number or "",
+                    "artist": a.artist or "",
                     "crawl_date": str(a.crawl_date) if a.crawl_date else "",
                     "artifact_id": str(a.id),
                 })
@@ -479,23 +425,20 @@ class DocumentStore:
 
         return await self.ainsert_documents(documents, use_llm=use_llm, dedup_threshold=dedup_threshold)
 
-    async def aremove_documents(self, file_ids: list[UUID] | UUID | None = None) -> list[UUID]:
-        if isinstance(file_ids, UUID):
-            file_ids = [file_ids]
-        if not file_ids:
+    async def aremove_documents(self, artifact_ids: list[UUID] | UUID | None = None) -> list[UUID]:
+        if isinstance(artifact_ids, UUID):
+            artifact_ids = [artifact_ids]
+        if not artifact_ids:
             return []
         async with self.__db.asession() as session:
             stmt = (
                 delete(DocumentTable)
-                .where(col(DocumentTable.file_id).in_(file_ids))
-                .returning(col(DocumentTable.file_id))
+                .where(col(DocumentTable.artifact_id).in_(artifact_ids))
+                .returning(col(DocumentTable.artifact_id))
             )
             result = await session.execute(stmt)
             await session.commit()
-            removed = [row[0] for row in result.fetchall()]
-        if removed:
-            await self.__source.adelete_orphan_files(removed)
-        return removed
+            return [row[0] for row in result.fetchall() if row[0] is not None]
 
     async def areindex(self, reindex_vector: bool = True, reindex_bm25: bool = True) -> None:
         async with self.__db.acursor() as cur:

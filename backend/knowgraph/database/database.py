@@ -119,13 +119,11 @@ class DatabaseManager:
     ) -> Generator[Connection]:
         pool = self.pool()
         with pool.connection() as conn:
+            conn.set_read_only(read_only)
+            conn.set_isolation_level(isolation)
+            conn.set_autocommit(autocommit if not read_only else False)
+            conn.set_deferrable(deferrable if read_only and isolation == IsolationLevel.SERIALIZABLE else False)
             try:
-                conn.set_read_only(read_only)
-                conn.set_isolation_level(isolation)
-                conn.set_autocommit(autocommit if not read_only else False)
-                conn.set_deferrable(
-                    deferrable if read_only and isolation == IsolationLevel.SERIALIZABLE else False,
-                )
                 with conn.cursor() as cursor:
                     if schema == "public":
                         cursor.execute(

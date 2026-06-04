@@ -21,6 +21,8 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import declared_attr
 from sqlmodel import Field, SQLModel, col
 
+from knowgraph.documents.embedder import EMBEDDING_DIMS
+
 from .types import BM25Vector, Password
 
 if TYPE_CHECKING:
@@ -30,7 +32,7 @@ if TYPE_CHECKING:
         return fn
 
 
-VECTOR_DIM = 1024
+VECTOR_DIM = EMBEDDING_DIMS
 
 
 class User(SQLModel, table=True):
@@ -136,41 +138,11 @@ class ArtifactRawTable(SQLModel, table=True):
     image_data: Annotated[bytes | None, Field(sa_column=Column(LargeBinary, nullable=True))]
     credit_line: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     accession_number: Annotated[str, Field(sa_column=Column(String(256), nullable=True))]
+    artist: Annotated[str, Field(sa_column=Column(String(512), nullable=True))]
     crawl_date: Annotated[
         date,
         Field(sa_column=Column(Date, nullable=False, server_default=func.current_date())),
     ]
-
-
-class Source(SQLModel, table=True):
-    __tablename__ = "source"
-    id: Annotated[
-        UUID,
-        Field(
-            sa_column=Column(
-                Uuid[UUID](native_uuid=True, as_uuid=True),
-                primary_key=True,
-                server_default=func.uuidv7(),
-            ),
-        ),
-    ]
-    name: Annotated[str, Field(sa_column=Column(String, nullable=False, index=True))]
-    link: Annotated[str, Field(sa_column=Column(String, nullable=False, unique=True))]
-    artifact_id: Annotated[
-        UUID | None,
-        Field(
-            sa_column=Column(
-                Uuid,
-                ForeignKey(col(ArtifactRawTable.id), onupdate="CASCADE", ondelete="SET NULL"),
-                nullable=True,
-            ),
-        ),
-    ]
-
-    @declared_attr
-    @classmethod
-    def __table_args__(cls) -> tuple:
-        return (CheckConstraint(func.length(col(cls.name)) > 0, name="chk_source_name_not_empty"),)
 
 
 class DocumentTable(SQLModel, table=True):
@@ -185,21 +157,21 @@ class DocumentTable(SQLModel, table=True):
             ),
         ),
     ]
-    file_id: Annotated[
-        UUID,
+    artifact_id: Annotated[
+        UUID | None,
         Field(
             sa_column=Column(
                 Uuid[UUID](native_uuid=True, as_uuid=True),
-                ForeignKey(col(Source.id), onupdate="CASCADE", ondelete="CASCADE"),
-                nullable=False,
+                ForeignKey(col(ArtifactRawTable.id), onupdate="CASCADE", ondelete="SET NULL"),
+                nullable=True,
                 index=True,
             ),
         ),
     ]
     content: Annotated[str, Field(sa_column=Column(Text, nullable=True))]
     vector: Annotated[
-        list[list[float]],
-        Field(sa_column=Column(ARRAY(Vector(VECTOR_DIM), dimensions=1), nullable=True)),
+        list[float],
+        Field(sa_column=Column(Vector(VECTOR_DIM), nullable=True)),
     ]
     bmvector: Annotated[dict[int, int], Field(sa_column=Column(BM25Vector, nullable=True))]
     entities: Annotated[
@@ -210,14 +182,11 @@ class DocumentTable(SQLModel, table=True):
         int | None,
         Field(sa_column=Column(Integer, nullable=True)),
     ]
-    chunk_index: Annotated[
-        int | None,
-        Field(sa_column=Column(Integer, nullable=True)),
-    ]
     meta: Annotated[
         dict,
         Field(default_factory=dict, sa_column=Column("metadata", JSONB, nullable=False, server_default="{}")),
     ]
+    image_url: Annotated[str | None, Field(sa_column=Column(String(2048), nullable=True))]
 
     @declared_attr
     @classmethod
@@ -236,5 +205,5 @@ class DocumentTable(SQLModel, table=True):
                 postgresql_ops={"bmvector": "bm25_ops"},
             ),
             Index("idx_documents_entities", col(cls.entities), postgresql_using="gin"),
-            Index("idx_doc_chunk", col(cls.document_index), col(cls.chunk_index), unique=True),
+            Index("idx_doc_index", col(cls.document_index), unique=True),
         )

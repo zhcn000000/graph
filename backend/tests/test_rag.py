@@ -6,8 +6,7 @@ from sqlmodel import col
 
 from knowgraph.database.database import DatabaseManager
 from knowgraph.database.document import DocumentStore
-from knowgraph.database.source import SourceStore
-from knowgraph.database.tables import DocumentTable, Source
+from knowgraph.database.tables import DocumentTable
 from knowgraph.documents.models import Document
 from knowgraph.graph import RelationshipType
 from knowgraph.graph.schema import (
@@ -32,16 +31,6 @@ class TestAaddDocuments:
         assert result == []
 
     @pytest.mark.usefixtures("clean_tables")
-    async def test_aadd_documents_no_matching_source(self, doc_store):
-        """Document without matching Source should be skipped."""
-        doc = Document(
-            content="商代青铜器是重要的考古发现。饕餮纹和云雷纹是常见纹饰。",
-            name="nonexistent_source.md",
-        )
-        result = await doc_store.aadd_documents([doc])
-        assert result == []
-
-    @pytest.mark.usefixtures("clean_tables")
     async def test_aadd_documents_with_predefined_entities(
         self,
         doc_store,
@@ -52,29 +41,27 @@ class TestAaddDocuments:
         doc_name = sample_documents[0].name
         assert doc_name is not None
 
-        source_store = SourceStore(dbname=TEST_DB_NAME)
-        source_id = await source_store.ainsert_source(name=doc_name)
-        assert source_id is not None
         triples = sample_entities
         doc = Document(
             content=sample_documents[0].content,
             name=doc_name,
+            link=f"file:///data/{doc_name}",
+            metadata={"name": doc_name, "link": f"file:///data/{doc_name}"},
             triples=triples,
-            file_id=source_id,
         )
         result = await doc_store.aadd_documents([doc])
         assert len(result) > 0
 
+        doc_id = result[0]
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:
             stmt = select(col(DocumentTable.entities)).where(
-                col(DocumentTable.file_id) == source_id,
+                col(DocumentTable.id) == doc_id,
             )
             result = await session.execute(stmt)
-            all_entities: set[str] = set()
-            for row in result.fetchall():
-                if row[0]:
-                    all_entities.update(row[0])
+            row = result.fetchone()
+            assert row is not None
+            all_entities = set(row[0] or [])
             assert "cidoc:artifact/青铜鼎" in all_entities
 
         for t in triples:
@@ -92,30 +79,27 @@ class TestAaddDocuments:
         doc_name = sample_documents[0].name
         assert doc_name is not None
 
-        source_store = SourceStore(dbname=TEST_DB_NAME)
-        source_id = await source_store.ainsert_source(name=doc_name)
-        assert source_id is not None
-
         doc = Document(
             content=sample_documents[0].content,
             name=doc_name,
+            link=f"file:///data/{doc_name}",
+            metadata={"name": doc_name, "link": f"file:///data/{doc_name}"},
             triples=sample_entities,
-            file_id=source_id,
         )
 
         result = await doc_store.aadd_documents([doc])
         assert len(result) > 0
 
+        doc_id = result[0]
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:
             stmt = select(col(DocumentTable.entities)).where(
-                col(DocumentTable.file_id) == source_id,
+                col(DocumentTable.id) == doc_id,
             )
             result = await session.execute(stmt)
-            all_entities: set[str] = set()
-            for row in result.fetchall():
-                if row[0]:
-                    all_entities.update(row[0])
+            row = result.fetchone()
+            assert row is not None
+            all_entities = set(row[0] or [])
 
         expected_uris = {t.subject.uri for t in sample_entities} | {t.object.uri for t in sample_entities}
         for uri in expected_uris:
@@ -131,10 +115,6 @@ class TestAaddDocuments:
         doc_name = sample_documents[0].name
         assert doc_name is not None
 
-        source_store = SourceStore(dbname=TEST_DB_NAME)
-        source_id = await source_store.ainsert_source(name=doc_name)
-        assert source_id is not None
-
         pre_scored_triple = ExtractedTriple(
             subject=ExtractedEntity(name="测试文物", entity_type=EntityType.ARTIFACT),
             predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY, strength=0.88),
@@ -145,23 +125,24 @@ class TestAaddDocuments:
         doc = Document(
             content=sample_documents[0].content,
             name=doc_name,
+            link=f"file:///data/{doc_name}",
+            metadata={"name": doc_name, "link": f"file:///data/{doc_name}"},
             triples=[pre_scored_triple],
-            file_id=source_id,
         )
 
         result = await doc_store.aadd_documents([doc])
         assert len(result) > 0
 
+        doc_id = result[0]
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:
             stmt = select(col(DocumentTable.entities)).where(
-                col(DocumentTable.file_id) == source_id,
+                col(DocumentTable.id) == doc_id,
             )
             result = await session.execute(stmt)
-            all_entities: set[str] = set()
-            for row in result.fetchall():
-                if row[0]:
-                    all_entities.update(row[0])
+            row = result.fetchone()
+            assert row is not None
+            all_entities = set(row[0] or [])
 
         assert pre_scored_triple.subject.uri in all_entities
         assert pre_scored_triple.object.uri in all_entities
@@ -180,14 +161,7 @@ class TestIntegrationFlow:
         sample_documents: list[Document],
         sample_entities: list[ExtractedTriple],
     ):
-        """Insert multiple documents via aadd_documents with pre-created sources."""
-        source_store = SourceStore(dbname=TEST_DB_NAME)
-        source_ids = []
-        for doc in sample_documents:
-            assert doc.name is not None
-            source_id = await source_store.ainsert_source(name=doc.name)
-            source_ids.append(source_id)
-
+        """Insert multiple documents via aadd_documents."""
         name_a = sample_documents[0].name
         name_b = sample_documents[1].name
         assert name_a is not None
@@ -197,14 +171,16 @@ class TestIntegrationFlow:
             Document(
                 content=sample_documents[0].content,
                 name=name_a,
+                link=f"file:///data/{name_a}",
+                metadata={"name": name_a, "link": f"file:///data/{name_a}"},
                 triples=sample_entities[:2],
-                file_id=source_ids[0],
             ),
             Document(
                 content=sample_documents[1].content,
                 name=name_b,
+                link=f"file:///data/{name_b}",
+                metadata={"name": name_b, "link": f"file:///data/{name_b}"},
                 triples=sample_entities[2:],
-                file_id=source_ids[1],
             ),
         ]
 
@@ -212,12 +188,9 @@ class TestIntegrationFlow:
         assert len(result) > 0
 
         db = DatabaseManager(TEST_DB_NAME)
-        source_names = [name_a, name_b]
         async with db.asession() as session:
             cnt_stmt = select(func.count(col(DocumentTable.id))).where(
-                col(DocumentTable.file_id).in_(
-                    select(col(Source.id)).where(col(Source.name).in_(source_names)),
-                ),
+                col(DocumentTable.id).in_(result),
             )
             result = await session.execute(cnt_stmt)
             assert (result.scalar() or 0) >= 2
@@ -232,38 +205,31 @@ class TestAaddDocumentsWithLLM:
 
     @pytest.mark.usefixtures("clean_tables")
     async def test_aadd_documents_with_llm_produces_triples(self, doc_store):
-        source_store = SourceStore(dbname=TEST_DB_NAME)
-        source_id = await source_store.ainsert_source(name="llm_artifact_test")
-        assert source_id is not None
-
         doc = Document(
             content="青花瓷瓶是明朝景德镇制作的著名瓷器，现收藏于克利夫兰艺术博物馆。",
             name="llm_artifact_test",
-            file_id=source_id,
+            link="file:///data/llm_artifact_test",
+            metadata={"name": "llm_artifact_test", "link": "file:///data/llm_artifact_test"},
         )
 
         result = await doc_store.aadd_documents([doc], use_llm=True)
         assert len(result) > 0
 
+        doc_id = result[0]
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:
             stmt = select(col(DocumentTable.entities)).where(
-                col(DocumentTable.file_id) == source_id,
+                col(DocumentTable.id) == doc_id,
             )
             result = await session.execute(stmt)
-            all_entities: set[str] = set()
-            for row in result.fetchall():
-                if row[0]:
-                    all_entities.update(row[0])
+            row = result.fetchone()
+            assert row is not None
+            all_entities = set(row[0] or [])
 
         assert len(all_entities) >= 2, f"Expected at least 2 entities from LLM extraction, got {len(all_entities)}"
 
     @pytest.mark.usefixtures("clean_tables")
     async def test_aadd_documents_with_llm_and_structural_triples(self, doc_store):
-        source_store = SourceStore(dbname=TEST_DB_NAME)
-        source_id = await source_store.ainsert_source(name="llm_combined_test")
-        assert source_id is not None
-
         structural_triple = ExtractedTriple(
             subject=ExtractedEntity(name="青铜鼎", entity_type=EntityType.ARTIFACT),
             predicate=RelationshipInfo(predicate=RelationshipType.COLLECTED_BY),
@@ -274,8 +240,9 @@ class TestAaddDocumentsWithLLM:
         doc = Document(
             content="商代青铜鼎收藏于大都会博物馆。器身饰有饕餮纹和云雷纹，是中国古代青铜艺术的代表。",
             name="llm_combined_test",
+            link="file:///data/llm_combined_test",
+            metadata={"name": "llm_combined_test", "link": "file:///data/llm_combined_test"},
             triples=[structural_triple],
-            file_id=source_id,
         )
 
         result = await doc_store.aadd_documents([doc], use_llm=True)

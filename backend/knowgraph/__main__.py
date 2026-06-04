@@ -12,7 +12,7 @@ from rich.logging import RichHandler
 from rich.table import Table
 from typer import Argument, Option, Typer
 
-from knowgraph.adapters import PhilaMuseumAdapter, PhilaMuseumRawAdapter
+from knowgraph.adapters import AsianArtAdapter, MetMuseumAdapter, PhilaMuseumAdapter
 from knowgraph.database.artifact import ArtifactStore
 from knowgraph.database.document import DocumentStore
 from knowgraph.database.initdb import clean_db, init_db, reset_db
@@ -24,7 +24,7 @@ from knowgraph.utils.environments import find_project_directory, settings
 cmd = Typer(pretty_exceptions_enable=False)
 ingest_cmd = Typer(pretty_exceptions_enable=False, help="数据摄入命令")
 
-DEFAULT_DATA_DIR = find_project_directory() / "backend" / "philamuseum"
+DEFAULT_DATA_DIR = find_project_directory() / "backend" / "doc"
 
 
 @cmd.command()
@@ -126,7 +126,7 @@ async def ingest_csv(
     ] = DEFAULT_DATA_DIR,
     adapter: Annotated[
         str,
-        Option("--adapter", "-a", help="Adapter/template: philamuseum, philamuseum_raw"),
+        Option("--adapter", "-a", help="Adapter/template: philamuseum, metmuseum, asianart"),
     ] = "philamuseum",
     do_ingest: Annotated[
         bool,
@@ -144,8 +144,10 @@ async def ingest_csv(
     data_dir = data_dir.resolve()
     if adapter == "philamuseum":
         adp = PhilaMuseumAdapter(data_dir=data_dir)
-    elif adapter == "philamuseum_raw":
-        adp = PhilaMuseumRawAdapter(data_dir=data_dir)
+    elif adapter == "metmuseum":
+        adp = MetMuseumAdapter(data_dir=data_dir)
+    elif adapter == "asianart":
+        adp = AsianArtAdapter(data_dir=data_dir)
     else:
         logging.error("未知适配器: %s", adapter)
         raise SystemExit(1)
@@ -161,12 +163,12 @@ async def ingest_csv(
 
     if do_ingest and ids:
         doc_store = DocumentStore()
-        file_ids = await doc_store.alingest_artifacts(
+        doc_ids = await doc_store.alingest_artifacts(
             artifact_ids=ids,
             use_llm=use_llm,
             dedup_threshold=dedup_threshold,
         )
-        logging.info("已提取 %d 个文档到 DocumentTable", len(file_ids))
+        logging.info("已提取 %d 个文档到 DocumentTable", len(doc_ids))
 
 
 @ingest_cmd.command("artifacts")
@@ -193,7 +195,7 @@ async def ingest_artifacts(
     ] = 0,
 ) -> None:
     store = DocumentStore()
-    total_file_ids: list[UUID] = []
+    total_doc_ids: list[UUID] = []
     current_offset = offset
 
     while True:
@@ -215,18 +217,18 @@ async def ingest_artifacts(
             continue
         if not batch_ids:
             break
-        total_file_ids.extend(batch_ids)
+        total_doc_ids.extend(batch_ids)
         current_offset += batch_size if batch_size > 0 else len(batch_ids)
         logging.info(
             "批次 offset=%d 完成，提取 %d 个文档，累计 %d",
             current_offset - (batch_size if batch_size > 0 else len(batch_ids)),
             len(batch_ids),
-            len(total_file_ids),
+            len(total_doc_ids),
         )
         if batch_size <= 0:
             break
 
-    logging.info("已从 ArtifactStore 提取 %d 个文档到 DocumentTable", len(total_file_ids))
+    logging.info("已从 ArtifactStore 提取 %d 个文档到 DocumentTable", len(total_doc_ids))
 
 
 cmd.add_typer(ingest_cmd, name="ingest")

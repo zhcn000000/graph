@@ -72,8 +72,8 @@ TEST_DB_NAME = "test_data"
 settings.POSTGRES_DB = TEST_DB_NAME
 
 
-def make_sample_vector() -> list[list[float]]:
-    return [[0.1] * 1024]
+def make_sample_vector() -> list[float]:
+    return [0.1] * 1024
 
 
 def make_sample_embedding() -> list[list[float]]:
@@ -98,13 +98,13 @@ def sample_documents(sample_document_text: str) -> list[Document]:
             content=sample_document_text,
             name="sample_artifact.md",
             link="file:///data/sample_artifact.md",
-            metadata={"file_name": "sample_artifact.md"},
+            metadata={"name": "sample_artifact.md", "link": "file:///data/sample_artifact.md"},
         ),
         Document(
             content="明朝青花瓷以其独特的蓝色釉料闻名于世。景德镇是青花瓷的主要产地。",
             name="sample_porcelain.md",
             link="file:///data/sample_porcelain.md",
-            metadata={"file_name": "sample_porcelain.md"},
+            metadata={"name": "sample_porcelain.md", "link": "file:///data/sample_porcelain.md"},
         ),
     ]
 
@@ -175,7 +175,7 @@ def mock_uuid_list() -> list[UUID]:
 
 
 @pytest.fixture
-def source_id() -> UUID:
+def artifact_id() -> UUID:
     return uuid4()
 
 

@@ -2,7 +2,7 @@ from pydantic_ai import ModelSettings
 
 from ..chat.model import agent
 from ..chat.struct import ModelDeps
-from ..documents.embedder import arerank_documents
+from ..documents.embedder import arerank_scores
 from ..documents.models import Document
 from .schema import (
     ExtractedTriple,
@@ -34,10 +34,11 @@ async def compute_triples_strength(
         return triples
     combined_query = " ".join([_build_edge_query_from_triple(t) for t in triples])
     edge_docs = [Document(content=_build_edge_query_from_triple(t)) for t in triples]
-    reranked = await arerank_documents(combined_query, edge_docs, topn=topn, skip_sorting=True)
-    for t, rd in zip(triples, reranked, strict=True):
-        if rd.query_score is not None:
-            t.predicate.strength = rd.query_score
+    score_map = await arerank_scores(combined_query, edge_docs)
+    for idx, t in enumerate(triples):
+        score = score_map.get(idx)
+        if score is not None:
+            t.predicate.strength = score
     return triples
 
 
