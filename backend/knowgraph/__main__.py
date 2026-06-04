@@ -117,6 +117,18 @@ async def search(
         rprint(gtable)
 
 
+@cmd.command()
+@runnify
+async def download_images(
+    museum: Annotated[str | None, Option("--museum", "-m", help="Filter by museum name")] = None,
+    limit: Annotated[int, Option("--limit", "-n", help="Max images to download")] = 50,
+    concurrency: Annotated[int, Option("--concurrency", "-c", help="Max concurrent downloads")] = 40,
+) -> None:
+    store = ArtifactStore()
+    count = await store.adownload_images(museum=museum, limit=limit, concurrency=concurrency)
+    rprint(f"已下载 {count} 张图片")
+
+
 @ingest_cmd.command("csv")
 @runnify
 async def ingest_csv(

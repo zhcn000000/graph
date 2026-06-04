@@ -1,12 +1,18 @@
+import asyncio
+import logging
 from datetime import date
+from itertools import starmap
 from uuid import UUID
 
+import httpx
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
 
 from .database import DatabaseManager
 from .tables import ArtifactRawTable
+
+logger = logging.getLogger(__name__)
 
 
 class ArtifactStore:
@@ -241,3 +247,49 @@ class ArtifactStore:
             result = await session.execute(stmt)
             await session.commit()
             return result.fetchone() is not None
+
+    async def adownload_images(
+        self,
+        museum: str | None = None,
+        limit: int = 50,
+        concurrency: int = 5,
+    ) -> int:
+        async with self.__db.asession() as session:
+            stmt = select(col(ArtifactRawTable.id), col(ArtifactRawTable.image_url)).where(
+                col(ArtifactRawTable.image_url).isnot(None),
+                col(ArtifactRawTable.image_url) != "",  # noqa: PLC1901
+                col(ArtifactRawTable.image_data).is_(None),
+            )
+            if museum:
+                stmt = stmt.where(col(ArtifactRawTable.museum) == museum)
+            stmt = stmt.limit(limit)
+            result = await session.execute(stmt)
+            rows = [(row[0], row[1]) for row in result.fetchall()]
+
+            if not rows:
+                return 0
+
+            sem = asyncio.Semaphore(concurrency)
+
+            async def download_one(uid: UUID, url: str) -> tuple[UUID, bytes | None]:
+                async with sem:
+                    try:
+                        async with httpx.AsyncClient(timeout=30) as client:
+                            resp = await client.get(url)
+                            resp.raise_for_status()
+                            return uid, resp.content
+                    except Exception:
+                        logger.warning("Failed to download image from %s", url)
+                        return uid, None
+
+            results = await asyncio.gather(*list(starmap(download_one, rows)))
+
+            count = 0
+            for uid, data in results:
+                if data is not None:
+                    ustmt = update(ArtifactRawTable).where(col(ArtifactRawTable.id) == uid).values(image_data=data)
+                    await session.execute(ustmt)
+                    count += 1
+
+            await session.commit()
+            return count
