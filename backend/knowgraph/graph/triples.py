@@ -1,5 +1,3 @@
-from itertools import starmap
-
 from asyncer import create_task_group
 from pydantic_ai import ModelSettings
 
@@ -8,6 +6,7 @@ from ..chat.struct import ModelDeps
 from ..documents.embedder import arerank_scores
 from ..documents.models import Document
 from .schema import (
+    EntityType,
     ExtractedTriple,
 )
 
@@ -22,59 +21,55 @@ def _format_pre_extracted_triples(triples: list[ExtractedTriple]) -> str:
     return "\n".join(lines)
 
 
-def _build_edge_query_from_triple(t: ExtractedTriple) -> str:
-    parts = [f"{t.subject.name}", f"{t.predicate.predicate.replace('_', ' ')}", f"{t.object.name}"]
-    if t.description:
-        parts.append(f"({t.description})")
-    return " ".join(parts)
-
-
 async def compute_triples_strength(
     triples: list[ExtractedTriple],
-    topn: int = 200,
 ) -> list[ExtractedTriple]:
     if not triples:
         return triples
-    combined_query = " ".join([_build_edge_query_from_triple(t) for t in triples])
-    edge_docs = [Document(content=_build_edge_query_from_triple(t)) for t in triples]
-    score_map = await arerank_scores(combined_query, edge_docs)
+
+    groups: dict[str, list[tuple[int, ExtractedTriple]]] = {}
     for idx, t in enumerate(triples):
-        score = score_map.get(idx)
-        if score is not None:
-            t.predicate.strength = score
+        if t.subject.entity_type != EntityType.ARTIFACT:
+            continue
+        key = f"{t.subject.name}::{t.subject.entity_type.value}"
+        groups.setdefault(key, []).append((idx, t))
+
+    async def rerank_group(items: list[tuple[int, ExtractedTriple]]) -> None:
+        subject = items[0][1].subject
+        query = f"{subject.name} {subject.description or ''}".strip()
+        edge_docs = [
+            Document(
+                content=f"{t.predicate.predicate.value} {t.object.name} "
+                f"{t.object.description or ''} {t.description or ''}".strip()
+            )
+            for _, t in items
+        ]
+        score_map = await arerank_scores(query, edge_docs)
+        for local_idx, (global_idx, _) in enumerate(items):
+            score = score_map.get(local_idx)
+            if score is not None:
+                triples[global_idx].predicate.strength = score
+
+    if groups:
+        async with create_task_group() as tg:
+            for items in groups.values():
+                tg.soonify(rerank_group)(items)
+
     return triples
 
 
 async def compute_triples_strength_batch(
     doc_triples_list: list[list[ExtractedTriple]],
-    chunk_size: int = 200,
 ) -> None:
-    all_triples: list[tuple[int, int, ExtractedTriple]] = []
-    for doc_idx, triples in enumerate(doc_triples_list):
-        for triple_idx, t in enumerate(triples):
-            all_triples.append((doc_idx, triple_idx, t))
-
-    if not all_triples:
+    tasks_data = [triples for triples in doc_triples_list if triples]
+    if not tasks_data:
         return
-    to_rerank: list[tuple[str, list[Document]]] = []
-    for chunk_start in range(0, len(all_triples), chunk_size):
-        chunk = all_triples[chunk_start : chunk_start + chunk_size]
-        chunk_triples = [t for _, _, t in chunk]
-        combined_query = " ".join([_build_edge_query_from_triple(t) for t in chunk_triples])
-        edge_docs = [Document(content=_build_edge_query_from_triple(t)) for t in chunk_triples]
-        to_rerank.append((combined_query, edge_docs))
-    async with create_task_group() as tg:
-        rerank_tasks = list(starmap(tg.soonify(arerank_scores), to_rerank))
-    results = [task.value for task in rerank_tasks]
 
-    for chunk_idx in range(len(to_rerank)):
-        chunk_start = chunk_idx * chunk_size
-        chunk = all_triples[chunk_start : chunk_start + chunk_size]
-        score_map = results[chunk_idx]
-        for local_idx, (doc_idx, triple_idx, _) in enumerate(chunk):
-            score = score_map.get(local_idx)
-            if score is not None:
-                doc_triples_list[doc_idx][triple_idx].predicate.strength = score
+    async with create_task_group() as tg:
+        tasks = [tg.soonify(compute_triples_strength)(triples) for triples in tasks_data]
+
+    for task in tasks:
+        _ = task.value
 
 
 class LLMExtractor:
@@ -83,7 +78,7 @@ class LLMExtractor:
 你无需提取关系中的strength字段，设置为null获不填即可，后续会根据三元组文本内容进行相关性计算来赋值strength。
 如果文物记录中的信息不完整或你怀疑有错（如缺少朝代、材质、艺术家等），
 你可以结合自身知识或必要时使用 search_web 工具进行网络搜索来补充缺失的上下文信息，
-确保提取的三元组尽可能准确和完整。
+确保提取的三元组尽可能准确和完整。其中，subject总是应该是文物，
 
 ## 实体类型
 - artifact (文物): 具有唯一标识的名称
