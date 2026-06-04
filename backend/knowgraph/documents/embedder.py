@@ -6,10 +6,10 @@ import httpx
 
 from .models import Document
 
-MODEL_URL = "https://api.siliconflow.cn"
-EMBEDDING_UID = "Qwen/Qwen3-VL-Embedding-8B"
-RERANKER_UID = "Qwen/Qwen3-VL-Reranker-8B"
-EMBEDDING_DIMS = 1024
+MODEL_URL = "https://nw.lonwell.cn:10001"
+EMBEDDING_UID = "qwen3-embedding"
+RERANKER_UID = "qwen3-reranker"
+EMBEDDING_DIMS = 4096
 API_KEY = os.environ.get("SILICONFLOW_API_KEY")
 
 _MAX_RETRIES = 3
@@ -32,9 +32,9 @@ async def _retry_post(url: str, json: dict, headers: dict, time_out: float = 60.
 def _build_embedding_input(
     documents: Sequence[Document | str],
     image_urls: Sequence[str | None] | None = None,
-) -> list[str | dict | list[dict]]:
-    items: list[str | dict | list[dict]] = []
-    has_images = image_urls and any(image_urls)
+) -> tuple[str, list[str] | list[dict]]:
+    texts: list[str] = []
+    images: list[str | None] = []
 
     for i, d in enumerate(documents):
         text = d.content if isinstance(d, Document) else d
@@ -43,14 +43,20 @@ def _build_embedding_input(
         if not img_url and isinstance(d, Document) and d.image_url:
             img_url = d.image_url
 
-        if img_url and has_images:
-            items.append([{"text": text}, {"image": img_url}])
-        elif img_url:
-            items.append([{"text": text}, {"image": img_url}])
-        else:
-            items.append(text)
+        texts.append(text)
+        images.append(img_url)
 
-    return items
+    if not any(images):
+        return ("input", texts)
+
+    messages: list[dict] = []
+    for text, img_url in zip(texts, images, strict=True):
+        content: list[dict] = [{"type": "text", "text": text}]
+        if img_url:
+            content.append({"type": "image_url", "image_url": {"url": img_url}})
+        messages.append({"role": "user", "content": content})
+
+    return ("messages", messages)
 
 
 async def aembed_documents(
@@ -61,9 +67,10 @@ async def aembed_documents(
     if API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
 
-    payload = {
+    field_name, field_value = _build_embedding_input(documents, image_urls)
+    payload: dict = {
         "model": EMBEDDING_UID,
-        "input": _build_embedding_input(documents, image_urls),
+        field_name: field_value,
         "encoding_format": "float",
         "dimensions": EMBEDDING_DIMS,
     }
@@ -76,7 +83,12 @@ def _build_rerank_document(d: Document | str) -> str | dict:
     if isinstance(d, str):
         return d
     if d.image_url:
-        return {"text": d.content, "image": d.image_url}
+        return {
+            "content": [
+                {"type": "text", "text": d.content},
+                {"type": "image_url", "image_url": {"url": d.image_url}},
+            ]
+        }
     return d.content
 
 

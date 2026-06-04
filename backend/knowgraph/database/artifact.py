@@ -127,8 +127,9 @@ class ArtifactStore:
                     "accession_number": artifact.get("accession_number", ""),
                     "artist": artifact.get("artist", ""),
                 }
-                if "crawl_date" in artifact:
-                    values["crawl_date"] = artifact["crawl_date"]
+                crawl_date = artifact.get("crawl_date")
+                if crawl_date and isinstance(crawl_date, date):
+                    values["crawl_date"] = crawl_date
                 stmt = (
                     insert(ArtifactRawTable)
                     .values(**values)

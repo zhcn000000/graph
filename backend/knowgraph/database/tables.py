@@ -195,8 +195,8 @@ class DocumentTable(SQLModel, table=True):
             Index(
                 "idx_documents_vector",
                 col(cls.vector),
-                postgresql_using="vchordrq",
-                postgresql_ops={"vector": "vector_maxsim_ops"},
+                postgresql_using="vchordg",
+                postgresql_ops={"vector": "vector_l2_ops"},
             ),
             Index(
                 "idx_documents_bmvector",

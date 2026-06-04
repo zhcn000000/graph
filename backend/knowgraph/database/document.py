@@ -152,7 +152,7 @@ class DocumentStore:
             stmt = (
                 select(
                     col(DocumentTable.id),
-                    col(DocumentTable.vector).op("@#", return_type=Float)(vector).label("sim"),
+                    col(DocumentTable.vector).l2_distance(vector).label("sim"),  # type: ignore
                     col(DocumentTable.bmvector)
                     .neg_bm25_rank(  # type: ignore
                         func.to_bm25query("idx_documents_bmvector", cast(bmvector, BM25Vector)),

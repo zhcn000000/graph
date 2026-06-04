@@ -60,7 +60,7 @@ class RAGMode:
         if regex:
             vector_stmt = vector_stmt.where(col(DocumentTable.content).op("~")(regex))
         vector_stmt = vector_stmt.order_by(
-            col(DocumentTable.vector).op("@#", return_type=Float)(query_vector),
+            col(DocumentTable.vector).l2_distance(query_vector),  # type: ignore
         ).limit(topn)
 
         vector_result = await session.execute(vector_stmt)

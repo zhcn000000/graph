@@ -24,7 +24,7 @@ from knowgraph.utils.environments import find_project_directory, settings
 cmd = Typer(pretty_exceptions_enable=False)
 ingest_cmd = Typer(pretty_exceptions_enable=False, help="数据摄入命令")
 
-DEFAULT_DATA_DIR = find_project_directory() / "backend" / "doc"
+DEFAULT_DATA_DIR = find_project_directory() / "doc"
 
 
 @cmd.command()
@@ -126,8 +126,8 @@ async def ingest_csv(
     ] = DEFAULT_DATA_DIR,
     adapter: Annotated[
         str,
-        Option("--adapter", "-a", help="Adapter/template: philamuseum, metmuseum, asianart"),
-    ] = "philamuseum",
+        Option("--adapter", "-a", help="Adapter/template: philamuseum, metmuseum, asianart, all"),
+    ] = "all",
     do_ingest: Annotated[
         bool,
         Option("--ingest/--no-ingest", help="Also ingest new artifacts into DocumentTable"),
@@ -142,6 +142,31 @@ async def ingest_csv(
     ] = 0.95,
 ) -> None:
     data_dir = data_dir.resolve()
+    if adapter == "all":
+        for adp_cls in [PhilaMuseumAdapter, MetMuseumAdapter, AsianArtAdapter]:
+            adp = adp_cls(data_dir=data_dir)
+            rows = adp.load_csv()
+            if not rows:
+                logging.warning(f"适配器 {adp_cls.__name__} 的 CSV 中没有有效数据行")
+                continue
+
+            store = ArtifactStore()
+            ids = await store.ainsert_artifacts(rows, skip_existing=True)
+            logging.info(
+                f"适配器 {adp_cls.__name__}: 已导入 {len(ids)} 条新文物记录，跳过 {len(rows) - len(ids)} 条已存在",
+            )
+
+            if do_ingest and ids:
+                doc_store = DocumentStore()
+                doc_ids = await doc_store.alingest_artifacts(
+                    artifact_ids=ids,
+                    use_llm=use_llm,
+                    dedup_threshold=dedup_threshold,
+                )
+                logging.info(
+                    f"适配器 {adp_cls.__name__}: 已提取 {len(doc_ids)} 个文档到 DocumentTable",
+                )
+        return
     if adapter == "philamuseum":
         adp = PhilaMuseumAdapter(data_dir=data_dir)
     elif adapter == "metmuseum":
