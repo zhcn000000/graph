@@ -5,6 +5,7 @@ from itertools import starmap
 from uuid import UUID
 
 import httpx
+from asyncer import create_task_group
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
@@ -252,7 +253,7 @@ class ArtifactStore:
         self,
         museum: str | None = None,
         limit: int = 50,
-        concurrency: int = 5,
+        concurrency: int = 40,
     ) -> int:
         async with self.__db.asession() as session:
             stmt = select(col(ArtifactRawTable.id), col(ArtifactRawTable.image_url)).where(
@@ -282,7 +283,9 @@ class ArtifactStore:
                         logger.warning("Failed to download image from %s", url)
                         return uid, None
 
-            results = await asyncio.gather(*list(starmap(download_one, rows)))
+            async with create_task_group() as tg:
+                download_tasks = list(starmap(tg.soonify(download_one), rows))
+            results = [task.value for task in download_tasks]
 
             count = 0
             for uid, data in results:
