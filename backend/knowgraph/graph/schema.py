@@ -1,3 +1,5 @@
+import re
+from difflib import get_close_matches
 from enum import StrEnum
 from uuid import UUID
 
@@ -17,6 +19,95 @@ class EntityType(StrEnum):
 
 
 _INVALID_URI_CHARS = {":", "{", "}", "[", "]", '"', "'", "\n", "\r", "\t"}
+
+_KNOWN_DYNASTIES: list[str] = [
+    "Xia Dynasty",
+    "Shang Dynasty",
+    "Zhou Dynasty",
+    "Qin Dynasty",
+    "Han Dynasty",
+    "Three Kingdoms",
+    "Jin Dynasty",
+    "Southern and Northern Dynasties",
+    "Sui Dynasty",
+    "Tang Dynasty",
+    "Five Dynasties and Ten Kingdoms",
+    "Liao Dynasty",
+    "Song Dynasty",
+    "Western Xia",
+    "Yuan Dynasty",
+    "Ming Dynasty",
+    "Qing Dynasty",
+    "Spring and Autumn period",
+    "Warring States period",
+    "Eastern Zhou period",
+    "Western Zhou period",
+    "Neolithic period",
+    "Joseon dynasty",
+    "Edo period",
+    "Mughal period",
+    "Safavid period",
+    "Ilkhanid period",
+    "People's Republic of China",
+    "夏朝",
+    "商朝",
+    "周朝",
+    "秦朝",
+    "汉朝",
+    "晋朝",
+    "隋朝",
+    "唐朝",
+    "宋朝",
+    "辽朝",
+    "金朝",
+    "元朝",
+    "明朝",
+    "清朝",
+    "三国",
+    "南北朝",
+    "五代十国",
+    "春秋",
+    "战国",
+    "新石器时代",
+    "西夏",
+]
+
+
+def normalize_dynasty_name(name: str) -> str:
+    prev = None
+    while prev != name:
+        prev = name
+        name = re.sub(r"\s*\([^)]*\)", "", name).strip()
+
+    name = re.sub(r"\s+", " ", name).strip()
+    name = re.sub(r"\s*[;,—–\-]\s*$", "", name).strip()
+
+    name = re.sub(r"\b\d{1,4}\s*(BCE?|CE|AD)?\b", "", name).strip()
+    name = re.sub(r"\b\d+(st|nd|rd|th)\s*century\b", "", name, flags=re.IGNORECASE).strip()
+    name = re.sub(r"\b(c\.|ca\.?|circa|approx\.?)\s*\d+\b", "", name, flags=re.IGNORECASE).strip()
+
+    name = re.sub(r"\b(Early|Late|Mid|Middle)\s+", "", name, flags=re.IGNORECASE).strip()
+
+    name = re.sub(r"\s+", " ", name).strip()
+    name = re.sub(r"\s*[;,—–\-]\s*$", "", name).strip()
+
+    if not name:
+        return "unknown"
+
+    match = get_close_matches(name, _KNOWN_DYNASTIES, n=1, cutoff=0.5)
+    return match[0] if match else name
+
+
+def normalize_entity_name(name: str, entity_type: EntityType) -> str:
+    if entity_type == EntityType.DYNASTY:
+        name = normalize_dynasty_name(name)
+    else:
+        prev = None
+        while prev != name:
+            prev = name
+            name = re.sub(r"\s*\([^)]*\)", "", name).strip()
+    name = re.sub(r"\s+", " ", name.strip())
+    return name
 
 
 def get_entity_uri(entity_type: EntityType, name: str) -> str:
@@ -77,8 +168,12 @@ class ExtractedEntity(BaseModel):
     description: str | None = None
 
     @property
+    def canonical_name(self) -> str:
+        return normalize_entity_name(self.name, self.entity_type)
+
+    @property
     def uri(self) -> str:
-        return get_entity_uri(self.entity_type, self.name)
+        return get_entity_uri(self.entity_type, self.canonical_name)
 
 
 class ExtractedTriple(BaseModel):

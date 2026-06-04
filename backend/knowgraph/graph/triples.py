@@ -1,3 +1,6 @@
+from itertools import starmap
+
+from asyncer import create_task_group
 from pydantic_ai import ModelSettings
 
 from ..chat.model import agent
@@ -40,6 +43,38 @@ async def compute_triples_strength(
         if score is not None:
             t.predicate.strength = score
     return triples
+
+
+async def compute_triples_strength_batch(
+    doc_triples_list: list[list[ExtractedTriple]],
+    chunk_size: int = 200,
+) -> None:
+    all_triples: list[tuple[int, int, ExtractedTriple]] = []
+    for doc_idx, triples in enumerate(doc_triples_list):
+        for triple_idx, t in enumerate(triples):
+            all_triples.append((doc_idx, triple_idx, t))
+
+    if not all_triples:
+        return
+    to_rerank: list[tuple[str, list[Document]]] = []
+    for chunk_start in range(0, len(all_triples), chunk_size):
+        chunk = all_triples[chunk_start : chunk_start + chunk_size]
+        chunk_triples = [t for _, _, t in chunk]
+        combined_query = " ".join([_build_edge_query_from_triple(t) for t in chunk_triples])
+        edge_docs = [Document(content=_build_edge_query_from_triple(t)) for t in chunk_triples]
+        to_rerank.append((combined_query, edge_docs))
+    async with create_task_group() as tg:
+        rerank_tasks = list(starmap(tg.soonify(arerank_scores), to_rerank))
+    results = [task.value for task in rerank_tasks]
+
+    for chunk_idx in range(len(to_rerank)):
+        chunk_start = chunk_idx * chunk_size
+        chunk = all_triples[chunk_start : chunk_start + chunk_size]
+        score_map = results[chunk_idx]
+        for local_idx, (doc_idx, triple_idx, _) in enumerate(chunk):
+            score = score_map.get(local_idx)
+            if score is not None:
+                doc_triples_list[doc_idx][triple_idx].predicate.strength = score
 
 
 class LLMExtractor:

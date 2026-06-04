@@ -3,7 +3,7 @@ import os
 from collections.abc import Sequence
 
 import httpx
-from httpx import HTTPError
+from httpx import HTTPError, HTTPStatusError
 
 from .models import Document
 
@@ -15,6 +15,8 @@ API_KEY = os.environ.get("SILICONFLOW_API_KEY")
 
 _MAX_RETRIES = 10
 
+_FATAL_HTTP_STATUS = frozenset({400, 401, 403, 404, 405, 413, 422})
+
 
 async def _retry_post(url: str, json: dict, headers: dict, time_out: float = 60.0) -> dict:
     for attempt in range(1, _MAX_RETRIES + 1):
@@ -23,6 +25,12 @@ async def _retry_post(url: str, json: dict, headers: dict, time_out: float = 60.
                 response = await client.post(url, json=json, headers=headers)
                 response.raise_for_status()
                 return response.json()
+        except httpx.HTTPStatusError as exc:
+            if 400 <= exc.response.status_code < 500:
+                raise
+            if attempt == _MAX_RETRIES:
+                raise
+            logging.warning("HTTP %d 错误 (第 %d/%d 次)，重试中", exc.response.status_code, attempt, _MAX_RETRIES)
         except HTTPError as exc:
             if attempt == _MAX_RETRIES:
                 raise
@@ -82,10 +90,10 @@ async def aembed_documents(
     return [obj["embedding"] for obj in results["data"]]
 
 
-def _build_rerank_document(d: Document | str) -> str | dict:
+def _build_rerank_document(d: Document | str, force_text: bool = False) -> str | dict:
     if isinstance(d, str):
         return d
-    if d.image_url:
+    if not force_text and d.image_url:
         return {
             "content": [
                 {"type": "text", "text": d.content},
@@ -98,11 +106,12 @@ def _build_rerank_document(d: Document | str) -> str | dict:
 async def arerank_scores(
     query: str,
     documents: Sequence[Document | str],
+    force_text: bool = False,
 ) -> dict[int, float]:
     if not documents:
         return {}
 
-    doc_inputs = [_build_rerank_document(d) for d in documents]
+    doc_inputs = [_build_rerank_document(d, force_text=force_text) for d in documents]
 
     headers = {"Content-Type": "application/json"}
     if API_KEY:
@@ -123,11 +132,12 @@ async def arerank_documents(
     query: str,
     documents: Sequence[Document | str],
     topn: int | None = None,
+    force_text: bool = False,
 ) -> list[Document]:
     if not documents:
         return []
 
-    score_map = await arerank_scores(query, documents)
+    score_map = await arerank_scores(query, documents, force_text=force_text)
 
     reranked_docs: list[Document] = []
     for idx, src in enumerate(documents):

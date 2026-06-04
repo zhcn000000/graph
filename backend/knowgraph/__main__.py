@@ -209,7 +209,7 @@ async def ingest_artifacts(
     dedup_threshold: Annotated[
         float,
         Option("--dedup", help="Vector/BM25 dedup threshold (0=disabled, 0.95 recommended)"),
-    ] = 0.95,
+    ] = 0,
     offset: Annotated[
         int,
         Option("--offset", "-o", help="Skip the first N artifacts before ingesting"),
@@ -217,7 +217,7 @@ async def ingest_artifacts(
     batch_size: Annotated[
         int,
         Option("--batch-size", "-b", help="Batch size for incremental ingest (0=all at once)"),
-    ] = 0,
+    ] = 50,
 ) -> None:
     store = DocumentStore()
     total_doc_ids: list[UUID] = []

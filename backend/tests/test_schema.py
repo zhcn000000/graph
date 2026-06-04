@@ -65,8 +65,8 @@ class TestGetEntityURI:
     def test_uri_invalid_characters(self):
         invalid_names = [
             ("test:name", "cidoc:artifact/test_name"),
-            ("test{name}", "cidoc:artifact/test_name"),
-            ("test[name]", "cidoc:artifact/test_name"),
+            ("test{name}", "cidoc:artifact/test_name_"),
+            ("test[name]", "cidoc:artifact/test_name_"),
             ('test"name', "cidoc:artifact/test_name"),
             ("test\nname", "cidoc:artifact/test_name"),
         ]

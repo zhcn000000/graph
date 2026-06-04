@@ -3,6 +3,7 @@ import warnings
 from pathlib import Path
 from uuid import UUID
 
+from asyncer import create_task_group
 from networkx import DiGraph
 from sqlalchemy import cast, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -19,7 +20,7 @@ from knowgraph.graph.schema import (
     RelationshipInfo,
     RelationshipType,
 )
-from knowgraph.graph.triples import LLMExtractor, compute_triples_strength
+from knowgraph.graph.triples import LLMExtractor, compute_triples_strength_batch
 
 from .database import DatabaseManager
 from .graph import AgeGraphManager
@@ -203,7 +204,8 @@ class DocumentStore:
                     label=t.subject.entity_type.value.capitalize(),
                     properties={
                         "entity_type": t.subject.entity_type.value,
-                        "name": t.subject.name,
+                        "name": t.subject.canonical_name,
+                        "raw_name": t.subject.name,
                     },
                 )
                 graph.add_node(
@@ -211,7 +213,8 @@ class DocumentStore:
                     label=t.object.entity_type.value.capitalize(),
                     properties={
                         "entity_type": t.object.entity_type.value,
-                        "name": t.object.name,
+                        "name": t.object.canonical_name,
+                        "raw_name": t.object.name,
                     },
                 )
                 graph.add_edge(
@@ -266,45 +269,86 @@ class DocumentStore:
                 exist_result = await session.execute(exist_stmt)
                 existing_artifact_ids = {row[0] for row in exist_result.fetchall()}
 
-            for doc_idx, doc in enumerate(documents, start_idx):
-                if doc.artifact_id and doc.artifact_id in existing_artifact_ids:
+            active_docs = [d for d in documents if not (d.artifact_id and d.artifact_id in existing_artifact_ids)]
+            skipped += len(documents) - len(active_docs)
+
+            if not active_docs:
+                return []
+
+            # Phase 1: parallel LLM extraction
+            if use_llm:
+                async with create_task_group() as tg:
+                    llm_tasks = [tg.soonify(self._extract_llm_triples)(d) for d in active_docs]
+                llm_results = [t.value for t in llm_tasks]
+                for doc, result in zip(active_docs, llm_results, strict=True):
+                    if isinstance(result, BaseException):
+                        warnings.warn(
+                            f"LLM extraction failed for {doc.name}: {result}",
+                            UserWarning,
+                            stacklevel=2,
+                        )
+                    elif result:
+                        doc.triples = doc.triples + result
+
+            # Phase 2: batch triple strength (mutates triples in-place)
+            docs_with_triples = [d for d in active_docs if d.triples]
+            if docs_with_triples:
+                await compute_triples_strength_batch([d.triples for d in docs_with_triples])
+
+            for d in active_docs:
+                entity_uris: set[str] = set()
+                entity_uris |= self._triples_to_networkx(d.triples, full_graph)
+                entity_uris |= set(d.entities)
+                d.entities = list(entity_uris)
+
+            # Phase 3: batch embed
+            try:
+                async with create_task_group() as tg:
+                    embed_tasks = [tg.soonify(aembed_documents)([d]) for d in active_docs]
+                all_vectors = [t.value[0] for t in embed_tasks]
+            except Exception:
+                if not any(d.image_url for d in active_docs):
+                    raise
+                warnings.warn(
+                    "图片嵌入失败,回退到文本嵌入",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                for d in active_docs:
+                    d.image_url = None
+                async with create_task_group() as tg:
+                    embed_tasks = [tg.soonify(aembed_documents)([d]) for d in active_docs]
+                all_vectors = [t.value[0] for t in embed_tasks]
+
+            # Phase 4: parallel tokenize
+            async with create_task_group() as tg:
+                tokenize_tasks = [tg.soonify(atokenize_document)(d.content) for d in active_docs]
+            all_bmvectors = [tokenize_tasks[i].value for i in range(len(active_docs))]
+            # Phase 5: concurrent dedup check + collect inserts
+            to_check = list(zip(active_docs, all_vectors, all_bmvectors, strict=True))
+            if dedup_threshold > 0:
+                async with create_task_group() as tg:
+                    check_tasks = [
+                        tg.soonify(self._check_duplicate)(vec, bmvec, dedup_threshold) for _, vec, bmvec in to_check
+                    ]
+                is_dups = [t.value for t in check_tasks]
+            else:
+                is_dups = [False] * len(to_check)
+
+            for doc_idx, ((doc, vec, bmvec), is_dup) in enumerate(
+                zip(to_check, is_dups, strict=True),
+                start_idx,
+            ):
+                if is_dup:
                     skipped += 1
                     continue
-
-                entity_uris: set[str] = set()
-                if use_llm:
-                    doc_llm_triples = await self._extract_llm_triples(doc)
-                    doc.triples = doc.triples + doc_llm_triples
-                if doc.triples:
-                    doc.triples = await compute_triples_strength(doc.triples)
-                entity_uris |= self._triples_to_networkx(doc.triples, full_graph)
-                entity_uris |= set(doc.entities)
-
-                try:
-                    vectors = await aembed_documents([doc])
-                except Exception:
-                    if not doc.image_url:
-                        raise
-                    warnings.warn(
-                        f"图片嵌入失败,回退到文本嵌入: image_url={doc.image_url}",
-                        UserWarning,
-                        stacklevel=2,
-                    )
-                    doc.image_url = None
-                    vectors = await aembed_documents([doc], force_text=True)
-                bmvector = await atokenize_document(doc.content)
-
-                if dedup_threshold > 0:
-                    if await self._check_duplicate(vectors[0], bmvector, dedup_threshold):
-                        skipped += 1
-                        continue
 
                 insert_values.append({
                     "artifact_id": doc.artifact_id,
                     "content": doc.content,
-                    "vector": vectors[0],
-                    "bmvector": bmvector,
-                    "entities": list(entity_uris),
+                    "vector": vec,
+                    "bmvector": bmvec,
+                    "entities": doc.entities,
                     "meta": doc.metadata,
                     "image_url": doc.image_url,
                     "document_index": doc_idx,

@@ -1,8 +1,10 @@
 import operator
+import warnings
 from collections import Counter
 from typing import NamedTuple
 from uuid import UUID
 
+from asyncer import create_task_group
 from networkx import DiGraph, ego_graph, pagerank
 from sqlalchemy import Float, cast, func, select
 from sqlmodel import col
@@ -308,21 +310,23 @@ class RAGMode:
         rrf_k = 60
 
         async with self.__db.asession() as session:
-            vector_results = await self._vector_search(
-                queries=queries,
-                topn=topn,
-                session=session,
-                artifact_ids=artifact_ids,
-                regex=regex,
-            )
-
-            bm25_results = await self._bm25_search(
-                queries=queries,
-                topn=topn,
-                session=session,
-                artifact_ids=artifact_ids,
-                regex=regex,
-            )
+            async with create_task_group() as tg:
+                vector_task = tg.soonify(self._vector_search)(
+                    queries=queries,
+                    topn=topn,
+                    session=session,
+                    artifact_ids=artifact_ids,
+                    regex=regex,
+                )
+                bm25_task = tg.soonify(self._bm25_search)(
+                    queries=queries,
+                    topn=topn,
+                    session=session,
+                    artifact_ids=artifact_ids,
+                    regex=regex,
+                )
+            vector_results = vector_task.value
+            bm25_results = bm25_task.value
 
             graph_entities: list[GraphSearchResult] = []
             graph_results: list[UUID] | None = None
@@ -377,7 +381,17 @@ class RAGMode:
                 for row in ordered_docs
             ]
 
-            documents = await arerank_documents("\n".join(queries), documents)
+            try:
+                documents = await arerank_documents("\n".join(queries), documents)
+            except Exception:
+                if not any(d.image_url for d in documents):
+                    raise
+                warnings.warn(
+                    "图片重排序失败,回退到文本重排序",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                documents = await arerank_documents("\n".join(queries), documents, force_text=True)
             return documents[offset : offset + k], graph_entities
 
     async def aget_by_ids(self, ids: list[str] | None = None) -> list[Document]:
