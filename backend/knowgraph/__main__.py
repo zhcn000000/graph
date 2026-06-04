@@ -213,7 +213,7 @@ async def ingest_artifacts(
     batch_size: Annotated[
         int,
         Option("--batch-size", "-b", help="Batch size for incremental ingest (0=all at once)"),
-    ] = 50,
+    ] = 40,
 ) -> None:
     store = DocumentStore()
     total_doc_ids: list[UUID] = []

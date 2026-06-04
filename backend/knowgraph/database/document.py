@@ -302,23 +302,26 @@ class DocumentStore:
                 d.entities = list(entity_uris)
 
             # Phase 3: batch embed
-            try:
-                async with create_task_group() as tg:
-                    embed_tasks = [tg.soonify(aembed_documents)([d]) for d in active_docs]
-                all_vectors = [t.value[0] for t in embed_tasks]
-            except Exception:
-                if not any(d.image_url for d in active_docs):
-                    raise
-                warnings.warn(
-                    "图片嵌入失败,回退到文本嵌入",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                for d in active_docs:
-                    d.image_url = None
-                async with create_task_group() as tg:
-                    embed_tasks = [tg.soonify(aembed_documents)([d]) for d in active_docs]
-                all_vectors = [t.value[0] for t in embed_tasks]
+            async def embed_single_document(d: Document) -> list[float]:
+                try:
+                    vec = await aembed_documents([d])
+                    return vec[0]
+                except Exception:
+                    if d.image_url:
+                        warnings.warn(
+                            f"Embedding failed for document with image {d.image_url}, retrying without image.",
+                            UserWarning,
+                            stacklevel=2,
+                        )
+                        d.image_url = None
+                        vec = await aembed_documents([d])
+                        return vec[0]
+                    else:
+                        raise
+
+            async with create_task_group() as tg:
+                embed_tasks = [tg.soonify(embed_single_document)(d) for d in active_docs]
+            all_vectors = [t.value for t in embed_tasks]
 
             # Phase 4: parallel tokenize
             async with create_task_group() as tg:
