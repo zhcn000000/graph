@@ -46,6 +46,7 @@ dependencies = [
   "mmh3>=5.2.1",
   "pyjwt>=2.12.1",
   "tavily-python>=0.7.24",
+  "pymysql>=1.2.0",
 ]
 
 [project.scripts]
