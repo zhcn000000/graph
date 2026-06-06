@@ -116,8 +116,20 @@ class AGEGraphReader:
 
     # ---- 文物 + 关系查询 ----
 
+    @staticmethod
+    def _build_rel_map(rows: list[dict], key_col: str, val_col: str) -> dict[str, list[str]]:
+        """将查询结果转为 {artifact_name: [related_names]} 映射。"""
+        result: dict[str, list[str]] = {}
+        for r in rows:
+            key = r.get(key_col)
+            val = r.get(val_col)
+            if key and val:
+                result.setdefault(str(key), []).append(str(val))
+        return result
+
     def get_artifacts_with_relations(self, limit: int = 0) -> list[dict]:
-        """查询文物节点及其所有关系（聚合）。"""
+        """查询文物节点及其所有关系（4 次批量查询，无 N+1 问题）。"""
+        # 1. 获取文物列表
         if limit > 0:
             cypher = """
                 MATCH (a:Artifact)
@@ -134,24 +146,40 @@ class AGEGraphReader:
             params={"limit": limit} if limit > 0 else None,
         )
 
+        # 2. 4 次批量查询所有关系，本地分组
+        museum_map = self._build_rel_map(
+            self._execute(
+                "MATCH (a:Artifact)-[:collected_by]->(m:Museum) RETURN a.name AS a, m.name AS m",
+                ["a", "m"],
+            ), "a", "m",
+        )
+        dynasty_map = self._build_rel_map(
+            self._execute(
+                "MATCH (a:Artifact)-[:belongs_to_dynasty]->(d:Dynasty) RETURN a.name AS a, d.name AS d",
+                ["a", "d"],
+            ), "a", "d",
+        )
+        type_map = self._build_rel_map(
+            self._execute(
+                "MATCH (a:Artifact)-[:is_type_of]->(t:Artifact_type) RETURN a.name AS a, t.name AS t",
+                ["a", "t"],
+            ), "a", "t",
+        )
+        material_map = self._build_rel_map(
+            self._execute(
+                "MATCH (a:Artifact)-[:made_of_material]->(m:Material) RETURN a.name AS a, m.name AS m",
+                ["a", "m"],
+            ), "a", "m",
+        )
+
+        # 3. 填充到每个文物行
         for row in rows:
-            artifact_name = row["name"]
-            row["museums"] = [m["name"] for m in self._execute(
-                "MATCH (a:Artifact {name: $name})-[r:collected_by]->(m:Museum) RETURN m.name AS name",
-                ["name"], params={"name": artifact_name},
-            )]
-            row["dynasties"] = [d["name"] for d in self._execute(
-                "MATCH (a:Artifact {name: $name})-[r:belongs_to_dynasty]->(d:Dynasty) RETURN d.name AS name",
-                ["name"], params={"name": artifact_name},
-            )]
-            row["artifact_types"] = [t["name"] for t in self._execute(
-                "MATCH (a:Artifact {name: $name})-[r:is_type_of]->(t:Artifact_type) RETURN t.name AS name",
-                ["name"], params={"name": artifact_name},
-            )]
-            row["materials"] = [m["name"] for m in self._execute(
-                "MATCH (a:Artifact {name: $name})-[r:made_of_material]->(m:Material) RETURN m.name AS name",
-                ["name"], params={"name": artifact_name},
-            )]
+            name = row["name"]
+            row["museums"] = museum_map.get(name, [])
+            row["dynasties"] = dynasty_map.get(name, [])
+            row["artifact_types"] = type_map.get(name, [])
+            row["materials"] = material_map.get(name, [])
+
         return rows
 
     def get_all_relationships(self) -> list[dict]:
