@@ -47,7 +47,7 @@ def parse_artists(artist_text: str | None) -> list[str]:
 class GraphToMySQLMigrator:
     """图数据库 → MySQL 迁移编排器。"""
 
-    def __init__(self, dry_run: bool = False, limit: int = 20, clean: bool = False):
+    def __init__(self, dry_run: bool = False, limit: int = 0, clean: bool = False):
         self.dry_run = dry_run
         self.limit = limit
         self.clean = clean
@@ -306,7 +306,7 @@ def cli_main():
     import argparse
     parser = argparse.ArgumentParser(description="图数据库 (Apache AGE) → MySQL 迁移")
     parser.add_argument("--dry-run", action="store_true", help="试运行")
-    parser.add_argument("--limit", type=int, default=20, help="限制条数")
+    parser.add_argument("--limit", type=int, default=0, help="限制条数 (0=全量)")
     parser.add_argument("--clean", action="store_true", help="清空旧数据")
     args = parser.parse_args()
     GraphToMySQLMigrator(dry_run=args.dry_run, limit=args.limit, clean=args.clean).run()

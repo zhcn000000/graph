@@ -127,8 +127,8 @@ graph/
 | `just database` | 启动数据库容器 |
 | `just docker` | 启动所有容器 |
 | `just build-ui` | 构建前端并同步到 static/ |
-| `just migrate-mysql <opts>` | 图数据库 → MySQL 迁移（`--dry-run` `--limit N` `--clean`） |
-| `just migrate-neo4j <opts>` | 三元组 → Neo4j 迁移（`--dry-run` `--limit N` `--clean`） |
+| `just migrate-mysql <opts>` | 图数据库 → MySQL 迁移，不加参数全量（`--dry-run` `--limit N` `--clean`） |
+| `just migrate-neo4j <opts>` | 三元组 → Neo4j 迁移，不加参数全量（`--dry-run` `--limit N` `--clean`） |
 
 ### 开发命令
 
