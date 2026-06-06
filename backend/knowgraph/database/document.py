@@ -20,7 +20,7 @@ from knowgraph.graph.schema import (
     RelationshipInfo,
     RelationshipType,
 )
-from knowgraph.graph.triples import LLMExtractor, classify_entity_types_batch, compute_triples_strength_batch
+from knowgraph.graph.triples import LLMExtractor, anormalize_entity_names_batch, compute_triples_strength_batch
 
 from .database import DatabaseManager
 from .graph import AgeGraphManager
@@ -290,19 +290,17 @@ class DocumentStore:
                     elif result:
                         doc.triples = doc.triples + result
 
-            # Phase 1.5: classify entity types via reranker (ArtifactType/Material/Dynasty)
+            # Phase 1.5: normalize entity names via reranker against standard lists
             docs_with_triples = [d for d in active_docs if d.triples]
             if docs_with_triples:
-                await classify_entity_types_batch([d.triples for d in docs_with_triples])
+                await anormalize_entity_names_batch([d.triples for d in docs_with_triples])
 
             # Phase 2: batch triple strength (mutates triples in-place)
             if docs_with_triples:
                 await compute_triples_strength_batch([d.triples for d in docs_with_triples])
 
             for d in active_docs:
-                entity_uris: set[str] = set()
-                entity_uris |= self._triples_to_networkx(d.triples, full_graph)
-                entity_uris |= set(d.entities)
+                entity_uris = self._triples_to_networkx(d.triples, full_graph)
                 d.entities = list(entity_uris)
 
             # Phase 3: batch embed

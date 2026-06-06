@@ -1,4 +1,3 @@
-from typing import Any
 
 import pymysql
 import pymysql.cursors
@@ -10,7 +9,7 @@ class MySQLStore:
     """MySQL 数据库操作封装（从 settings 读取连接信息）。"""
 
     def __init__(self):
-        self.conn: "pymysql.Connection | None" = None
+        self.conn: pymysql.Connection | None = None
 
     def connect(self):
         self.conn = pymysql.connect(

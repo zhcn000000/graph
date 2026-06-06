@@ -107,7 +107,7 @@ class GraphToMySQLMigrator:
 
     def _print_connection_info(self):
         from knowgraph.utils.environments import settings as s
-        print(f"\nMySQL 连接信息:")
+        print("\nMySQL 连接信息:")
         print(f"  Host: {s.MYSQL_HOST}:{s.MYSQL_PORT}")
         print(f"  Database: {s.MYSQL_DATABASE}")
         print(f"  User: {s.MYSQL_USER}")
