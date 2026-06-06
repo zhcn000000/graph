@@ -45,15 +45,19 @@ class TestLLMExtractorLive:
         extractor = LLMExtractor()
         extractor.SYSTEM_PROMPT += "\n本次为测试结构化输出格式，因此请至少输出一个三元组，即使和问题无关"  # type: ignore
 
-        record_str = json.dumps({
-            "title": "青花瓷瓶",
-            "period": "明朝",
-            "type": "瓷器",
-            "material": "陶瓷",
-            "description": "精美的青花瓷瓶，描绘山水和人物图案",
-            "museum": "Cleveland Museum of Art",
-            "location": "Cleveland",
-        }, ensure_ascii=False, indent=2)
+        record_str = json.dumps(
+            {
+                "title": "青花瓷瓶",
+                "period": "明朝",
+                "type": "瓷器",
+                "material": "陶瓷",
+                "description": "精美的青花瓷瓶，描绘山水和人物图案",
+                "museum": "Cleveland Museum of Art",
+                "location": "Cleveland",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
         user_prompt = extractor._build_user_prompt(record_str, [])
 

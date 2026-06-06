@@ -20,7 +20,7 @@ from knowgraph.graph.schema import (
     RelationshipInfo,
     RelationshipType,
 )
-from knowgraph.graph.triples import LLMExtractor, compute_triples_strength_batch
+from knowgraph.graph.triples import LLMExtractor, classify_entity_types_batch, compute_triples_strength_batch
 
 from .database import DatabaseManager
 from .graph import AgeGraphManager
@@ -290,8 +290,12 @@ class DocumentStore:
                     elif result:
                         doc.triples = doc.triples + result
 
-            # Phase 2: batch triple strength (mutates triples in-place)
+            # Phase 1.5: classify entity types via reranker (ArtifactType/Material/Dynasty)
             docs_with_triples = [d for d in active_docs if d.triples]
+            if docs_with_triples:
+                await classify_entity_types_batch([d.triples for d in docs_with_triples])
+
+            # Phase 2: batch triple strength (mutates triples in-place)
             if docs_with_triples:
                 await compute_triples_strength_batch([d.triples for d in docs_with_triples])
 
@@ -316,8 +320,7 @@ class DocumentStore:
                         d.image_url = None
                         vec = await aembed_documents([d])
                         return vec[0]
-                    else:
-                        raise
+                    raise
 
             async with create_task_group() as tg:
                 embed_tasks = [tg.soonify(embed_single_document)(d) for d in active_docs]

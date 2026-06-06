@@ -113,7 +113,7 @@ select = [
   "FURB",
   "PTH",
 ]
-ignore = ["PLR", "PLC0415", "PLW0603", "PLW3201"]
+ignore = ["PLR", "PLC0415", "PLW0603", "PLW3201", "PLW0717", "ASYNC119"]
 fixable = ["ALL"]
 
 [tool.ruff.format]

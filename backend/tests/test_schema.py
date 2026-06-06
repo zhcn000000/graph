@@ -1,4 +1,3 @@
-
 from knowgraph.graph import RelationshipType
 from knowgraph.graph.schema import (
     CIDOC_GRAPH,

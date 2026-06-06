@@ -5,6 +5,7 @@ from ..chat.model import agent
 from ..chat.struct import ModelDeps
 from ..documents.embedder import arerank_scores
 from ..documents.models import Document
+from . import schema
 from .schema import (
     EntityType,
     ExtractedTriple,
@@ -40,7 +41,7 @@ async def compute_triples_strength(
         edge_docs = [
             Document(
                 content=f"{t.predicate.predicate.value} {t.object.name} "
-                f"{t.object.description or ''} {t.description or ''}".strip()
+                f"{t.object.description or ''} {t.description or ''}".strip(),
             )
             for _, t in items
         ]
@@ -67,6 +68,95 @@ async def compute_triples_strength_batch(
 
     async with create_task_group() as tg:
         tasks = [tg.soonify(compute_triples_strength)(triples) for triples in tasks_data]
+
+    for task in tasks:
+        _ = task.value
+
+
+_TYPE_EXAMPLE_TEXTS: dict[EntityType, str] = {
+    EntityType.ARTIFACT_TYPE: "\n".join(schema._KNOWN_ARTIFACT_TYPES),
+    EntityType.MATERIAL: "\n".join(schema._KNOWN_MATERIALS),
+    EntityType.DYNASTY: "\n".join(schema._KNOWN_DYNASTIES),
+}
+
+_CLASSIFIABLE_TYPES_ORDERED: list[EntityType] = [
+    EntityType.ARTIFACT_TYPE,
+    EntityType.MATERIAL,
+    EntityType.DYNASTY,
+]
+
+
+async def aclassify_entity_type(
+    name: str,
+    description: str | None = None,
+) -> EntityType | None:
+    query = f"{name} {description or ''}".strip()
+    documents = [_TYPE_EXAMPLE_TEXTS[t] for t in _CLASSIFIABLE_TYPES_ORDERED]
+
+    try:
+        score_map = await arerank_scores(query, documents, force_text=True)
+    except Exception:
+        return None
+
+    best_type: EntityType | None = None
+    best_score = float("-inf")
+    for idx, entity_type in enumerate(_CLASSIFIABLE_TYPES_ORDERED):
+        score = score_map.get(idx)
+        if score is not None and score > best_score:
+            best_score = score
+            best_type = entity_type
+
+    return best_type
+
+
+async def classify_entity_types_for_triples(
+    triples: list[ExtractedTriple],
+) -> None:
+    if not triples:
+        return
+
+    to_classify: dict[tuple[str, EntityType], str | None] = {}
+    for t in triples:
+        for entity in (t.subject, t.object):
+            if entity.entity_type not in schema.CLASSIFIABLE_ENTITY_TYPES:
+                continue
+            key = (entity.canonical_name, entity.entity_type)
+            if key not in to_classify:
+                to_classify[key] = entity.description
+
+    if not to_classify:
+        return
+
+    type_lookup: dict[tuple[str, EntityType], EntityType | None] = {}
+
+    async def classify_one(key: tuple[str, EntityType], desc: str | None) -> None:
+        cname, _ = key
+        result = await aclassify_entity_type(cname, desc)
+        type_lookup[key] = result
+
+    async with create_task_group() as tg:
+        for key, desc in to_classify.items():
+            tg.soonify(classify_one)(key, desc)
+
+    for t in triples:
+        for entity in (t.subject, t.object):
+            if entity.entity_type not in schema.CLASSIFIABLE_ENTITY_TYPES:
+                continue
+            key = (entity.canonical_name, entity.entity_type)
+            classified = type_lookup.get(key)
+            if classified is not None and classified != entity.entity_type:
+                entity.entity_type = classified
+
+
+async def classify_entity_types_batch(
+    doc_triples_list: list[list[ExtractedTriple]],
+) -> None:
+    tasks_data = [triples for triples in doc_triples_list if triples]
+    if not tasks_data:
+        return
+
+    async with create_task_group() as tg:
+        tasks = [tg.soonify(classify_entity_types_for_triples)(triples) for triples in tasks_data]
 
     for task in tasks:
         _ = task.value
