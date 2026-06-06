@@ -11,7 +11,7 @@ from knowgraph.utils.environments import settings
 class AGEGraphReader:
     """从 Apache AGE 读取节点和关系。"""
 
-    def __init__(self, conn: "psycopg.Connection | None" = None):
+    def __init__(self, conn: psycopg.Connection | None = None):
         self._own_conn = conn is None
         self.conn = conn
         self.graph = settings.AGE_GRAPH_NAME

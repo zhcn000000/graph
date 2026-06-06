@@ -29,7 +29,7 @@ class TriplesMigrator:
         self.writer = Neo4jWriter(dry_run=self.dry_run)
         self.writer.connect()
         if not self.dry_run:
-            print(f"[Neo4j] 连接成功")
+            print("[Neo4j] 连接成功")
 
         try:
             if self.clean and not self.dry_run:
@@ -74,7 +74,7 @@ class TriplesMigrator:
 
     def _print_connection_info(self):
         from knowgraph.utils.environments import settings as s
-        print(f"\nNeo4j 连接信息:")
+        print("\nNeo4j 连接信息:")
         print(f"  Bolt: {s.NEO4J_URI}")
         print(f"  User: {s.NEO4J_USER}")
 

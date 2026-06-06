@@ -98,7 +98,7 @@ def _build_rerank_document(d: Document | str, force_text: bool = False) -> str |
             "content": [
                 {"type": "text", "text": d.content},
                 {"type": "image_url", "image_url": {"url": d.image_url}},
-            ]
+            ],
         }
     return d.content
 
