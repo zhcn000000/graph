@@ -103,7 +103,7 @@ graph/
 
 ### CLI
 
-所有命令通过 `uv run knowgraph` 调用。
+所有命令通过 `uv run knowgraph` 调用（迁移命令除外）。
 
 | 命令 | 选项 | 说明 |
 |------|------|------|
@@ -114,6 +114,8 @@ graph/
 | `ingest csv` | `--data-dir, -d` CSV 目录<br>`--adapter, -a` 适配器 (philamuseum / philamuseum_raw)<br>`--ingest/--no-ingest` 是否同时提取文档<br>`--llm/--no-llm` LLM 三元组提取<br>`--dedup` 去重阈值 (默认 0.95) | 从 CSV 导入文物原始数据 |
 | `ingest artifacts` | `--museum, -m` 按博物馆筛选<br>`--limit, -n` 最大数量<br>`--llm/--no-llm` LLM 三元组提取<br>`--skip-ingested/--no-skip-ingested` 跳过已摄入<br>`--dedup` 去重阈值 (默认 0.95) | 从文物表提取文档到 DocumentTable |
 | `check-similar <content>` | `--threshold, -t` 相似度阈值 (默认 0.95)<br>`--top, -n` 最大结果数 (默认 5) | 检查文档相似度 |
+| `python -m knowgraph.migration.migrate_to_mysql` | `--dry-run` `--limit N` `--clean` | 图数据库 → MySQL 迁移 |
+| `python -m knowgraph.migration.migrate_to_neo4j` | `--dry-run` `--limit N` `--clean` | 三元组 → Neo4j 迁移 |
 
 ### just 快捷命令
 
@@ -125,6 +127,8 @@ graph/
 | `just database` | 启动数据库容器 |
 | `just docker` | 启动所有容器 |
 | `just build-ui` | 构建前端并同步到 static/ |
+| `just migrate-mysql <opts>` | 图数据库 → MySQL 迁移（`--dry-run` `--limit N` `--clean`） |
+| `just migrate-neo4j <opts>` | 三元组 → Neo4j 迁移（`--dry-run` `--limit N` `--clean`） |
 
 ### 开发命令
 
@@ -148,16 +152,29 @@ graph/
 
 ## 环境变量
 
+优先级：**环境变量 > 项目根目录 `.env` 文件 > 类默认值**。
+
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `FASTAPI_HOST` | `127.0.0.1` | 后端监听地址 |
 | `FASTAPI_PORT` | `40001` | 后端端口 |
-| `POSTGRES_HOST` | `127.0.0.1` | 数据库地址 |
-| `POSTGRES_PORT` | `40002` | 数据库端口 |
-| `POSTGRES_USER` | `postgres` | 数据库用户 |
-| `POSTGRES_PASSWORD` | `postgres` | 数据库密码 |
-| `JWT_SECRET` | `knowgraph-jwt-secret-...` | JWT 密钥 |
 | `RELEASE_MODE` | `True` | 发布模式开关 |
+| `JWT_SECRET` | `knowgraph-jwt-secret-...` | JWT 密钥 |
+| `RAG_TOKEN_EXPIRES_IN` | `21600` | JWT 过期时间（秒） |
+| `POSTGRES_HOST` | `127.0.0.1` | PostgreSQL / AGE 图数据库主机 |
+| `POSTGRES_PORT` | `10004` | 图数据库端口 |
+| `POSTGRES_USER` | `postgres` | 图数据库用户 |
+| `POSTGRES_DB` | `data` | 图数据库名 |
+| `POSTGRES_PASSWORD` | `postgres_password` | 图数据库密码 |
+| `AGE_GRAPH_NAME` | `graph` | Apache AGE 图名称 |
+| `MYSQL_HOST` | `127.0.0.1` | MySQL 迁移目标主机 |
+| `MYSQL_PORT` | `13306` | MySQL 端口 |
+| `MYSQL_DATABASE` | `seitem` | MySQL 数据库名 |
+| `MYSQL_USER` | `seitem` | MySQL 用户 |
+| `MYSQL_PASSWORD` | `seitem123456` | MySQL 密码 |
+| `NEO4J_URI` | `bolt://127.0.0.1:7687` | Neo4j 迁移目标 Bolt 地址 |
+| `NEO4J_USER` | `neo4j` | Neo4j 用户 |
+| `NEO4J_PASSWORD` | `neo4j123456` | Neo4j 密码 |
 
 ## 许可证
 

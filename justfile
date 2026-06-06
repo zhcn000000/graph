@@ -28,6 +28,12 @@ backend-lint:
   cd backend && uv run ruff check --fix
 backend-typecheck:
   cd backend && uv run ty check --fix
+migrate-mysql *ARGS:
+  cd backend && uv run python -m knowgraph.migration.migrate_to_mysql {{ARGS}}
+
+migrate-neo4j *ARGS:
+  cd backend && uv run python -m knowgraph.migration.migrate_to_neo4j {{ARGS}}
+
 frontend-check:
   cd frontend && pnpm check --write
 frontend-typecheck:
