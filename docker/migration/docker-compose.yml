@@ -1,0 +1,50 @@
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: graph_mysql_migration
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: seitem
+      MYSQL_USER: seitem
+      MYSQL_PASSWORD: seitem123456
+    ports:
+      - "13306:3306"
+    volumes:
+      - ./init-mysql.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    
+  neo4j:
+    image: neo4j:5.26
+    container_name: graph_neo4j_migration
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/neo4j123456
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1g
+      NEO4J_server_memory_pagecache_size: 512m
+    ports:
+      - "7474:7474"   # HTTP
+      - "7687:7687"   # Bolt
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "neo4j123456", "RETURN 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  mysql_data:
+  neo4j_data:
+  neo4j_logs:

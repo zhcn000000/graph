@@ -47,6 +47,7 @@ dependencies = [
   "pyjwt>=2.12.1",
   "tavily-python>=0.7.24",
   "pymysql>=1.2.0",
+  "neo4j>=6.0.0",
 ]
 
 [project.scripts]
