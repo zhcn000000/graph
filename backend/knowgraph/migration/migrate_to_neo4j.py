@@ -79,6 +79,8 @@ class TriplesMigrator:
         print(f"  User: {s.NEO4J_USER}")
 
     def _migrate_nodes(self):
+        assert self.reader is not None
+        assert self.writer is not None
         raw_nodes = self.reader.get_all_nodes()
         print(f"  从 AGE 读取到 {len(raw_nodes)} 个节点")
 
@@ -124,6 +126,8 @@ class TriplesMigrator:
         print(f"  已写入 {total} 个节点")
 
     def _migrate_relationships(self):
+        assert self.reader is not None
+        assert self.writer is not None
         raw_rels = self.reader.get_all_relationships()
         print(f"  从 AGE 读取到 {len(raw_rels)} 条关系")
 

@@ -67,10 +67,12 @@ class GraphToMySQLMigrator:
         if not self.dry_run:
             self.mysql = MySQLStore()
             self.mysql.connect()
+            assert self.mysql.conn is not None
             print(f"[MySQL] 连接成功: {self.mysql.conn.host}:{self.mysql.conn.port}")
 
         try:
             if self.clean and not self.dry_run:
+                assert self.mysql is not None
                 self.mysql.truncate_all()
                 print("  已清空 MySQL 所有表数据")
 
@@ -114,6 +116,8 @@ class GraphToMySQLMigrator:
 
     def _migrate_museums(self):
         print("\n[1/6] 迁移 museums...")
+        assert self.reader is not None
+        assert self.mysql is not None
         museums = self.reader.get_all_museums()
         print(f"  从图数据库获取到 {len(museums)} 个博物馆")
         if self.dry_run:
@@ -138,6 +142,8 @@ class GraphToMySQLMigrator:
 
     def _migrate_dynasties(self):
         print("\n[2/6] 迁移 dynasties...")
+        assert self.reader is not None
+        assert self.mysql is not None
         dynasties = self.reader.get_all_dynasties()
         seen: set[str] = set()
         unique: list[dict] = []
@@ -169,6 +175,8 @@ class GraphToMySQLMigrator:
 
     def _migrate_artifacts(self):
         print(f"\n[3/6] 迁移 artifacts... (限制 {self.limit} 条)")
+        assert self.reader is not None
+        assert self.mysql is not None
         graph_artifacts = self.reader.get_artifacts_with_relations(limit=self.limit)
         titles = [a["name"] for a in graph_artifacts]
         pg_details = self.reader.get_artifact_details_by_titles(titles)
@@ -229,6 +237,7 @@ class GraphToMySQLMigrator:
 
     def _migrate_artists(self):
         print("\n[4/6] 迁移 artists...")
+        assert self.mysql is not None
         if not self._pg_artist_map:
             print("  无艺术家数据，跳过")
             return
@@ -260,6 +269,7 @@ class GraphToMySQLMigrator:
 
     def _migrate_artifact_images(self):
         print("\n[5/6] 迁移 artifact_images...")
+        assert self.mysql is not None
         if self.dry_run:
             print("  [DRY RUN] 跳过")
             return
@@ -277,6 +287,7 @@ class GraphToMySQLMigrator:
 
     def _migrate_artifact_artist(self):
         print("\n[6/6] 迁移 artifact_artist...")
+        assert self.mysql is not None
         if not self._pg_artist_map:
             print("  无文物-艺术家关联，跳过")
             return

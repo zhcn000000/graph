@@ -29,6 +29,7 @@ class MySQLStore:
 
     def execute(self, sql: str, params: tuple | None = None) -> int:
         """执行 SQL，返回 lastrowid（无自增主键则返回 rowcount）。"""
+        assert self.conn is not None
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
             self.conn.commit()
@@ -42,11 +43,13 @@ class MySQLStore:
         return self.execute(sql, tuple(data.values()))
 
     def query_one(self, sql: str, params: tuple | None = None) -> dict | None:
+        assert self.conn is not None
         with self.conn.cursor(pymysql.cursors.DictCursor) as cur:
             cur.execute(sql, params)
             return cur.fetchone()
 
     def query_all(self, sql: str, params: tuple | None = None) -> list[dict]:
+        assert self.conn is not None
         with self.conn.cursor(pymysql.cursors.DictCursor) as cur:
             cur.execute(sql, params)
             return cur.fetchall()
@@ -73,6 +76,7 @@ class MySQLStore:
             "artifact_artist", "artifact_images", "artifacts",
             "artists", "dynasties", "museums",
         ]
+        assert self.conn is not None
         with self.conn.cursor() as cur:
             cur.execute("SET FOREIGN_KEY_CHECKS = 0")
             for t in tables:

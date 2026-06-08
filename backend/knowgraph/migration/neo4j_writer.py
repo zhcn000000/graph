@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from knowgraph.utils.environments import settings
 
 
@@ -42,13 +44,14 @@ class Neo4jWriter:
     def create_constraints(self):
         if self.dry_run:
             return
+        assert self._driver is not None
         with self._driver.session() as session:
             for label in self.LABELS:
                 constraint_name = f"unique_{label}_name"
                 try:
                     session.run(
-                        f"CREATE CONSTRAINT {constraint_name} IF NOT EXISTS "
-                        f"FOR (n:{label}) REQUIRE n.name IS UNIQUE"
+                        cast(Any, f"CREATE CONSTRAINT {constraint_name} IF NOT EXISTS "
+                             f"FOR (n:{label}) REQUIRE n.name IS UNIQUE")
                     )
                 except Exception as e:
                     print(f"    警告: 无法为 {label} 创建约束: {e}")
@@ -58,10 +61,13 @@ class Neo4jWriter:
     def clear_all(self):
         if self.dry_run:
             return
+        assert self._driver is not None
         with self._driver.session() as session:
             for label in self.LABELS:
                 try:
-                    session.run(f"DROP CONSTRAINT unique_{label}_name IF EXISTS")
+                    session.run(
+                        cast(Any, f"DROP CONSTRAINT unique_{label}_name IF EXISTS")
+                    )
                 except Exception:
                     pass
             session.run("MATCH (n) DETACH DELETE n")
@@ -80,6 +86,7 @@ class Neo4jWriter:
             self._nodes_written += count
             return count
 
+        assert self._driver is not None
         by_label: dict[str, list[dict]] = {}
         for n in nodes:
             label = n["label"]
@@ -108,7 +115,7 @@ class Neo4jWriter:
                     SET n.entity_type = p.entity_type
                     RETURN count(n) AS cnt
                 """
-                result = session.run(cypher, params=unique)
+                result = session.run(cast(Any, cypher), params=unique)
                 record = result.single()
                 if record:
                     written += record["cnt"]
@@ -130,6 +137,7 @@ class Neo4jWriter:
             self._rels_written += count
             return count
 
+        assert self._driver is not None
         by_type: dict[str, list[dict]] = {}
         for r in rels:
             rel_type = r["predicate"]
@@ -165,7 +173,7 @@ class Neo4jWriter:
                     MERGE (s)-[:{rel_type}]->(o)
                     RETURN count(*) AS cnt
                 """
-                result = session.run(cypher, params=params)
+                result = session.run(cast(Any, cypher), params=params)
                 record = result.single()
                 if record:
                     written += record["cnt"]

@@ -1,7 +1,7 @@
 """Apache AGE 图数据库 Cypher 查询读取器。"""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 
@@ -34,6 +34,7 @@ class AGEGraphReader:
 
     def _execute(self, cypher: str, columns: list[str], params: dict | None = None) -> list[dict[str, Any]]:
         """执行 Cypher 查询，返回字典列表。"""
+        assert self.conn is not None
         col_defs = ", ".join(f"{c} agtype" for c in columns)
         if params:
             for key, val in params.items():
@@ -51,7 +52,7 @@ class AGEGraphReader:
 
         sql = f"SELECT * FROM cypher('{self.graph}', $$ {cypher} $$) AS ({col_defs})"
         with self.conn.cursor() as cur:
-            cur.execute(sql)
+            cur.execute(cast(Any, sql))
             rows = cur.fetchall()
             if not rows:
                 return []
@@ -206,6 +207,7 @@ class AGEGraphReader:
         """批量根据标题查询 artifact_raw 记录。"""
         if not titles:
             return {}
+        assert self.conn is not None
         with self.conn.cursor() as cur:
             cur.execute(
                 """
