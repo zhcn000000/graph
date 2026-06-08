@@ -52,6 +52,7 @@ _KNOWN_DYNASTIES: list[str] = [
 ]
 
 _KNOWN_ARTIFACT_TYPES: list[str] = [
+    "Container",
     "Toy",
     "Painting",
     "Sculpture",
