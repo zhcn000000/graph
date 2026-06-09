@@ -19,7 +19,7 @@ class AsianArtCrawlerAdapter(BaseCrawlerAdapter):
     is_sequential = True
     use_streaming = False
 
-    def __init__(self, start_page: int = 1, end_page: int = 5) -> None:
+    def __init__(self, start_page: int = 1, end_page: int = 600) -> None:
         self._start_page = start_page
         self._end_page = end_page
         self._playwright = None
@@ -180,7 +180,7 @@ class AsianArtCrawlerAdapter(BaseCrawlerAdapter):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._sync_get_detail, url)
 
-    async def aclose(self) -> None:
+    def _sync_close(self) -> None:
         if self._context is not None:
             self._context.close()
             self._context = None
@@ -190,3 +190,7 @@ class AsianArtCrawlerAdapter(BaseCrawlerAdapter):
         if self._playwright is not None:
             self._playwright.stop()
             self._playwright = None
+
+    async def aclose(self) -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._sync_close)
