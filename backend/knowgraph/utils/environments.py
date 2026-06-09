@@ -52,7 +52,7 @@ class EnvironmentSettings(BaseSettings):
     MYSQL_DATABASE: str = "seitem"
     MYSQL_USER: str = "seitem"
     MYSQL_PASSWORD: SecretStr = SecretStr("seitem123456")
-    NEO4J_URI: str = "bolt://127.0.0.1:7687"
+    NEO4J_URI: str = "bolt://127.0.0.1:17687"
     NEO4J_USER: str = "neo4j"
     NEO4J_PASSWORD: SecretStr = SecretStr("neo4j123456")
     AGE_GRAPH_NAME: str = "graph"

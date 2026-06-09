@@ -12,7 +12,7 @@
 | **前端** | TypeScript, React 19, Ant Design 6, Vite 8 |
 | **数据库** | PostgreSQL 18 + vchord (向量) + vchord\_bm25 (全文检索) + Apache AGE (图数据库) |
 | **AI** | DeepSeek / OpenAI (pydantic-ai Agent), BGE-M3 (嵌入/重排序), SiliconFlow API |
-| **爬虫** | Scrapy, curl-cffi (Chrome 146 指纹, 突破 Cloudflare) |
+| **爬虫** | Scrapy, curl-cffi (Chrome 146 指纹), httpx, Playwright, asyncio 并发 |
 | **容器化** | Docker / Podman, docker-compose |
 | **包管理** | uv (Python), pnpm (Node.js) |
 
@@ -83,7 +83,14 @@ graph/
 │       ├── database/        # 数据库层 (SQLModel, AGE, vchord)
 │       ├── documents/       # 文档处理 (转换/分块/嵌入)
 │       ├── graph/           # 知识图谱本体 (CIDOC-CRM)
-│       ├── spider/          # 博物馆爬虫 (Scrapy)
+│       ├── spider/          # 博物馆爬虫
+│       │   ├── __init__.py
+│       │   ├── spider.py     # ArtifactSitemapSpider (网站地图模式)
+│       │   ├── crawler.py    # AdapterCrawler (异步适配器模式, 40 并发)
+│       │   ├── adapters/     # 博物馆爬虫适配器 (按网站定制)
+│       │   ├── config.py     # MuseumConfig 博物馆配置
+│       │   ├── runner.py     # ScrapyCrawler 爬虫运行器
+│       │   └── ...
 │       ├── tools/           # FastMCP 工具
 │       └── utils/           # 配置与工具
 ├── frontend/                # React + TypeScript 前端
@@ -109,7 +116,7 @@ graph/
 |------|------|------|
 | `start` | — | 启动 FastAPI 服务器 |
 | `database <mode>` | `--dbname, -d` | 数据库管理：`init` 初始化, `reset` 重建, `clean` 清理 |
-| `spider <museum...>` | — | 运行爬虫采集指定博物馆数据 |
+| `spider <museum...>` | — | 运行爬虫采集指定博物馆数据。支持网站地图模式 (`cleveland`, `metropolitan`, ...) 和适配器模式 (`metropolitan_api`, `philadelphia_api`, `asian_art_sf`) |
 | `search <query>` | `--top, -k` 结果数 (默认 5)<br>`--graph/--no-graph` 图谱搜索 (默认 on)<br>`--max-hops, -h` 最大跳数 (默认 2)<br>`--vector-weight` 向量权重 (默认 0.4)<br>`--bm25-weight` BM25 权重 (默认 0.3)<br>`--graph-weight` 图谱权重 (默认 0.3) | 混合检索 (向量+BM25+图谱) |
 | `ingest csv` | `--data-dir, -d` CSV 目录<br>`--adapter, -a` 适配器 (philamuseum / philamuseum_raw)<br>`--ingest/--no-ingest` 是否同时提取文档<br>`--llm/--no-llm` LLM 三元组提取<br>`--dedup` 去重阈值 (默认 0.95) | 从 CSV 导入文物原始数据 |
 | `ingest artifacts` | `--museum, -m` 按博物馆筛选<br>`--limit, -n` 最大数量<br>`--llm/--no-llm` LLM 三元组提取<br>`--skip-ingested/--no-skip-ingested` 跳过已摄入<br>`--dedup` 去重阈值 (默认 0.95) | 从文物表提取文档到 DocumentTable |
@@ -140,15 +147,18 @@ graph/
 
 ## 已支持的博物馆
 
-- Cleveland Museum of Art (克利夫兰艺术博物馆)
-- Metropolitan Museum of Art (大都会艺术博物馆)
-- Smithsonian Institution (史密森尼学会)
-- Freer+Sackler Galleries (弗利尔+赛克勒美术馆)
-- Princeton University Art Museum (普林斯顿大学艺术博物馆)
-- Nelson-Atkins Museum of Art (纳尔逊-阿特金斯艺术博物馆)
-- Art Institute of Chicago (芝加哥艺术博物馆)
-- Philadelphia Museum of Art (费城艺术博物馆)
-- American Museum of Natural History (美国自然历史博物馆)
+| 博物馆 | 爬取模式 | 说明 |
+|--------|----------|------|
+| Cleveland Museum of Art | 网站地图 | 克利夫兰艺术博物馆 |
+| Metropolitan Museum of Art | 网站地图 + 适配器 API | 大都会艺术博物馆 (`metropolitan` / `metropolitan_api`) |
+| Smithsonian Institution | 网站地图 | 史密森尼学会 |
+| Freer+Sackler Galleries | 网站地图 | 弗利尔+赛克勒美术馆 |
+| Princeton University Art Museum | 网站地图 | 普林斯顿大学艺术博物馆 |
+| Nelson-Atkins Museum of Art | 网站地图 | 纳尔逊-阿特金斯艺术博物馆 |
+| Art Institute of Chicago | 网站地图 | 芝加哥艺术博物馆 |
+| Philadelphia Museum of Art | 网站地图 + 适配器 API | 费城艺术博物馆 (`philadelphia` / `philadelphia_api`) |
+| American Museum of Natural History | 网站地图 | 美国自然历史博物馆 |
+| Asian Art Museum of San Francisco | 适配器 (Playwright) | 旧金山亚洲艺术博物馆 (`asian_art_sf`) |
 
 ## 环境变量
 
