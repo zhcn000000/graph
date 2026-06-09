@@ -1,3 +1,5 @@
+import importlib
+import logging
 import time
 from collections.abc import Sequence
 from typing import Any
@@ -5,11 +7,15 @@ from typing import Any
 from scrapy.crawler import AsyncCrawlerProcess
 from scrapy.utils.log import configure_logging
 
+from knowgraph.database.artifact import ArtifactStore
 from knowgraph.spider.config import MUSEUM_CONFIGS
 
 from .config import MuseumConfig
+from .crawler import AdapterCrawler
 from .models import CrawlResult
 from .spider import ArtifactSitemapSpider
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_SETTINGS: dict[str, Any] = {
     "ROBOTSTXT_OBEY": True,
@@ -50,6 +56,11 @@ class ScrapyCrawler:
     async def acrawl_museum(self, config: MuseumConfig | str) -> CrawlResult:
         if isinstance(config, str):
             config = MUSEUM_CONFIGS[config]
+        if config.use_adapter_crawler:
+            return await self.acrawl_adapter_museum(config)
+        return await self.acrawl_sitemap_museum(config)
+
+    async def acrawl_sitemap_museum(self, config: MuseumConfig) -> CrawlResult:
         result = CrawlResult(museum=config.name)
         t0 = time.monotonic()
 
@@ -69,6 +80,25 @@ class ScrapyCrawler:
         result.crawled_urls = stats_collector.get("parsed", 0)
         result.elapsed = time.monotonic() - t0
         return result
+
+    async def acrawl_adapter_museum(self, config: MuseumConfig) -> CrawlResult:
+        if not config.adapter_class:
+            logger.error("No adapter_class configured for %s", config.key)
+            return CrawlResult(museum=config.name, errors=1)
+
+        module_path, class_name = config.adapter_class.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        adapter_cls = getattr(module, class_name)
+        adapter = adapter_cls()
+        store = ArtifactStore()
+
+        crawler = AdapterCrawler(
+            adapter=adapter,
+            store=store,
+            concurrency=40,
+            refresh_days=config.refresh_days,
+        )
+        return await crawler.acrawl()
 
     async def acrawl_museums(self, configs: Sequence[MuseumConfig | str] | None = None) -> list[CrawlResult]:
         if configs is None:

@@ -11,6 +11,9 @@ class MuseumConfig:
     collection_url_prefix: str = ""
     artifact_url_patterns: list[str] = field(default_factory=list)
     chinese_culture_taxonomy: list[str] = field(default_factory=list)
+    use_adapter_crawler: bool = False
+    adapter_class: str = ""
+    refresh_days: int = 7
 
 
 MUSEUM_CONFIGS: dict[str, MuseumConfig] = {
@@ -171,4 +174,34 @@ MUSEUM_CONFIGS: dict[str, MuseumConfig] = {
     #     chinese_culture_taxonomy=["china", "chinese", "chin", "tang", "song", "ming", "qing", "yuan", "han"],
     # ),
     # no sitemap.
+    "asian_art_sf": MuseumConfig(
+        key="asian_art_sf",
+        name="Asian Art Museum",
+        location="San Francisco, California, USA",
+        website="https://searchcollection.asianart.org",
+        sitemap_url="",
+        use_adapter_crawler=True,
+        adapter_class="knowgraph.spider.adapters.asian_art.AsianArtCrawlerAdapter",
+        refresh_days=7,
+    ),
+    "metropolitan_api": MuseumConfig(
+        key="metropolitan_api",
+        name="The Metropolitan Museum of Art",
+        location="New York, USA",
+        website="https://www.metmuseum.org",
+        sitemap_url="",
+        use_adapter_crawler=True,
+        adapter_class="knowgraph.spider.adapters.met_museum.MetMuseumCrawlerAdapter",
+        refresh_days=7,
+    ),
+    "philadelphia_api": MuseumConfig(
+        key="philadelphia_api",
+        name="Philadelphia Museum of Art",
+        location="Philadelphia, Pennsylvania, USA",
+        website="https://www.philamuseum.org",
+        sitemap_url="",
+        use_adapter_crawler=True,
+        adapter_class="knowgraph.spider.adapters.philamuseum.PhilaMuseumCrawlerAdapter",
+        refresh_days=7,
+    ),
 }
