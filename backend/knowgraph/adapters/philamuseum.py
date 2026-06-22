@@ -1,4 +1,3 @@
-
 import pandas as pd
 
 from .base import BaseAdapter, safe_str

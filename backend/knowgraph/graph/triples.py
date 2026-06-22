@@ -5,6 +5,7 @@ from ..chat.model import agent
 from ..chat.struct import ModelDeps
 from ..documents.embedder import arerank_scores
 from ..documents.models import Document
+from . import schema
 from .schema import (
     EntityType,
     ExtractedTriple,
@@ -40,7 +41,7 @@ async def compute_triples_strength(
         edge_docs = [
             Document(
                 content=f"{t.predicate.predicate.value} {t.object.name} "
-                f"{t.object.description or ''} {t.description or ''}".strip()
+                f"{t.object.description or ''} {t.description or ''}".strip(),
             )
             for _, t in items
         ]
@@ -67,6 +68,97 @@ async def compute_triples_strength_batch(
 
     async with create_task_group() as tg:
         tasks = [tg.soonify(compute_triples_strength)(triples) for triples in tasks_data]
+
+    for task in tasks:
+        _ = task.value
+
+
+_STANDARD_NAME_LISTS: dict[EntityType, list[str]] = {
+    EntityType.ARTIFACT_TYPE: schema._KNOWN_ARTIFACT_TYPES,
+    EntityType.MATERIAL: schema._KNOWN_MATERIALS,
+    EntityType.DYNASTY: schema._KNOWN_DYNASTIES,
+}
+
+
+async def arerank_normalize_name(
+    name: str,
+    description: str | None,
+    entity_type: EntityType,
+) -> str | None:
+    candidates = _STANDARD_NAME_LISTS.get(entity_type)
+    if not candidates:
+        return None
+
+    query = f"{name} {description or ''}".strip()
+    documents = [Document(content=c) for c in candidates]
+
+    try:
+        score_map = await arerank_scores(query, documents, force_text=True)
+    except Exception:
+        return None
+
+    best_idx: int = -1
+    best_score = float("-inf")
+    for idx, score in score_map.items():
+        if score is not None and score > best_score:
+            best_score = score
+            best_idx = idx
+
+    if best_idx < 0:
+        return None
+    return candidates[best_idx]
+
+
+async def anormalize_entity_names_for_triples(
+    triples: list[ExtractedTriple],
+) -> None:
+    if not triples:
+        return
+
+    seen: set[tuple[str, EntityType]] = set()
+    pending: list[tuple[str, str | None, EntityType]] = []
+
+    for t in triples:
+        for entity in (t.subject, t.object):
+            if entity.entity_type not in schema.CLASSIFIABLE_ENTITY_TYPES:
+                continue
+            key = (entity.name, entity.entity_type)
+            if key not in seen:
+                seen.add(key)
+                pending.append((entity.name, entity.description, entity.entity_type))
+
+    if not pending:
+        return
+
+    result_map: dict[tuple[str, EntityType], str | None] = {}
+
+    async def normalize_one(name: str, desc: str | None, etype: EntityType) -> None:
+        key = (name, etype)
+        result_map[key] = await arerank_normalize_name(name, desc, etype)
+
+    async with create_task_group() as tg:
+        for name, desc, etype in pending:
+            tg.soonify(normalize_one)(name, desc, etype)
+
+    for t in triples:
+        for entity in (t.subject, t.object):
+            if entity.entity_type not in schema.CLASSIFIABLE_ENTITY_TYPES:
+                continue
+            key = (entity.name, entity.entity_type)
+            normalized = result_map.get(key)
+            if normalized and normalized != entity.name:
+                entity.name = normalized
+
+
+async def anormalize_entity_names_batch(
+    doc_triples_list: list[list[ExtractedTriple]],
+) -> None:
+    tasks_data = [triples for triples in doc_triples_list if triples]
+    if not tasks_data:
+        return
+
+    async with create_task_group() as tg:
+        tasks = [tg.soonify(anormalize_entity_names_for_triples)(triples) for triples in tasks_data]
 
     for task in tasks:
         _ = task.value

@@ -33,12 +33,12 @@ if not env_file.exists():
 class EnvironmentSettings(BaseSettings):
     FASTAPI_HOST: str = "127.0.0.1"
     FASTAPI_PORT: int = 40001
-    POSTGRES_HOST: str = "nw.lonwell.cn"
+    POSTGRES_HOST: str = "127.0.0.1"
     POSTGRES_PORT: int = 10004
     POSTGRES_USER: str = "postgres"
     POSTGRES_DB: str = "data"
     POSTGRES_DSN: PostgresDsn | None = None
-    POSTGRES_PASSWORD: SecretStr = SecretStr("postgresgraph")
+    POSTGRES_PASSWORD: SecretStr = SecretStr("postgres_password")
     DATA_ROOT: Annotated[Path, Field(alias="RAG_DATA_ROOT")] = find_project_directory() / "data"
     UUID_SEED: Annotated[UUID, Field(alias="RAG_UUID_SEED")] = UUID("11fa063e-b366-41a9-ac97-439b0a561846")
     RELEASE_MODE: Annotated[bool, Field(alias="RAG_RELEASE_MODE")] = True
@@ -47,6 +47,7 @@ class EnvironmentSettings(BaseSettings):
     JWT_SECRET: SecretStr = SecretStr("knowgraph-jwt-secret-change-in-production")
     SSL_KEY_PATH: Path | None = None
     SSL_CERT_PATH: Path | None = None
+    AGE_GRAPH_NAME: str = "graph"
     model_config = SettingsConfigDict(env_ignore_empty=True, env_file=env_file, extra="ignore")
 
     def model_post_init(self, context):

@@ -1,5 +1,6 @@
 from .schema import (
     CIDOC_GRAPH,
+    CLASSIFIABLE_ENTITY_TYPES,
     EntityType,
     ExtractedEntity,
     ExtractedTriple,
@@ -11,6 +12,7 @@ from .schema import (
 
 __all__ = [
     "CIDOC_GRAPH",
+    "CLASSIFIABLE_ENTITY_TYPES",
     "EntityType",
     "ExtractedEntity",
     "ExtractedTriple",

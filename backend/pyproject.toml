@@ -37,6 +37,7 @@ dependencies = [
   "lxml>=5.3.0",
   "beautifulsoup4>=4.12.0",
   "scrapy>=2.15.2",
+  "playwright>=1.40",
   "shapely>=2.1.2",
   "cymple>=0.12.0",
   "curl-cffi>=0.15.0",
@@ -46,6 +47,8 @@ dependencies = [
   "mmh3>=5.2.1",
   "pyjwt>=2.12.1",
   "tavily-python>=0.7.24",
+  "pymysql>=1.2.0",
+  "neo4j>=6.0.0",
 ]
 
 [project.scripts]
@@ -111,7 +114,7 @@ select = [
   "FURB",
   "PTH",
 ]
-ignore = ["PLR", "PLC0415", "PLW0603", "PLW3201"]
+ignore = ["PLR", "PLC0415", "PLW0603", "PLW3201", "PLW0717", "ASYNC119"]
 fixable = ["ALL"]
 
 [tool.ruff.format]

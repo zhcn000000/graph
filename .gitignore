@@ -1,1 +1,6 @@
-data
+data/
+_assets_/
+.idea/
+.vscode/
+.obsidian/
+.env

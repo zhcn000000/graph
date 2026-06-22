@@ -264,9 +264,13 @@ class TestGraphContext:
 
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:
-            stmt = select(col(DocumentTable.document_index)).where(
-                col(DocumentTable.id).in_(doc_ids),
-            ).limit(1)
+            stmt = (
+                select(col(DocumentTable.document_index))
+                .where(
+                    col(DocumentTable.id).in_(doc_ids),
+                )
+                .limit(1)
+            )
             result = await session.execute(stmt)
             doc_index = result.scalar_one()
 
@@ -291,9 +295,13 @@ class TestGraphContext:
 
         db = DatabaseManager(TEST_DB_NAME)
         async with db.asession() as session:
-            stmt = select(col(DocumentTable.document_index)).where(
-                col(DocumentTable.id).in_(doc_ids),
-            ).limit(1)
+            stmt = (
+                select(col(DocumentTable.document_index))
+                .where(
+                    col(DocumentTable.id).in_(doc_ids),
+                )
+                .limit(1)
+            )
             result = await session.execute(stmt)
             doc_index = result.scalar_one()
 

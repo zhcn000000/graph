@@ -84,7 +84,7 @@ backend/
 
 **`routers/__init__.py`** - FastAPI app 创建,挂载 MCP (/mcp), 注册 chat/rag/user 路由
 
-**chat.py** - 聊天路由 `/chat`
+**chat.py** - 聊天路由 (prefix `/api/chat`)
 
 | 方法 | 路径 | 描述 |
 |------|------|------|
@@ -96,30 +96,36 @@ backend/
 | PATCH | `/{session_id}` | 重命名会话 |
 | GET | `/list` | 会话列表 |
 
-**rag.py** - RAG 路由 `/rag`
+**rag.py** - RAG 路由 (prefix `/api/rag`)
 
 - 搜索: `POST /search` - 混合检索 (向量+BM25+图)
-- 图操作:
-  - `POST/GET/PUT/DELETE /graph/vertex/{uri}` - 节点 CRUD
-  - `POST/GET/DELETE /graph/edge/{start_uri}/{end_uri}[/{relationship_type}]` - 边 CRUD
-  - `GET /graph/neighbors/{uri}` - 获取邻居节点
-  - `GET /graph/traverse/{start_uri}` - 图遍历
-  - `POST /graph/traverse/multi` - 批量遍历
-  - `GET /graph/paths/{start_uri}/{end_uri}` - 路径查询
-  - `POST /graph/context` - 图上下文扩展
-  - `POST /graph/entity-paths` - 实体路径查询
 - 文档摄入:
   - `POST /documents/upload` - 上传文档
   - `POST /documents/load-csv` - 加载 CSV
   - `POST /documents/ingest-artifacts` - 从文物表提取文档
 
-**user.py** - 用户认证 `/api`, 用户管理 `/users`
+**graph.py** - 图操作路由 (prefix `/api/graph`)
+
+- `POST/GET/PUT/DELETE /vertex/{uri}` - 节点 CRUD
+- `POST/GET/DELETE /edge/{start_uri}/{end_uri}[/{relationship_type}]` - 边 CRUD
+- `GET /neighbors/{uri}` - 获取邻居节点
+- `GET /traverse/{start_uri}` - 图遍历
+- `POST /traverse/multi` - 批量遍历
+- `GET /paths/{start_uri}/{end_uri}` - 路径查询
+- `POST /context` - 图上下文扩展
+- `POST /entity-paths` - 实体路径查询
+
+**user.py** - 用户路由 (prefix `/api/users`)
+
+- `GET /me` - 当前用户
+- `GET/PATCH/DELETE /{user_id}` - 用户 CRUD
+
+**Auth endpoints** (mounted on app directly in `routers/__init__.py`):
 
 - `POST /api/login` - 登录
 - `POST /api/register` - 注册
 - `POST /api/refresh` - 刷新 token
-- `GET /users/me` - 当前用户
-- `GET/PATCH/DELETE /users/{user_id}` - 用户 CRUD
+- `GET /api/me` - 当前用户 (JWT)
 
 ### 2. Chat (Agent 系统)
 
@@ -206,11 +212,14 @@ agent: Agent[ModelDeps, str] = Agent(
 ### 6. Spider (爬虫模块)
 
 - `ArtifactSitemapSpider`: Scrapy SitemapSpider, 解析 JSON-LD/meta, 提取文物数据
+- `AdapterCrawler`: 异步适配器模式爬虫 (Playwright, 40 并发)
 - `DownloadMiddleware`: curl_cffi 浏览器指纹伪装 (chrome146)
 - `ArtifactPipeline`: 异步存储文物到 ArtifactRawTable
 - `ChineseArtifactFilter`: 中英文关键词/URL/文化分类过滤
-- `MuseumConfig`: 7 个已配置博物馆 (Cleveland, Metropolitan, Smithsonian, Freer+Sackler, Princeton, Nelson-Atkins, Art Institute of Chicago, Philadelphia, AMNH)
+- `MuseumConfig`: 博物馆配置 (Cleveland, Metropolitan, Smithsonian, Freer+Sackler, Princeton, Nelson-Atkins, Art Institute of Chicago, Philadelphia, AMNH)
 - `ScrapyCrawler`: 异步爬虫运行器 (AsyncCrawlerProcess)
+- `spider/adapters/`: 爬虫适配器 (PhilaMuseumCrawlerAdapter, MetMuseumCrawlerAdapter, AsianArtCrawlerAdapter)
+- 注意: `knowgraph/adapters/` (CSV 适配器) 和 `knowgraph/spider/adapters/` (爬虫适配器) 是两套不同的模块
 
 ### 7. Tools (MCP 协议 + Agent 共享实现)
 
@@ -233,10 +242,10 @@ agent: Agent[ModelDeps, str] = Agent(
 mcp_app = mcp.http_app()
 app = FastAPI(lifespan=mcp_app.lifespan)
 app.mount("/mcp", mcp_app)      # MCP 协议端点
-app.include_router(chat_router, prefix="/chat", tags=["chat"])
-app.include_router(rag_router, prefix="/rag", tags=["rag"])
-app.include_router(auth_router, prefix="/api", tags=["auth"])
-app.include_router(user_router, prefix="/users", tags=["users"])
+app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
+app.include_router(rag_router, prefix="/api/rag", tags=["rag"])
+app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
+app.include_router(user_router, prefix="/api/users", tags=["users"])
 ```
 
 ## 开发命令
@@ -258,7 +267,10 @@ pytest
 knowgraph --help
 
 # Run server
-knowgraph run-client
+knowgraph start
+
+# Run tests
+pytest
 
 # Database init/reset/clean
 knowgraph database init
@@ -293,9 +305,9 @@ knowgraph spider cleveland metropolitan
 | FASTAPI_PORT | FastAPI 端口 | 40001 |
 | POSTGRES_DB | PostgreSQL 数据库名 | data |
 | POSTGRES_HOST | 数据库主机 | 127.0.0.1 |
-| POSTGRES_PORT | 数据库端口 | 40002 |
+| POSTGRES_PORT | 数据库端口 | 10004 |
 | POSTGRES_USER | 数据库用户 | postgres |
-| POSTGRES_PASSWORD | 数据库密码 | postgres |
+| POSTGRES_PASSWORD | 数据库密码 | postgres_password |
 | POSTGRES_DSN | 自定义 DSN | - |
 | DATA_ROOT | 数据根目录 | <project>/data |
 | UUID_SEED | UUID 种子 | 11fa063e... |
@@ -305,6 +317,10 @@ knowgraph spider cleveland metropolitan
 | JWT_SECRET | JWT 密钥 | knowgraph-jwt-secret... |
 | SSL_KEY_PATH | SSL 密钥路径 | - |
 | SSL_CERT_PATH | SSL 证书路径 | - |
+| AGE_GRAPH_NAME | AGE 图名称 | graph |
+| MYSQL_HOST | MySQL 迁移目标主机 | 127.0.0.1 |
+| MYSQL_PORT | MySQL 端口 | 13306 |
+| NEO4J_URI | Neo4j Bolt 地址 | bolt://127.0.0.1:17687 |
 
 ## 数据库表
 

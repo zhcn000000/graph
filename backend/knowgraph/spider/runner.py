@@ -1,3 +1,5 @@
+import importlib
+import logging
 import time
 from collections.abc import Sequence
 from typing import Any
@@ -9,7 +11,8 @@ from knowgraph.spider.config import MUSEUM_CONFIGS
 
 from .config import MuseumConfig
 from .models import CrawlResult
-from .spider import ArtifactSitemapSpider
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_SETTINGS: dict[str, Any] = {
     "ROBOTSTXT_OBEY": True,
@@ -40,6 +43,8 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
     "USER_AGENT": "",
 }
 
+_DEFAULT_SPIDER_CLASS = "knowgraph.spider.spider.ArtifactSitemapSpider"
+
 
 class ScrapyCrawler:
     def __init__(self, settings: dict[str, Any] | None = None) -> None:
@@ -50,6 +55,14 @@ class ScrapyCrawler:
     async def acrawl_museum(self, config: MuseumConfig | str) -> CrawlResult:
         if isinstance(config, str):
             config = MUSEUM_CONFIGS[config]
+        return await self._acrawl(config)
+
+    async def _acrawl(self, config: MuseumConfig) -> CrawlResult:
+        spider_cls_path = config.spider_class or _DEFAULT_SPIDER_CLASS
+        module_path, class_name = spider_cls_path.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        spider_cls = getattr(module, class_name)
+
         result = CrawlResult(museum=config.name)
         t0 = time.monotonic()
 
@@ -58,7 +71,7 @@ class ScrapyCrawler:
         stats_collector: dict[str, int] = {}
 
         await runner.crawl(
-            ArtifactSitemapSpider,
+            spider_cls,
             museum_config=config,
             stats_collector=stats_collector,
         )
