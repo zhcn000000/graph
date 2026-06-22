@@ -2,6 +2,7 @@ from psycopg.sql import SQL
 
 from .database import DatabaseManager
 from .graph import AgeGraphManager
+from .user import UserManager
 
 
 async def init_db(alter_system: bool = False, dbname: str | None = None) -> bool:
@@ -18,6 +19,7 @@ async def init_db(alter_system: bool = False, dbname: str | None = None) -> bool
         )
     await AgeGraphManager().acreate_graph()
     await db.acreate_all()
+    await UserManager().ainsert("admin", "admin")
     if alter_system:
         async with db.aconnection(autocommit=True) as conn:
             await conn.execute(
@@ -27,6 +29,7 @@ async def init_db(alter_system: bool = False, dbname: str | None = None) -> bool
                 ALTER SYSTEM SET io_method = io_uring;
                 """),
             )
+
     return status
 
 
