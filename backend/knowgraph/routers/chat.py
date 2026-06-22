@@ -209,18 +209,16 @@ async def api_chat(
                                     success=True,
                                 )  # type: ignore
                         elif isinstance(event, FunctionToolCallEvent):
-                            yield (
-                                AssistantMessageItem(
-                                    role="assistant",
-                                    tool_calls=[
-                                        ToolItem(
-                                            name=event.part.tool_name,
-                                            id=event.part.tool_call_id,
-                                            args=event.part.args,  # type: ignore
-                                        ),
-                                    ],
-                                    success=True,
-                                ),
+                            yield AssistantMessageItem(
+                                role="assistant",
+                                tool_calls=[
+                                    ToolItem(
+                                        name=event.part.tool_name,
+                                        id=event.part.tool_call_id,
+                                        args=event.part.args_as_dict(),
+                                    ),
+                                ],
+                                success=True,
                             )  # type: ignore
                         elif isinstance(event, FunctionToolResultEvent):
                             if isinstance(event.result, ToolReturnPart | BuiltinToolReturnPart):
@@ -321,11 +319,7 @@ async def api_history(
                     if aimsg.tool_calls is None:
                         aimsg.tool_calls = []
                     aimsg.tool_calls.append(
-                        ToolItem(
-                            id=part.tool_call_id,
-                            name=part.tool_name,
-                            args=part.args,  # type: ignore
-                        ),
+                        ToolItem(id=part.tool_call_id, name=part.tool_name, args=part.args_as_dict()),
                     )
                 elif isinstance(part, FilePart):
                     if aimsg.files is None:

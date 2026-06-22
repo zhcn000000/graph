@@ -79,7 +79,7 @@ class GraphOperationResponse(StatusResponse):
 
 
 class SearchRequest(BaseModel):
-    queries: list[str]
+    query: str
     regex: str | None = None
     artifact_ids: list[UUID] | None = None
     use_graph: bool = True

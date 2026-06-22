@@ -16,7 +16,7 @@ rag_mode = RAGMode()
 
 
 async def search_documents_base(
-    queries: list[str],
+    query: str,
     regex: str | None = None,
     artifact_ids: list[str] | None = None,
     offset: int = 0,
@@ -24,7 +24,7 @@ async def search_documents_base(
 ) -> str:
     uuids = [UUID(fid) for fid in artifact_ids] if artifact_ids else None
     docs, graph_entities = await rag_mode.ahyprid_search(
-        queries=queries,
+        query=query,
         k=8,
         regex=regex,
         artifact_ids=uuids,
@@ -35,7 +35,7 @@ async def search_documents_base(
 
     if not docs:
         offset_info = f" (第{offset + 1}条起)" if offset else ""
-        return f"## 搜索结果{offset_info}\n\n查询: {queries}\n\n未找到相关文档。"
+        return f"## 搜索结果{offset_info}\n\n查询: {query}\n\n未找到相关文档。"
 
     data = []
     for i, doc in enumerate(docs):
@@ -53,7 +53,7 @@ async def search_documents_base(
         data.append(row)
 
     md = "## 搜索结果\n\n"
-    md += f"查询: {queries}\n"
+    md += f"查询: {query}\n"
     if offset:
         md += f"分页: 第{offset + 1}-{offset + len(docs)}条\n"
     md += f"共 {len(docs)} 条结果\n\n"

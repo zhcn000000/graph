@@ -1,6 +1,5 @@
 import operator
 import warnings
-from collections import Counter
 from typing import NamedTuple
 from uuid import UUID
 
@@ -47,13 +46,13 @@ class RAGMode:
 
     @staticmethod
     async def _vector_search(
-        queries: list[str],
+        query: str,
         topn: int,
         session,
         artifact_ids: list[UUID] | None = None,
         regex: str | None = None,
     ) -> list[UUID]:
-        query_vectors = await aembed_documents(queries)
+        query_vectors = await aembed_documents([query])
         query_vector = query_vectors[0]
 
         vector_stmt = select(col(DocumentTable.id))
@@ -70,15 +69,13 @@ class RAGMode:
 
     @staticmethod
     async def _bm25_search(
-        queries: list[str],
+        query: str,
         topn: int,
         session,
         artifact_ids: list[UUID] | None = None,
         regex: str | None = None,
     ) -> list[UUID]:
-        query_count = Counter()
-        for q in queries:
-            query_count += await atokenize_document(q)
+        query_count = await atokenize_document(query)
 
         bm25_stmt = select(col(DocumentTable.id))
         if artifact_ids:
@@ -294,7 +291,7 @@ class RAGMode:
 
     async def ahyprid_search(
         self,
-        queries: list[str],
+        query: str,
         k: int = 4,
         artifact_ids: list[UUID] | None = None,
         regex: str | None = None,
@@ -312,14 +309,14 @@ class RAGMode:
         async with self.__db.asession() as session:
             async with create_task_group() as tg:
                 vector_task = tg.soonify(self._vector_search)(
-                    queries=queries,
+                    query=query,
                     topn=topn,
                     session=session,
                     artifact_ids=artifact_ids,
                     regex=regex,
                 )
                 bm25_task = tg.soonify(self._bm25_search)(
-                    queries=queries,
+                    query=query,
                     topn=topn,
                     session=session,
                     artifact_ids=artifact_ids,
@@ -382,7 +379,7 @@ class RAGMode:
             ]
 
             try:
-                documents = await arerank_documents("\n".join(queries), documents)
+                documents = await arerank_documents("\n".join(query), documents)
             except Exception:
                 if not any(d.image_url for d in documents):
                     raise
@@ -391,7 +388,7 @@ class RAGMode:
                     UserWarning,
                     stacklevel=2,
                 )
-                documents = await arerank_documents("\n".join(queries), documents, force_text=True)
+                documents = await arerank_documents("\n".join(query), documents, force_text=True)
             return documents[offset : offset + k], graph_entities
 
     async def aget_by_ids(self, ids: list[str] | None = None) -> list[Document]:
@@ -425,7 +422,7 @@ class RAGMode:
 
     async def aquery_documents(
         self,
-        queries: list[str],
+        query: str,
         regex: str | None = None,
         artifact_ids: list[UUID] | None = None,
         use_graph: bool = False,
@@ -435,7 +432,7 @@ class RAGMode:
         bm25_weight: float = 0.3,
     ) -> list[QueryDocumentResult]:
         results, _ = await self.ahyprid_search(
-            queries,
+            query,
             k=5,
             regex=regex,
             artifact_ids=artifact_ids,
@@ -457,11 +454,11 @@ class RAGMode:
 
     async def aquery_graph_context(
         self,
-        queries: list[str],
+        query: str,
         max_hops: int = 3,
     ) -> dict:
         async with self.__db.asession() as session:
-            doc_ids = await self._vector_search(queries=queries, topn=30, session=session)
+            doc_ids = await self._vector_search(query=query, topn=30, session=session)
             entity_stats = await self._collect_entity_uris(doc_ids, session)
 
             graph_entities = (

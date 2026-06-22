@@ -49,7 +49,6 @@ async def prepare_web(ctx: RunContext[ModelDeps], tool_def: ToolDefinition) -> T
     name="search_documents",
     description="""
 根据查询语义搜索文档库，返回分页的文档列表。
-你可以从不同角度输入1-5个查询语句来提高搜索覆盖度。
 如果用户指定了特定文物，可以通过`artifact_ids`限制搜索范围。
 如果用户指定了包含/排除关键词，可以提供`regex`正则表达式过滤。
 返回结果包含文档内容和相关实体，支持翻页查看更多结果。
@@ -58,7 +57,7 @@ async def prepare_web(ctx: RunContext[ModelDeps], tool_def: ToolDefinition) -> T
 )
 async def search_documents(
     ctx: RunContext[ModelDeps],
-    queries: Annotated[list[str], Field(description="搜索查询语句,1-5个")],
+    query: Annotated[str, Field(description="搜索查询语句,1-5个")],
     regex: Annotated[str | None, Field(description="可选的正则表达式过滤条件")] = None,
     artifact_ids: Annotated[list[str] | None, Field(description="可选的文物ID列表过滤条件")] = None,
     offset: Annotated[int, Field(description="分页偏移量,默认0")] = 0,
@@ -66,7 +65,7 @@ async def search_documents(
 ) -> Annotated[str, Field(description="返回markdown格式的搜索结果表格,包含实体信息和分页提示")]:
     try:
         return await search_documents_base(
-            queries=queries,
+            query=query,
             regex=regex,
             artifact_ids=artifact_ids,
             offset=offset,

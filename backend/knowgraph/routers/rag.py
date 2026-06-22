@@ -30,7 +30,7 @@ async def api_search(request: SearchRequest) -> SearchResponse:
     try:
         rag_mode = RAGMode()
         docs, graph_entities = await rag_mode.ahyprid_search(
-            queries=request.queries,
+            query=request.query,
             k=request.k,
             regex=request.regex,
             artifact_ids=request.artifact_ids,

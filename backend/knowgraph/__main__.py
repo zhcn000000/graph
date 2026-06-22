@@ -83,7 +83,7 @@ async def search(
 ) -> None:
     rag = RAGMode()
     docs, graph_entities = await rag.ahyprid_search(
-        queries=[query],
+        query=query,
         k=k,
         use_graph=graph,
         max_hops=max_hops,
