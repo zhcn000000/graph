@@ -43,12 +43,12 @@ from knowgraph.database.history import HistoryStore
 
 from .schema import (
     AssistantMessageItem,
+    ChatMessage,
     ChatRequest,
     ChatTitleRequest,
     ChatTitleResponse,
     FileItem,
     HistoryResponse,
-    MessageItem,
     RenameRequest,
     SessionCreateResponse,
     SessionItem,
@@ -137,7 +137,7 @@ async def api_chat(
 
     async def event_stream_handler(
         agent_run: AgentRun[ModelDeps, str],
-    ) -> AsyncIterator[MessageItem]:
+    ) -> AsyncIterator[ChatMessage]:
         async for node in agent_run:
             if agent.is_user_prompt_node(node):
                 system_prompts = ""
@@ -150,14 +150,14 @@ async def api_chat(
                         role="system",
                         content=system_prompts,
                         success=True,
-                    )  # type: ignore
+                    )
                 content, files = _resolve_user_content(node.user_prompt)
                 yield UserMessageItem(
                     role="user",
                     content=content or None,
                     files=files or None,
                     success=True,
-                )  # type: ignore
+                )
             elif agent.is_model_request_node(node) or agent.is_call_tools_node(node):
                 async with node.stream(agent_run.ctx) as stream:  # type: ignore
                     async for event in stream:
@@ -166,12 +166,12 @@ async def api_chat(
                                 yield AssistantMessageItem(
                                     role="assistant",
                                     reasoning=event.part.content,
-                                )  # type: ignore
+                                )
                             elif isinstance(event.part, TextPart):
                                 yield AssistantMessageItem(
                                     role="assistant",
                                     content=event.part.content,
-                                )  # type: ignore
+                                )
                             elif isinstance(event.part, ToolCallPart | BuiltinToolCallPart):
                                 pass
                             elif isinstance(event.part, FilePart):
@@ -184,30 +184,30 @@ async def api_chat(
                                             url=event.part.content.data_uri,
                                         ),
                                     ],
-                                )  # type: ignore
+                                )
                         elif isinstance(event, PartDeltaEvent):
                             if isinstance(event.delta, ThinkingPartDelta):
                                 yield AssistantMessageItem(
                                     role="assistant",
                                     reasoning=event.delta.content_delta,
-                                )  # type: ignore
+                                )
                             elif isinstance(event.delta, TextPartDelta):
                                 yield AssistantMessageItem(
                                     role="assistant",
                                     content=event.delta.content_delta,
-                                )  # type: ignore
+                                )
                         elif isinstance(event, PartEndEvent):
                             if isinstance(event.part, ThinkingPart):
                                 yield AssistantMessageItem(
                                     role="assistant",
                                     success=True,
-                                )  # type: ignore
+                                )
                             elif isinstance(event.part, TextPart):
                                 yield AssistantMessageItem(
                                     role="assistant",
                                     content=None,
                                     success=True,
-                                )  # type: ignore
+                                )
                         elif isinstance(event, FunctionToolCallEvent):
                             yield AssistantMessageItem(
                                 role="assistant",
@@ -219,7 +219,7 @@ async def api_chat(
                                     ),
                                 ],
                                 success=True,
-                            )  # type: ignore
+                            )
                         elif isinstance(event, FunctionToolResultEvent):
                             if isinstance(event.result, ToolReturnPart | BuiltinToolReturnPart):
                                 content, files = _resolve_user_content(event.result.content)
@@ -230,7 +230,7 @@ async def api_chat(
                                     content=content or None,
                                     files=files or None,
                                     success=True,
-                                )  # type: ignore
+                                )
                             elif isinstance(event.result, RetryPromptPart):
                                 content = event.result.content
                                 if not isinstance(content, str):
@@ -241,7 +241,7 @@ async def api_chat(
                                     name=event.result.tool_name or "tool",
                                     content=content,
                                     success=False,
-                                )  # type: ignore
+                                )
 
     async def stream_generator() -> AsyncIterator[str]:
         async with agent.iter(
@@ -266,14 +266,14 @@ async def api_chat(
 async def api_history(
     session_id: UUID,
 ) -> HistoryResponse:
-    history_lists: list[MessageItem] = []
+    history_lists: list[ChatMessage] = []
     raw_history = await db.aget_messages(session_id)
     for item in raw_history:
         if isinstance(item, ModelRequest):
             for part in item.parts:
                 if isinstance(part, SystemPromptPart):
                     if part.content.strip():
-                        history_lists.append(SystemMessageItem(role="system", content=part.content, success=True))  # type: ignore
+                        history_lists.append(SystemMessageItem(role="system", content=part.content, success=True))
                 elif isinstance(part, UserPromptPart):
                     content, files = _resolve_user_content(part.content)
                     history_lists.append(
@@ -282,7 +282,7 @@ async def api_history(
                             content=content or None,
                             files=files or None,
                             success=True,
-                        ),  # type: ignore
+                        ),
                     )
                 elif isinstance(part, ToolReturnPart | BuiltinToolReturnPart):
                     content, files = _resolve_user_content(part.content)
@@ -294,7 +294,7 @@ async def api_history(
                             content=content or None,
                             files=files or None,
                             success=True,
-                        ),  # type: ignore
+                        ),
                     )
                 elif isinstance(part, RetryPromptPart):
                     history_lists.append(
@@ -306,7 +306,7 @@ async def api_history(
                             if isinstance(part.content, str)
                             else orjson.dumps(part.content).decode("utf-8"),
                             success=False,
-                        ),  # type: ignore
+                        ),
                     )
         elif isinstance(item, ModelResponse):
             aimsg = AssistantMessageItem(role="assistant")
@@ -332,7 +332,7 @@ async def api_history(
                         ),
                     )
             aimsg.success = True
-            history_lists.append(aimsg)  # type: ignore
+            history_lists.append(aimsg)
     return HistoryResponse(success=True, status="获取历史记录成功", messages=history_lists)
 
 

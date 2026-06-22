@@ -25,6 +25,7 @@ mcp = FastMCP("knowgraph")
     name="search_documents",
     description="""
 根据查询语义搜索文档库，返回分页的文档列表。
+使用英文查询以提升准确率
 如果用户指定了特定文物，可以通过`artifact_ids`限制搜索范围。
 如果用户指定了包含/排除关键词，可以提供`regex`正则表达式过滤。
 返回结果包含文档内容和相关实体，支持翻页查看更多结果。

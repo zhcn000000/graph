@@ -205,4 +205,8 @@ class SessionListResponse(StatusResponse):
 
 
 class HistoryResponse(StatusResponse):
-    messages: list[MessageItem]
+    messages: list[SystemMessageItem | UserMessageItem | AssistantMessageItem | ToolMessageItem]
+
+
+ChatMessage = SystemMessageItem | UserMessageItem | AssistantMessageItem | ToolMessageItem
+"""Union of all concrete chat message types."""
